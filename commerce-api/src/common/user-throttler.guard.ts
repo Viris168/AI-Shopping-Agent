@@ -8,6 +8,7 @@ import {
   type ThrottlerModuleOptions,
   type ThrottlerStorage,
 } from '@nestjs/throttler';
+import { credentials } from '../auth/auth.guards.js';
 import { JWT_ISSUER } from '../auth/jwt.config.js';
 
 /**
@@ -29,7 +30,7 @@ export class UserThrottlerGuard extends ThrottlerGuard {
   protected override async getTracker(
     req: Record<string, any>,
   ): Promise<string> {
-    const sub = await this.verifiedSub(req.headers?.authorization);
+    const sub = await this.verifiedSub(req);
     if (sub) return `user:${sub}`;
     const conversationId = req.headers?.['x-conversation-id'];
     if (req.isTrustedAgent && typeof conversationId === 'string')
@@ -37,13 +38,13 @@ export class UserThrottlerGuard extends ThrottlerGuard {
     return `ip:${req.ip}`;
   }
 
-  private async verifiedSub(header: unknown): Promise<string | null> {
-    if (typeof header !== 'string') return null;
-    const [scheme, token] = header.split(' ');
-    if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
+  private async verifiedSub(req: Record<string, any>): Promise<string | null> {
+    const found = credentials(req as Parameters<typeof credentials>[0]);
+    if (!found) return null;
     try {
-      const p = await this.jwt.verifyAsync<{ sub: string }>(token.trim(), {
+      const p = await this.jwt.verifyAsync<{ sub: string }>(found.token, {
         issuer: JWT_ISSUER,
+        audience: found.audience,
       });
       return p.sub;
     } catch {

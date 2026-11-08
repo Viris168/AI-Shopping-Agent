@@ -1,4 +1,9 @@
-"""Verify the shopper JWT issued by commerce-api. Invalid or missing → guest."""
+"""Verify the shopper's chat token issued by commerce-api. Invalid or missing → guest.
+
+The widget gets a short-lived chat token (audience "agent") from the store, never the
+shopper's session. commerce-api accepts it only alongside our X-Service-Token and only on
+the routes the tools use, so the token is worth little if it leaks.
+"""
 
 from dataclasses import dataclass, field
 from typing import Annotated
@@ -23,6 +28,9 @@ class Auth:
 
 GUEST = Auth()
 
+# Must match AGENT_AUDIENCE in commerce-api/src/auth/jwt.config.ts.
+AGENT_AUDIENCE = "agent"
+
 
 def verify_bearer(authorization: str | None, settings: Settings) -> Auth:
     if not authorization:
@@ -37,9 +45,14 @@ def verify_bearer(authorization: str | None, settings: Settings) -> Auth:
             settings.jwt_secret.get_secret_value(),
             algorithms=["HS256"],
             issuer=settings.jwt_issuer,
-            options={"require": ["sub", "exp", "iss"]},
+            audience=AGENT_AUDIENCE,
+            options={"require": ["sub", "exp", "iss", "aud"]},
         )
     except jwt.PyJWTError:
+        return GUEST
+    # commerce-api only issues chat tokens to shoppers and re-checks the role on every call;
+    # staff permissions never reach the model (CLAUDE.md rule 1).
+    if claims.get("role") != "CUSTOMER":
         return GUEST
     name = claims.get("name")
     return Auth(

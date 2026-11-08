@@ -27,6 +27,7 @@ import {
 } from 'class-validator';
 import { DataSource, In } from 'typeorm';
 import {
+  AgentAllowed,
   CurrentUser,
   JwtAuthGuard,
   type AuthUser,
@@ -148,6 +149,7 @@ export class ReturnsController {
   constructor(private readonly returns: ReturnsService) {}
 
   @Post()
+  @AgentAllowed()
   @UseInterceptors(IdempotencyInterceptor)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateReturnDto) {
     return this.returns.create(user.id, dto);

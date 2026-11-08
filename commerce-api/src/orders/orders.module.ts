@@ -15,6 +15,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
+  AgentAllowed,
   CurrentUser,
   JwtAuthGuard,
   type AuthUser,
@@ -153,11 +154,13 @@ export class OrdersController {
   ) {}
 
   @Get()
+  @AgentAllowed()
   list(@CurrentUser() user: AuthUser) {
     return this.orders.list(user.id);
   }
 
   @Get(':orderNumber')
+  @AgentAllowed()
   get(
     @CurrentUser() user: AuthUser,
     @Param('orderNumber') orderNumber: string,

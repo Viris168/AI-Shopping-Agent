@@ -26,11 +26,11 @@ function useAuthForm() {
 }
 
 export function LoginPage() {
-  const { token, login, sessionExpired } = useAuth();
+  const { user, login, sessionExpired } = useAuth();
   const { next, busy, error, submit } = useAuthForm();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  if (token) return <Navigate to={next} replace />;
+  if (user) return <Navigate to={next} replace />;
 
   return (
     <div className="auth-card">
@@ -59,12 +59,12 @@ export function LoginPage() {
 }
 
 export function RegisterPage() {
-  const { token, register } = useAuth();
+  const { user, register } = useAuth();
   const { next, busy, error, submit } = useAuthForm();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  if (token) return <Navigate to={next} replace />;
+  if (user) return <Navigate to={next} replace />;
 
   return (
     <div className="auth-card">

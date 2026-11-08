@@ -11,12 +11,14 @@ import { api, configureApi } from './api';
 import { storage } from './storage';
 import type { Session, User } from './types';
 
-const TOKEN_KEY = 'storefront.token';
+// Who is signed in, for the first render. Not a secret: the session is an httpOnly cookie, and
+// a stale entry is cleared by the first 401.
 const USER_KEY = 'storefront.user';
+// Where older builds kept the bearer token; removed on load.
+const LEGACY_TOKEN_KEY = 'storefront.token';
 
 interface AuthState {
   user: User | null;
-  token: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -27,6 +29,12 @@ interface AuthState {
 const AuthContext = createContext<AuthState | null>(null);
 
 function readUser(): User | null {
+  // Signed in under the old token scheme: the cookie doesn't exist yet, so log in again.
+  if (storage.get(LEGACY_TOKEN_KEY)) {
+    storage.set(LEGACY_TOKEN_KEY, null);
+    storage.set(USER_KEY, null);
+    return null;
+  }
   try {
     const raw = storage.get(USER_KEY);
     return raw ? (JSON.parse(raw) as User) : null;
@@ -36,23 +44,20 @@ function readUser(): User | null {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => storage.get(TOKEN_KEY));
-  const [user, setUser] = useState<User | null>(() => (storage.get(TOKEN_KEY) ? readUser() : null));
+  const [user, setUser] = useState<User | null>(readUser);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const tokenRef = useRef(token);
-  tokenRef.current = token;
+  const userRef = useRef(user);
+  userRef.current = user;
 
   const save = useCallback((session: Session | null) => {
-    storage.set(TOKEN_KEY, session?.accessToken ?? null);
     storage.set(USER_KEY, session ? JSON.stringify(session.user) : null);
-    tokenRef.current = session?.accessToken ?? null;
-    setToken(session?.accessToken ?? null);
+    userRef.current = session?.user ?? null;
     setUser(session?.user ?? null);
   }, []);
 
-  // Configure synchronously during render so the very first requests already carry the token.
+  // Configure synchronously during render so the very first requests know who is signed in.
   configureApi(
-    () => tokenRef.current,
+    () => userRef.current !== null,
     () => {
       save(null);
       setSessionExpired(true);
@@ -62,7 +67,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthState>(
     () => ({
       user,
-      token,
       sessionExpired,
       login: async (email, password) => {
         save(await api.login(email, password));
@@ -72,9 +76,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         save(await api.register(name, email, password));
         setSessionExpired(false);
       },
-      logout: () => save(null),
+      logout: () => {
+        // Best effort: the UI signs out at once; the server revokes the tokens and clears the cookie.
+        void api.logout().catch(() => {});
+        save(null);
+      },
     }),
-    [user, token, sessionExpired, save],
+    [user, sessionExpired, save],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

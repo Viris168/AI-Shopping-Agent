@@ -81,8 +81,13 @@ Convention: small features keep controller + service + DTOs + module in one `*.m
 ## 5. Authentication and authorization
 
 - Passwords: bcrypt cost 12. Emails lower-cased.
-- JWT payload: `{ sub, email, role, name }`, issuer `commerce-api`, expiry `JWT_EXPIRES_IN` (1 h).
-- Roles: `CUSTOMER` (default), `SUPPORT`, `ADMIN`. No role-gated routes yet.
+- JWTs: HS256, issuer `commerce-api`, payload `{ sub, ver, name, role }` (no email: tokens reach the browser). Two audiences:
+  - `storefront` — the shopper's session, expiry `JWT_EXPIRES_IN` (1 h). Login/register set it as an httpOnly, `SameSite=Lax` cookie `session` (`Secure` in production, path `/api/v1`); it is not in the response body. API clients may send it as `Authorization: Bearer`.
+  - `agent` — chat token from `POST /auth/agent-token` (JWT, `CUSTOMER` only, else 403), expiry `AGENT_TOKEN_EXPIRES_IN` (15 min). Accepted **only** with a valid `X-Service-Token`, and agent traffic accepts **only** this audience.
+- CSRF: cookie-authenticated `POST/PATCH/PUT/DELETE` need an `X-Requested-With` header (403 otherwise). Cross-origin pages can't send it without passing the CORS allowlist.
+- Revocation: `users.token_version` is signed into every token as `ver`. `POST /auth/logout` bumps it, which revokes every session and chat token the shopper holds, on every device, and clears the cookie. The guards load the user on each request, so the role, name and version are always current.
+- Agent allowlist: with a service token, `JwtAuthGuard`/`OptionalJwtAuthGuard` return 403 `This can only be done on the store website, not in chat` unless the route has `@AgentAllowed()` (cart, `GET /orders`, `GET /orders/:n`, `POST /returns`, `POST /support/tickets`, conversations). `POST /checkout` and `POST /orders/:n/payment` are not allowed. Agent traffic for a non-`CUSTOMER` user is rejected (403).
+- Roles: `CUSTOMER` (default), `SUPPORT`, `ADMIN`. Staff routes use `@UseGuards(JwtAuthGuard, RolesGuard)` with `@Roles(...)`; `RolesGuard` fails closed when `@Roles()` is missing. No staff routes yet.
 - **Ownership rule:** user-scoped queries include `userId` in the `where` clause (`orders`, `returns`, `cart`). A wrong order number and someone else's order both return 404 — no existence leak.
 - The agent uses the shopper's JWT; there is no privileged agent credential.
 
@@ -165,7 +170,8 @@ Nest exceptions with human-readable messages (shown to shoppers by the agent):
 | `DB_LOGGING` | `false` | SQL logs |
 | `RUN_MIGRATIONS_ON_BOOT` | `false` | keep false in production; use pre-deploy job |
 | `JWT_SECRET` | dev fallback | **must be set in production** (see §11) |
-| `JWT_EXPIRES_IN` | `1h` | |
+| `JWT_EXPIRES_IN` | `1h` | storefront session (cookie) lifetime |
+| `AGENT_TOKEN_EXPIRES_IN` | `15m` | chat token lifetime |
 | `SERVICE_TOKEN` | — | shared with agent-service; **must be set (32+ chars) in production**; unset → agent requests 403 |
 | `TRUST_PROXY` | — | proxy hop count behind a load balancer, so `req.ip` is the client |
 | `CORS_ORIGINS` | `http://localhost:8080` | add widget/agent origins as needed |

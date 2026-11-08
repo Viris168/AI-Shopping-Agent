@@ -31,6 +31,7 @@ import {
 } from 'class-validator';
 import { DataSource } from 'typeorm';
 import {
+  AgentAllowed,
   CurrentUser,
   OptionalJwtAuthGuard,
   type AuthUser,
@@ -168,6 +169,7 @@ export class ConversationsService {
 
 @ApiTags('conversations')
 @ApiBearerAuth()
+@AgentAllowed()
 @UseGuards(TrustedAgentGuard, OptionalJwtAuthGuard)
 @AuditWithoutBody()
 @Controller('conversations')

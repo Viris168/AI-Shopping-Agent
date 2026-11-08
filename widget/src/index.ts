@@ -1,7 +1,10 @@
 // Bootstrap: read the <script> tag, mount everything inside a Shadow DOM, expose window.ShopChat.
 //
 //   <script src="https://chat.yourstore.com/v1/widget.js" data-store="main" async></script>
-//   <script>window.ShopChat = { getToken: () => fetch('/session/token').then(r => r.ok ? r.text() : null) };</script>
+//   <script>window.ShopChat = { getToken: () => fetch('/api/v1/auth/agent-token', {
+//     method: 'POST', credentials: 'include', headers: { 'X-Requested-With': 'shop' },
+//   }).then(r => r.ok ? r.json().then(b => b.token) : null) };</script>
+//   The chat token is short-lived and only works via agent-service; never pass the store session.
 //
 // Optional data-* attributes: data-api (agent-service origin; default: the script's origin),
 // data-locale, data-link-domains (extra allowed link hosts, comma-separated, e.g. carriers),

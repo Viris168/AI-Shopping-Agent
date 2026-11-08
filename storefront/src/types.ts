@@ -8,10 +8,16 @@ export interface User {
   role: string;
 }
 
+/** The session itself is an httpOnly cookie that page scripts can't read. */
 export interface Session {
-  accessToken: string;
-  tokenType: 'Bearer';
   user: User;
+  expiresAt: string;
+}
+
+/** Short-lived token the chat widget hands to agent-service. */
+export interface AgentToken {
+  token: string;
+  expiresAt: string;
 }
 
 export interface ProductListItem {

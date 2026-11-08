@@ -23,12 +23,12 @@ const CartContext = createContext<CartState | null>(null);
 
 /** Keeps the shopper's cart (for the header badge and cart page). Empty for guests. */
 export function CartProvider({ children }: { children: ReactNode }) {
-  const { token } = useAuth();
+  const { user } = useAuth();
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
-    if (!token) {
+    if (!user) {
       setCart(null);
       return;
     }
@@ -40,7 +40,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [user]);
 
   useEffect(() => {
     void refresh();

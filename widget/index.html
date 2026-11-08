@@ -27,7 +27,7 @@
       </p>
       <p>
         <label>Shopper JWT (leave empty to chat as a guest):
-          <input id="token" size="40" placeholder="paste a token from commerce-api /auth/login" />
+          <input id="token" size="40" placeholder="paste a chat token from commerce-api POST /auth/agent-token" />
         </label>
       </p>
       <div class="grid">
@@ -39,7 +39,7 @@
     </main>
 
     <script>
-      // Host integration (ARCHITECTURE.md §4.3). A real store would fetch('/session/token').
+      // Host integration (ARCHITECTURE.md §4.3). A real store fetches a chat token (POST /api/v1/auth/agent-token).
       window.ShopChat = { getToken: () => document.getElementById('token').value.trim() || null };
       window.addEventListener('shopchat:cart-updated', (e) => {
         document.getElementById('cart-count').textContent = e.detail?.itemCount ?? 0;

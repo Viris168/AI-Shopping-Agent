@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
+import { api } from '../api';
 import { useAuth } from '../auth';
 import { useCart } from '../cart';
 
 // Embeds the shopping-assistant widget (../widget) the way any host store would: a <script> tag
-// plus window.ShopChat.getToken. The widget renders in its own Shadow DOM; this component only
+// plus window.ShopChat.getToken, which hands out a short-lived chat token (never the session). The widget renders in its own Shadow DOM; this component only
 // connects it to our login and cart.
 
 const STORE = 'main';
@@ -13,17 +14,57 @@ const WIDGET_SRC = import.meta.env.VITE_WIDGET_SRC ?? '/widget.js';
 const AGENT_URL = import.meta.env.VITE_AGENT_URL ?? '';
 // Off-store hosts the widget may link to: carrier tracking pages (commerce-api orders.module.ts).
 const LINK_DOMAINS = 'ups.com,fedex.com,usps.com,dhl.com';
+// Fetch a fresh chat token this long before the current one expires.
+const REFRESH_EARLY_MS = 60_000;
+
+/**
+ * Chat tokens for the signed-in shopper, cached until shortly before they expire. The token only
+ * works for agent-service (commerce-api also needs its service token), so it is fine in page JS.
+ */
+export function chatTokens() {
+  let cached: { token: string; expiresAt: number } | null = null;
+  let pending: Promise<string | null> | null = null;
+  let generation = 0; // bumped by clear(), so a request still in flight for the last shopper is dropped
+  return {
+    get(signedIn: boolean): Promise<string | null> {
+      if (!signedIn) return Promise.resolve(null);
+      if (cached && cached.expiresAt - REFRESH_EARLY_MS > Date.now()) return Promise.resolve(cached.token);
+      const gen = generation;
+      pending ??= api
+        .agentToken()
+        .then(({ token, expiresAt }) => {
+          if (gen !== generation) return null;
+          cached = { token, expiresAt: Date.parse(expiresAt) };
+          return token;
+        })
+        // Staff accounts, expired sessions, network errors: chat as a guest.
+        .catch(() => null)
+        .finally(() => {
+          if (gen === generation) pending = null;
+        });
+      return pending;
+    },
+    clear() {
+      generation++;
+      cached = null;
+      pending = null;
+    },
+  };
+}
 
 export function ChatWidget() {
-  const { token, user } = useAuth();
+  const { user } = useAuth();
   const { refresh } = useCart();
 
   // The widget asks for the token on every request, so login/logout apply to the next message.
-  const tokenRef = useRef(token);
-  tokenRef.current = token;
+  const signedInRef = useRef(user !== null);
+  signedInRef.current = user !== null;
+  const tokens = useRef(chatTokens()).current;
 
   useEffect(() => {
-    window.ShopChat = Object.assign(window.ShopChat ?? {}, { getToken: () => tokenRef.current });
+    window.ShopChat = Object.assign(window.ShopChat ?? {}, {
+      getToken: () => tokens.get(signedInRef.current),
+    });
     if (document.getElementById(SCRIPT_ID)) return; // StrictMode runs effects twice
     const script = document.createElement('script');
     script.id = SCRIPT_ID;
@@ -52,8 +93,9 @@ export function ChatWidget() {
   useEffect(() => {
     const prev = prevUserId.current;
     prevUserId.current = userId;
+    if (prev !== userId) tokens.clear(); // never reuse the previous shopper's token
     if (prev && prev !== userId) resetChat();
-  }, [userId]);
+  }, [userId, tokens]);
 
   return null;
 }

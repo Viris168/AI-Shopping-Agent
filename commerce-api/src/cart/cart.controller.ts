@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
+  AgentAllowed,
   CurrentUser,
   JwtAuthGuard,
   type AuthUser,
@@ -26,6 +27,7 @@ import { CartService } from './cart.service.js';
 
 @ApiTags('cart')
 @ApiBearerAuth()
+@AgentAllowed()
 @UseGuards(JwtAuthGuard)
 @Controller('cart')
 export class CartController {
@@ -68,7 +70,7 @@ export class CartController {
   }
 }
 
-/** Storefront only: the agent never calls this (docs/AGENT.md §3). */
+/** Storefront only: no @AgentAllowed(), so agent traffic gets 403 (docs/AGENT.md §3). */
 @ApiTags('cart')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)

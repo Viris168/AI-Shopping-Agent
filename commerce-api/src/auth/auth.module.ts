@@ -1,7 +1,11 @@
 import { Global, Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth.controller.js';
-import { JwtAuthGuard, OptionalJwtAuthGuard } from './auth.guards.js';
+import {
+  JwtAuthGuard,
+  OptionalJwtAuthGuard,
+  RolesGuard,
+} from './auth.guards.js';
 import { AuthService } from './auth.service.js';
 import { JWT_ISSUER, jwtExpiresIn, jwtSecret } from './jwt.config.js';
 
@@ -22,7 +26,7 @@ import { JWT_ISSUER, jwtExpiresIn, jwtSecret } from './jwt.config.js';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard, OptionalJwtAuthGuard],
-  exports: [JwtModule, JwtAuthGuard, OptionalJwtAuthGuard],
+  providers: [AuthService, JwtAuthGuard, OptionalJwtAuthGuard, RolesGuard],
+  exports: [JwtModule, JwtAuthGuard, OptionalJwtAuthGuard, RolesGuard],
 })
 export class AuthModule {}

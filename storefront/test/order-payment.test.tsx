@@ -39,7 +39,10 @@ function open(query: string) {
 // Stripe's return URLs (commerce-api PaymentsService.createSession).
 describe('returning from the payment page', () => {
   beforeEach(() => {
-    localStorage.setItem('storefront.token', 'tok');
+    localStorage.setItem(
+      'storefront.user',
+      JSON.stringify({ id: 'u1', email: 'alice@example.com', name: 'Alice', role: 'CUSTOMER' }),
+    );
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
   afterEach(() => {

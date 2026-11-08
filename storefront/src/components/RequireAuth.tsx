@@ -4,9 +4,9 @@ import { useAuth } from '../auth';
 
 /** Sends guests to /login and brings them back here afterwards. */
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { token } = useAuth();
+  const { user } = useAuth();
   const location = useLocation();
-  if (!token) {
+  if (!user) {
     const next = encodeURIComponent(location.pathname + location.search);
     return <Navigate to={`/login?next=${next}`} replace />;
   }
