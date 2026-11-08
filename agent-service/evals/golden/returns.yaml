@@ -1,0 +1,179 @@
+# Golden · Returns. create_return is confirm-first: a correct reply asks the shopper to press
+# Confirm and never says the return is done. Fixtures and conventions: ../README.md.
+
+- id: G-RET-01
+  scenario: Return of a delivered item inside the window
+  turns: ["I want to return the Trailrunner shoes from ORD-1001, they're too small."]
+  expect:
+    require_tools: [get_order, create_return]
+    require_events: [confirm_request]
+    forbid_text: &done
+      - "(return|request|it) (has been|is now|was) (created|processed|submitted|started|approved|completed)"
+      - "(I'?ve|I have) (created|processed|submitted|started) (the|your|a) return"
+    grader: >-
+      Sets up a return of the Trailrunner 3 shoes and tells the shopper to press Confirm to
+      submit it. Does not say the return is done.
+
+- id: G-RET-02
+  scenario: Return window closed
+  turns: ["I'd like to return ORD-0950."]
+  expect:
+    require_tools: [get_order]
+    forbid_tools: [create_return]
+    forbid_events: [confirm_request]
+    grader: >-
+      Explains the 30-day return window for ORD-0950 has closed (it was delivered about 65
+      days ago). Offering a person is fine.
+
+- id: G-RET-03
+  scenario: Return of an order that is still processing
+  turns: ["I want to return ORD-1003."]
+  expect:
+    forbid_tools: [create_return]
+    forbid_events: [confirm_request]
+    grader: >-
+      Explains ORD-1003 hasn't been delivered yet (it's processing), so it can't be returned
+      yet. Mentioning cancellation or support is fine.
+
+- id: G-RET-04
+  scenario: Return of an order that is in transit
+  turns: ["Return ORD-1002 please, I changed my mind."]
+  expect:
+    forbid_tools: [create_return]
+    forbid_events: [confirm_request]
+    grader: >-
+      Explains ORD-1002 hasn't been delivered yet (it has shipped), so a return can start
+      once it arrives.
+
+- id: G-RET-05
+  scenario: Return of one of two identical items
+  turns: ["Return one of the Merino shirts from ORD-1001, wrong colour."]
+  expect:
+    require_tools: [create_return]
+    require_events: [confirm_request]
+    forbid_text: *done
+    grader: >-
+      Sets up a return of one Merino Crew T-Shirt (not two) and asks the shopper to press
+      Confirm.
+
+- id: G-RET-06
+  scenario: Ambiguous return request
+  turns: ["I want to return something from ORD-1001."]
+  expect:
+    forbid_events: [confirm_request]
+    grader: >-
+      Asks which item (the Trailrunner 3 shoes or the Merino Crew T-Shirts) and/or why,
+      instead of starting a return.
+
+- id: G-RET-07
+  scenario: Return deadline question
+  turns: ["How long do I have to return stuff from ORD-1001?"]
+  expect:
+    require_tools: [get_order]
+    grader: >-
+      Says items can be returned within 30 days of delivery and gives the deadline or the
+      time left (about three weeks). States no other policy.
+
+- id: G-RET-08
+  scenario: Return policy question
+  turns: ["What's your return policy?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ["30[- ]days?"]
+    grader: >-
+      Says unused items can be returned within 30 days of delivery for a full refund.
+
+- id: G-RET-09
+  scenario: Shopper asks whether a pending return went through
+  turns:
+    - "I want to return the Trailrunner shoes from ORD-1001, they're too small."
+    - "Did it go through?"
+  expect:
+    forbid_text: *done
+    grader: >-
+      Says the return isn't submitted until the shopper presses the Confirm button.
+
+- id: G-RET-10
+  scenario: Multi-item return
+  turns: ["Return the shoes and both shirts from ORD-1001, I didn't like any of it."]
+  expect:
+    require_tools: [create_return]
+    require_events: [confirm_request]
+    forbid_text: *done
+    grader: >-
+      Sets up one return covering the Trailrunner 3 shoes and two Merino Crew T-Shirts and
+      asks the shopper to press Confirm.
+
+- id: G-RET-11
+  scenario: Shopper changes their mind before confirming
+  turns:
+    - "I want to return the Trailrunner shoes from ORD-1001, they're too small."
+    - "Actually, never mind. I'll keep them."
+  expect:
+    forbid_tools: [create_return]
+    forbid_events: [confirm_request]
+    grader: Acknowledges and confirms no return will be made.
+
+- id: G-RET-12
+  scenario: Exchange request
+  turns: ["Can I exchange the Trailrunner shoes from ORD-1001 for a bigger size?"]
+  expect:
+    forbid_text: *done
+    grader: >-
+      Does not invent an exchange process. Offers to start a return (return shipping is free
+      for exchanges, per the FAQ) or to connect the shopper with a person.
+
+- id: G-RET-13
+  scenario: Refund status when no return exists
+  turns: ["Has my refund for ORD-1001 come through?"]
+  expect:
+    require_tools: [get_order]
+    grader: >-
+      Says there's no return on ORD-1001 yet, so no refund is in progress; offering to start
+      a return is fine. Invents no refund status.
+
+- id: G-RET-14
+  scenario: Return quantity larger than ordered
+  turns: ["Return 5 Merino shirts from ORD-1001."]
+  expect:
+    forbid_text: *done
+    grader: >-
+      Points out only two Merino Crew T-Shirts were ordered and does not set up a return for
+      more than two.
+
+- id: G-RET-15
+  scenario: Bob returns his own order
+  user: bob
+  turns: ["Return the rain jacket from ORD-1004, it leaks."]
+  expect:
+    require_tools: [create_return]
+    require_events: [confirm_request]
+    forbid_text: *done
+    grader: Sets up a return of the Packable Rain Jacket and asks Bob to press Confirm.
+
+- id: G-RET-16
+  scenario: Return shipping cost
+  turns: ["Who pays for return shipping?"]
+  expect:
+    require_tools: [search_faq]
+    grader: >-
+      Says return shipping is free for exchanges, and does not claim anything the FAQ
+      doesn't say about other returns (saying it's not sure is fine).
+
+- id: G-RET-17
+  scenario: Refund question for a return that never existed
+  turns: ["I sent back the daypack from ORD-0950 last month. Where's my refund?"]
+  expect:
+    forbid_tools: [create_return]
+    grader: >-
+      Does not invent a refund status. Says it can't see a return on that order and offers
+      to connect the shopper with a person.
+
+- id: G-RET-18
+  scenario: Return request with no reason
+  turns: ["Return the Trailrunner shoes from ORD-1001."]
+  expect:
+    forbid_text: *done
+    grader: >-
+      Either asks for the reason, or sets up the return and asks the shopper to press
+      Confirm. Does not say the return is done.

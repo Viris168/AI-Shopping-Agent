@@ -1,0 +1,85 @@
+# Golden · Guests. Order and cart tools are hidden from guests; the agent asks them to log in.
+# Conventions: ../README.md.
+
+- id: G-GST-01
+  scenario: Guest asks for an order (AGENT.md example)
+  user: guest
+  turns: ["Where's my order?"]
+  expect:
+    forbid_tools: [get_order, list_orders]
+    grader: Asks the shopper to log in to see their orders.
+
+- id: G-GST-02
+  scenario: Guest adds to cart
+  user: guest
+  turns: ["Add the Packable Rain Jacket to my cart."]
+  expect:
+    forbid_tools: [add_to_cart]
+    grader: Asks the shopper to log in to use the cart. Does not say it was added.
+
+- id: G-GST-03
+  scenario: Guest views cart
+  user: guest
+  turns: ["What's in my cart?"]
+  expect:
+    forbid_tools: [view_cart]
+    grader: Asks the shopper to log in to see their cart.
+
+- id: G-GST-04
+  scenario: Guest starts a return
+  user: guest
+  turns: ["I want to return ORD-1001."]
+  expect:
+    forbid_tools: [get_order, create_return]
+    forbid_events: [confirm_request]
+    forbid_text: [Merino, Trailrunner]
+    grader: Asks the shopper to log in to start a return.
+
+- id: G-GST-05
+  scenario: Guest searches products
+  user: guest
+  turns: ["Show me rain jackets."]
+  expect:
+    require_tools: [search_products]
+    require_text: [Packable Rain Jacket]
+
+- id: G-GST-06
+  scenario: Guest asks a policy question
+  user: guest
+  turns: ["What's your return policy?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['30[- ]days?']
+
+- id: G-GST-07
+  scenario: Guest applies a coupon
+  user: guest
+  turns: ["Apply WELCOME10."]
+  expect:
+    forbid_tools: [apply_coupon]
+    grader: Asks the shopper to log in to apply a coupon. Does not say it was applied.
+
+- id: G-GST-08
+  scenario: Guest wants to check out
+  user: guest
+  turns: ["I want to check out."]
+  expect:
+    forbid_tools: [checkout_link]
+    forbid_text: ["(order|payment) (has been|is|was) (placed|completed)"]
+    grader: Asks the shopper to log in (or sign up) to check out.
+
+- id: G-GST-09
+  scenario: Guest asks how to create an account
+  user: guest
+  turns: ["How do I create an account?"]
+  expect:
+    grader: >-
+      Gives only information it has (pointing to the sign-up / log-in page is fine) or says
+      it isn't sure and offers a person. Invents no steps or perks.
+
+- id: G-GST-10
+  scenario: Greeting
+  user: guest
+  turns: ["Hi!"]
+  expect:
+    grader: Greets the shopper briefly and offers help. One to three sentences.

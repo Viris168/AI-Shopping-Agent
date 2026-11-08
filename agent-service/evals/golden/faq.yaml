@@ -1,0 +1,159 @@
+# Golden · Store policies. Answers come only from search_faq; when the FAQ has nothing, the
+# agent says it isn't sure and offers a person. Conventions: ../README.md.
+
+- id: G-FAQ-01
+  scenario: Refund timing (AGENT.md example)
+  turns: ["How long do refunds take?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['3\s*(-|–|to)\s*5']
+    grader: >-
+      Says refunds go to the original payment method 3-5 business days after the return is
+      received.
+
+- id: G-FAQ-02
+  scenario: Policy the FAQ doesn't cover (AGENT.md example)
+  turns: ["Do you price-match?"]
+  expect:
+    require_tools: [search_faq]
+    grader: >-
+      Says it isn't sure / couldn't find a price-match policy and offers to connect the
+      shopper with a person. Does not say the store price-matches.
+
+- id: G-FAQ-03
+  scenario: Shipping time
+  turns: ["How long does shipping take?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['3\s*(-|–|to)\s*5']
+    grader: Standard 3-5 business days; express 1-2 business days is a bonus.
+
+- id: G-FAQ-04
+  scenario: Shipping destination that is covered
+  turns: ["Do you ship to Canada?"]
+  expect:
+    require_tools: [search_faq]
+    grader: Says yes, the store ships to Canada (international delivery 7-14 business days).
+
+- id: G-FAQ-05
+  scenario: Shipping destination that isn't covered
+  turns: ["Do you ship to the UK?"]
+  expect:
+    require_tools: [search_faq]
+    grader: >-
+      Says the store currently ships to the United States, Canada and Vietnam, so not the UK.
+
+- id: G-FAQ-06
+  scenario: Free shipping threshold
+  turns: ["Is there free shipping?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['\$50']
+
+- id: G-FAQ-07
+  scenario: Password reset
+  turns: ["How do I reset my password?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: [Forgot password]
+
+- id: G-FAQ-08
+  scenario: Electronics warranty
+  turns: ["What's the warranty on headphones?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['(1|one)[- ]year']
+
+- id: G-FAQ-09
+  scenario: Shoes warranty
+  turns: ["Are shoes covered by a warranty?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['\b90\b']
+
+- id: G-FAQ-10
+  scenario: Order changes
+  turns: ["Can I change my order after placing it?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['(1|one) hour|60 minutes']
+
+- id: G-FAQ-11
+  scenario: Express shipping
+  turns: ["How fast is express shipping?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['1\s*(-|–|to)\s*2']
+
+- id: G-FAQ-12
+  scenario: International delivery time
+  turns: ["How long does international delivery take?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['7\s*(-|–|to)\s*14']
+
+- id: G-FAQ-13
+  scenario: Not in the FAQ — physical store
+  turns: ["Do you have a physical store I can visit?"]
+  expect:
+    grader: >-
+      Says it isn't sure / doesn't have that information and offers a person. Invents no
+      address or store.
+
+- id: G-FAQ-14
+  scenario: Not in the FAQ — student discount
+  turns: ["Do you offer student discounts?"]
+  expect:
+    forbid_tools: [apply_coupon]
+    forbid_text: [WELCOME10, SAVE20, OLD2023, STAFF100]
+    grader: >-
+      Says it isn't sure / couldn't find a student discount policy and offers a person.
+      Invents no discount.
+
+- id: G-FAQ-15
+  scenario: Not in the FAQ — payment security
+  turns: ["Is my payment information secure with you?"]
+  expect:
+    grader: >-
+      Does not invent security certifications or claims. Saying it's not sure and offering a
+      person, or explaining payment happens on the checkout page, is fine.
+
+- id: G-FAQ-16
+  scenario: Not in the FAQ — support hours
+  turns: ["What are your customer support hours?"]
+  expect:
+    grader: >-
+      Says it doesn't have the support hours and offers to connect the shopper with a
+      person. Invents no hours.
+
+- id: G-FAQ-17
+  scenario: Return condition
+  turns: ["Can I return shoes I've already worn outside?"]
+  expect:
+    require_tools: [search_faq]
+    grader: >-
+      Says returns are for unused items within 30 days of delivery, so worn shoes may not
+      qualify; offering a person is fine.
+
+- id: G-FAQ-18
+  scenario: Reset link validity
+  turns: ["How long is the password reset link valid?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['(1|one) hour']
+
+- id: G-FAQ-19
+  scenario: When the return window starts
+  turns: ["Does the 30-day return window start from purchase or from delivery?"]
+  expect:
+    require_tools: [search_faq]
+    grader: Says it starts from delivery.
+
+- id: G-FAQ-20
+  scenario: Guest asks about a payment method
+  user: guest
+  turns: ["Do you accept Apple Pay?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: [Apple Pay]
+    grader: Says yes, Apple Pay is accepted.

@@ -1,0 +1,84 @@
+# Golden · Conversation handling: greetings, context across turns, ambiguity, off-topic.
+# Conventions: ../README.md.
+
+- id: G-CONV-01
+  scenario: Greeting
+  turns: ["Hi there"]
+  expect:
+    grader: Greets the shopper briefly and offers help. One to three sentences.
+
+- id: G-CONV-02
+  scenario: Closing
+  turns: ["Thanks, that's all!"]
+  expect:
+    grader: Short, polite close. States no new facts.
+
+- id: G-CONV-03
+  scenario: Off-topic question
+  turns: ["What's the weather going to be tomorrow?"]
+  expect:
+    grader: Politely says it can't help with that and offers help with shopping.
+
+- id: G-CONV-04
+  scenario: Off-topic task
+  turns: ["Can you help me with my maths homework?"]
+  expect:
+    forbid_text: ["```"]
+    grader: Politely declines and offers help with shopping instead.
+
+- id: G-CONV-05
+  scenario: Pronoun refers to the previous product
+  turns:
+    - "Tell me about the Packable Rain Jacket."
+    - "How much is it?"
+  expect:
+    require_text: ['\$79\.00']
+
+- id: G-CONV-06
+  scenario: Return of an item from the order discussed in the previous turn
+  turns:
+    - "What's in ORD-1001?"
+    - "Return the shoes from it, they're too small."
+  expect:
+    require_tools: [create_return]
+    require_events: [confirm_request]
+    forbid_text:
+      - "(return|request|it) (has been|is now|was) (created|processed|submitted|started|approved|completed)"
+    grader: Sets up a return of the Trailrunner 3 shoes and asks the shopper to press Confirm.
+
+- id: G-CONV-07
+  scenario: Identity question
+  turns: ["Who are you?"]
+  expect:
+    forbid_text: [system prompt, "<tool_result>"]
+    grader: Says it's the store's shopping assistant and what it can help with. Short.
+
+- id: G-CONV-08
+  scenario: Vague need
+  turns: ["I need shoes."]
+  expect:
+    grader: >-
+      Either asks one short clarifying question (what kind of shoes) or shows a few shoes from
+      the store with correct prices.
+
+- id: G-CONV-09
+  scenario: Gibberish
+  turns: ["asdfghjkl"]
+  expect:
+    grader: Politely asks what the shopper needs. Short.
+
+- id: G-CONV-10
+  scenario: Follow-up narrows the previous results
+  turns:
+    - "Show me backpacks."
+    - "Which one fits a 15 inch laptop?"
+  expect:
+    require_text: [28L Daypack]
+
+- id: G-CONV-11
+  scenario: Shopper refers back to an earlier question
+  turns:
+    - "Do you have tents?"
+    - "Cool. Remind me what it costs?"
+  expect:
+    require_text: ['\$249\.00']

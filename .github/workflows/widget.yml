@@ -1,0 +1,38 @@
+name: widget
+
+on:
+  push:
+    branches: [main]
+    paths: ["widget/**", ".github/workflows/widget.yml"]
+  pull_request:
+    paths: ["widget/**", ".github/workflows/widget.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash # explicit: -eo pipefail, so the size check fails through `tee`
+    working-directory: widget
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: widget/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx vite build
+      - name: Size budget (fails over 40 KB gzipped)
+        run: npm run size | tee -a "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,95 @@
+# Golden · Coupons. The agent applies only codes the shopper gives and repeats the store's answer.
+# WELCOME10 10% off · SAVE20 $20 off over $100 · OLD2023 expired. Conventions: ../README.md.
+
+- id: G-CPN-01
+  scenario: Expired coupon (AGENT.md example)
+  setup:
+    cart: [{sku: CLO-001, quantity: 1}]
+  turns: ["Apply OLD2023."]
+  expect:
+    require_args: [{tool: apply_coupon, args: {code: OLD2023}}]
+    grader: Says the coupon is invalid or expired and no discount was applied.
+
+- id: G-CPN-02
+  scenario: Shopper fishes for codes (AGENT.md example)
+  turns: ["Any discount codes I can use?"]
+  expect:
+    forbid_tools: [apply_coupon]
+    forbid_text: [WELCOME10, SAVE20, OLD2023, STAFF100]
+    grader: Does not reveal or invent a code; offering to apply one the shopper has is fine.
+
+- id: G-CPN-03
+  scenario: Valid percentage coupon
+  setup:
+    cart: [{sku: SHOE-001, quantity: 1}]
+  turns: ["Apply WELCOME10."]
+  expect:
+    require_args: [{tool: apply_coupon, args: {code: WELCOME10}}]
+    grader: >-
+      Says WELCOME10 was applied (10% off, $9.00) and, if it gives a total, it is $80.99.
+
+- id: G-CPN-04
+  scenario: Coupon below its minimum subtotal
+  setup:
+    cart: [{sku: SHOE-001, quantity: 1}]
+  turns: ["Use code SAVE20."]
+  expect:
+    require_tools: [apply_coupon]
+    require_text: ['\$100(\.00)?']
+    grader: Says SAVE20 needs a subtotal of at least $100.00 and wasn't applied.
+
+- id: G-CPN-05
+  scenario: Valid amount-off coupon
+  setup:
+    cart: [{sku: ELEC-001, quantity: 1}]
+  turns: ["Apply SAVE20 please."]
+  expect:
+    require_tools: [apply_coupon]
+    grader: Says SAVE20 was applied ($20.00 off); if it gives a total, it is $179.00.
+
+- id: G-CPN-06
+  scenario: Lowercase code
+  setup:
+    cart: [{sku: CLO-001, quantity: 1}]
+  turns: ["apply welcome10"]
+  expect:
+    require_args: [{tool: apply_coupon, args: {code: welcome10}}]
+    grader: Says the WELCOME10 coupon was applied.
+
+- id: G-CPN-07
+  scenario: Unknown code
+  setup:
+    cart: [{sku: CLO-001, quantity: 1}]
+  turns: ["Apply FREESTUFF."]
+  expect:
+    require_tools: [apply_coupon]
+    grader: Says the code is invalid or expired.
+
+- id: G-CPN-08
+  scenario: Two coupons at once
+  setup:
+    cart: [{sku: ELEC-001, quantity: 1}]
+  turns: ["Can I use both WELCOME10 and SAVE20 on this order?"]
+  expect:
+    grader: >-
+      Does not claim both coupons are applied together. Applying one, or saying it's not sure
+      whether they can be combined, is fine.
+
+- id: G-CPN-09
+  scenario: Check whether a coupon is applied
+  setup:
+    cart: [{sku: CLO-001, quantity: 1}]
+    coupon: WELCOME10
+  turns: ["Is my coupon applied?"]
+  expect:
+    require_tools: [view_cart]
+    require_text: [WELCOME10]
+    grader: Says WELCOME10 is applied ($4.50 off); if it gives a total, it is $46.49.
+
+- id: G-CPN-10
+  scenario: Coupon on an empty cart
+  turns: ["Apply WELCOME10."]
+  expect:
+    grader: >-
+      Applies the code or notes the cart is empty. Does not state a discount amount other
+      than $0.00 or 10%.

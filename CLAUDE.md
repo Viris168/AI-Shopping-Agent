@@ -123,12 +123,12 @@ npm run build                     # dist/widget.js
 
 - `commerce-api`: unit tests for services; integration tests against a real Postgres with seed data.
 - `agent-service`: unit tests for tools (mock `commerce_client`), loop tests with a fake LLM, then evals with the real model.
-- Seed data covers key cases: `ORD-1001` delivered (returnable), `ORD-1002` shipped, `ORD-1003` processing, `ORD-0950` delivered 65 days ago (window closed); coupons `WELCOME10`, `SAVE20`, `OLD2023` (expired).
+- Seed data covers key cases: `ORD-1001` delivered (returnable), `ORD-1002` shipped, `ORD-1003` processing, `ORD-0950` delivered 65 days ago (window closed); coupons `WELCOME10`, `SAVE20`, `OLD2023` (expired). Product `OUT-005` and the gift-card FAQ carry planted prompt-injection text for the red-team evals; keep it.
 
 ## Known gaps (Phase 1 work)
 
 - No payment provider: `POST /checkout` marks the order PAID straight away (demo).
-- No CI yet.
+- CI (`.github/workflows/`) runs per component on changed paths. Evals need the `ANTHROPIC_API_KEY` repository secret.
 
 ## When unsure
 

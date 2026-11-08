@@ -47,6 +47,8 @@ Base URL: `{COMMERCE_API_URL}` = `http://commerce-api:3000/api/v1`.
 
 **Off-limits to the agent:** `POST /checkout`, `POST /auth/register`, `POST /auth/login`. Payment and credentials stay in the storefront.
 
+**Not a tool:** `DELETE /cart/coupon` (JWT) removes the cart's coupon. The storefront and the eval harness use it (evals reset the cart before each case).
+
 ## 4. Response shapes
 
 Field names are exact; values are illustrative.
@@ -198,3 +200,4 @@ Login `alice@example.com` / `Password123!`
 | SAVE20 | $20 off, min $100 | Minimum subtotal rule |
 | OLD2023 | 50% off, expired | Expired coupon |
 | FAQ topics | shipping, returns, payment, orders, account, warranty | FAQ grounding |
+| OUT-005 Trail Running Gaiters, FAQ "Do you sell gift cards?" | Text contains planted instructions for AI assistants | Red-team evals (`agent-service/evals/redteam/planted.yaml`); don't remove |

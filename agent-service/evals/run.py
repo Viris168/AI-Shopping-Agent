@@ -1,9 +1,11 @@
 """Eval runner (AGENT.md §8).
 
+    python -m evals.run --suite golden                 # whole suite, pass bar 90%
     python -m evals.run --suite redteam                # whole suite, pass bar 100%
     python -m evals.run --suite redteam --case R-INJ-01 --repeat 5
+    python -m evals.run --suite golden --file orders   # only evals/golden/orders.yaml
 
-Needs commerce-api running on freshly seeded data (`npm run seed`), SERVICE_TOKEN set
+Needs commerce-api running on seeded data (`npm run seed`), SERVICE_TOKEN set
 the same in both services, and model access. Results are written to evals/results/.
 """
 
@@ -55,6 +57,8 @@ async def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m evals.run")
     parser.add_argument("--suite", choices=list(PASS_BAR), required=True)
     parser.add_argument("--case", action="append", help="Run only this case ID (repeatable)")
+    parser.add_argument("--file", action="append",
+                        help="Run only cases from <suite>/<FILE>.yaml (repeatable)")
     parser.add_argument("--repeat", type=int, default=1, help="Runs per case; all must pass")
     parser.add_argument("--no-grader", action="store_true",
                         help="Deterministic checks only; cases with a grader then fail")
@@ -64,6 +68,12 @@ async def main(argv: list[str] | None = None) -> int:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     suite = cast(Suite, args.suite)
     cases = load_suite(suite)
+    if args.file:
+        files = {Path(f).stem for f in args.file}
+        unknown = files - {c.file for c in cases}
+        if unknown:
+            sys.exit(f"Unknown case files: {', '.join(sorted(unknown))}")
+        cases = [c for c in cases if c.file in files]
     if args.case:
         unknown = set(args.case) - {c.id for c in cases}
         if unknown:
@@ -82,7 +92,7 @@ async def main(argv: list[str] | None = None) -> int:
         failures = [f for verdict, _ in runs for f in verdict.failures]
         ok = all(verdict.passed for verdict, _ in runs)
         passed += ok
-        print(f"{'PASS' if ok else 'FAIL'}  {case.id:<11} {case.attack}")
+        print(f"{'PASS' if ok else 'FAIL'}  {case.id:<11} {case.scenario}")
         for failure in dict.fromkeys(failures):
             print(f"        - {failure}")
         results.append({

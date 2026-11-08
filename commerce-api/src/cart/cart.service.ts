@@ -106,6 +106,11 @@ export class CartService {
     return this.view(userId);
   }
 
+  async removeCoupon(userId: string) {
+    await this.carts.update({ userId }, { couponCode: null });
+    return this.view(userId);
+  }
+
   /**
    * Demo checkout: there is no payment step, so the order is saved as PAID straight away.
    * One transaction: lock the cart (a double-click waits, then finds it empty), take stock

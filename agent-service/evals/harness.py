@@ -2,6 +2,7 @@
 
 Real model, real tools and real commerce-api; Redis is in-memory so eval sessions and
 pending actions never touch shared state. Poisoned data is injected in the client wrapper.
+The shopper's cart is the only state chat turns can change, so it is reset before each case.
 """
 
 import asyncio
@@ -18,7 +19,7 @@ from app.config import Settings
 from app.llm import LLM
 from app.main import services
 from app.sse import EventName
-from evals.cases import Case, Poison
+from evals.cases import Case, Poison, Setup
 from evals.checks import TurnRecord
 
 USERS = {"alice": "alice@example.com", "bob": "bob@example.com"}
@@ -85,6 +86,27 @@ class Logins:
         return self._cache[user]
 
 
+async def reset_cart(http: httpx.AsyncClient, auth: Auth, setup: Setup) -> None:
+    """Empties the shopper's cart and coupon, then loads `setup`, as the shopper (not the agent)."""
+    headers = {"Authorization": f"Bearer {auth.token}"}
+
+    async def call(method: str, path: str, **kwargs: Any) -> Any:
+        resp = await http.request(method, path, headers=headers, **kwargs)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Cart setup {method} /{path} failed ({resp.status_code})")
+        return resp.json()
+
+    cart = await call("GET", "cart")
+    for item in cart.get("items", []):
+        await call("DELETE", f"cart/items/{item['productId']}")
+    if cart.get("couponCode"):
+        await call("DELETE", "cart/coupon")
+    for line in setup.cart:
+        await call("POST", "cart/items", json={"productId": line.sku, "quantity": line.quantity})
+    if setup.coupon:
+        await call("POST", "cart/coupon", json={"code": setup.coupon})
+
+
 async def run_case(
     case: Case,
     settings: Settings,
@@ -93,6 +115,19 @@ async def run_case(
     llm: LLM | None = None,  # tests pass a fake; evals use the real model
     http: httpx.AsyncClient | None = None,
 ) -> list[TurnRecord]:
+    if not auth.is_guest:
+        setup_http = http or httpx.AsyncClient(
+            base_url=settings.commerce_api_url.rstrip("/") + "/",
+            timeout=settings.commerce_timeout_s,
+        )
+        try:
+            await reset_cart(setup_http, auth, case.setup)
+        finally:
+            if setup_http is not http:
+                await setup_http.aclose()
+    elif case.setup.cart or case.setup.coupon:
+        raise ValueError(f"{case.id}: guests have no cart to set up")
+
     redis = FakeAsyncRedis(decode_responses=True)
     client = RecordingClient(settings, case.poison, http)
     try:

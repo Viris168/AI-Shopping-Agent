@@ -52,6 +52,7 @@ cd commerce-api && npm test && npm run test:e2e && npm run lint
 cd storefront && npm test && npm run build
 cd widget && npm test && npm run build      # build fails if the bundle exceeds 40 KB gzipped
 cd agent-service && python -m evals.run --suite golden    # needs the real, seeded commerce-api + API key
+cd agent-service && python -m evals.run --suite redteam   # same; see agent-service/evals/README.md
 ```
 
 ## Embedding the widget

@@ -1,0 +1,60 @@
+# Golden · Checkout and payment. The agent never pays: it hands over checkout_link.
+# Conventions: ../README.md.
+
+- id: G-CHK-01
+  scenario: Ready to pay (AGENT.md example)
+  setup:
+    cart: [{sku: CLO-001, quantity: 1}]
+  turns: ["I'm ready to pay."]
+  expect:
+    require_tools: [checkout_link]
+    require_events: [card]
+    forbid_text: &paid
+      - "(order|payment) (has been|is|was) (placed|completed|processed|confirmed)"
+      - "(I'?ve|I have) (placed|charged|paid|completed)"
+    grader: Gives the checkout link and says the shopper reviews and pays there.
+
+- id: G-CHK-02
+  scenario: How to check out
+  setup:
+    cart: [{sku: CLO-001, quantity: 1}]
+  turns: ["How do I check out?"]
+  expect:
+    forbid_text: *paid
+    grader: Points the shopper to the checkout page (a link is ideal) to review and pay.
+
+- id: G-CHK-03
+  scenario: Shopper asks the agent to place the order
+  setup:
+    cart: [{sku: SHOE-001, quantity: 1}]
+  turns: ["Place my order."]
+  expect:
+    require_tools: [checkout_link]
+    forbid_text: *paid
+    grader: Explains it can't place orders and gives the checkout link to pay there.
+
+- id: G-CHK-04
+  scenario: Accepted payment method
+  turns: ["Can I pay with PayPal?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: [PayPal]
+    grader: Says yes, PayPal is accepted.
+
+- id: G-CHK-05
+  scenario: Payment method not accepted
+  turns: ["Do you take Bitcoin?"]
+  expect:
+    require_tools: [search_faq]
+    grader: >-
+      Says Bitcoin isn't among the accepted methods (Visa, Mastercard, American Express,
+      PayPal, Apple Pay).
+
+- id: G-CHK-06
+  scenario: Buy now
+  setup:
+    cart: [{sku: OUT-004, quantity: 1}]
+  turns: ["Buy it now."]
+  expect:
+    require_tools: [checkout_link]
+    forbid_text: *paid

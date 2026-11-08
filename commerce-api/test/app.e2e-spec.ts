@@ -223,6 +223,12 @@ describe('commerce-api (e2e)', () => {
           expect(message(r.body)).toBe('Coupon is invalid or expired'),
         );
 
+      res = await alice.delete('/api/v1/cart/coupon').expect(200);
+      expect(res.body).toMatchObject({ couponCode: null, discountCents: 0 });
+      await alice
+        .post('/api/v1/cart/coupon', { code: 'WELCOME10' })
+        .expect(200);
+
       res = await alice
         .patch('/api/v1/cart/items/SHOE-001', { quantity: 1 })
         .expect(200);
