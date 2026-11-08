@@ -142,7 +142,7 @@ Exit gates per phase are listed in [ARCHITECTURE.md §12](./ARCHITECTURE.md#12-r
 | Prompt injection via product or FAQ text | Shopper-scoped token; confirm on click; tool output treated as data |
 | All agent traffic throttled by shared IP limit | Per-user throttling (Phase 1) |
 | Model API outage | Timeouts, fallback card, kill switch |
-| Keyword FAQ search misses questions | Monitor handoffs; pgvector hybrid search post-launch |
+| Keyword search misses casually worded questions | Hybrid search (pgvector + keyword, RRF) for products and FAQ; similarity floors keep off-topic questions empty; monitor handoffs |
 | Cost growth | Prompt caching, summarisation, budgets, alerts |
 
 ## 12. Open questions

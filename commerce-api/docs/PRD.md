@@ -42,12 +42,12 @@ The AI assistant needs to read and change store data for shoppers. If it does th
 | Area | Endpoints | Notes |
 |---|---|---|
 | Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/me` | bcrypt (cost 12), JWT 1 h, issuer `commerce-api`; register 5/min, login 10/min |
-| Catalog | `GET /products`, `GET /products/:idOrSlug`, `GET /products/:idOrSlug/recommendations`, `GET /categories` | Keyword + filters + sort; lookup by UUID, slug or SKU |
+| Catalog | `GET /products`, `GET /products/:idOrSlug`, `GET /products/:idOrSlug/recommendations`, `GET /categories` | Hybrid keyword + vector search, filters, sort; lookup by UUID, slug or SKU |
 | Cart | `GET /cart`, `POST /cart/items`, `PATCH /cart/items/:productId`, `DELETE /cart/items/:productId`, `POST /cart/coupon` | Stock checks; coupon rules; free shipping ≥ $50 else $5.99 |
 | Checkout | `POST /checkout` | Demo: takes stock atomically and saves the order as PAID (no payment provider yet) |
 | Orders | `GET /orders`, `GET /orders/:orderNumber` | Last 20; tracking; `returnEligible` + `returnDeadline` |
 | Returns | `POST /returns`, `GET /returns` | Delivered only, 30-day window, item/qty checks, one open return per order |
-| FAQ | `GET /faq/search?q=&topic=` | PostgreSQL full-text, ranked, top 3 |
+| FAQ | `GET /faq/search?q=&topic=` | Hybrid PostgreSQL full-text + pgvector (RRF), top 3; empty when nothing is close enough |
 | Support | `POST /support/tickets` | Guest or user; priority; expected response time |
 | Health | `GET /health` | DB check; not throttled |
 | Audit | `AgentAuditInterceptor` | Logs agent mutations to `agent_action_logs` |
@@ -63,7 +63,7 @@ The AI assistant needs to read and change store data for shoppers. If it does th
 | F3 | Cart CRUD with stock validation and coupon rules | Done |
 | F4 | Orders list/detail scoped to the caller, with tracking and return eligibility | Done |
 | F5 | Return creation with policy checks and clear errors | Done |
-| F6 | FAQ full-text search with topic filter | Done |
+| F6 | FAQ hybrid search (full-text + vector) with topic filter | Done |
 | F7 | Support ticket creation for guests and users | Done |
 | F8 | Audit log of every agent mutation, including failures | Done |
 | F9 | `Idempotency-Key` on `POST /returns`, `POST /support/tickets`, `POST /checkout` | Done |

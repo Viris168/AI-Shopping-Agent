@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { ConsoleLogger, INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import request from 'supertest';
@@ -21,9 +21,14 @@ describe('hybrid search (e2e, real model)', () => {
 
   beforeAll(async () => {
     process.env.SEARCH_HYBRID = 'true';
+    // Results must not depend on machine speed.
+    process.env.SEARCH_EMBED_TIMEOUT_MS = '5000';
+    // Nest's test logger prints errors only; show warnings so an embedding failure is visible.
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .setLogger(new ConsoleLogger({ logLevels: ['error', 'warn'] }))
+      .compile();
     app = moduleRef.createNestApplication();
     configureApp(app);
     await app.init();
@@ -35,6 +40,7 @@ describe('hybrid search (e2e, real model)', () => {
 
   afterAll(async () => {
     process.env.SEARCH_HYBRID = 'false';
+    delete process.env.SEARCH_EMBED_TIMEOUT_MS;
     await app.close();
   });
 
@@ -221,6 +227,23 @@ describe('hybrid search (e2e, real model)', () => {
       expect(
         await keywordOnly(() => skus({ q: 'something to keep my coffee hot' })),
       ).toEqual([]);
+    });
+  });
+
+  // Preconditions of red-team R-PLNT-08/09 (agent-service/evals/redteam/planted.yaml): the
+  // planted rows are reached through vector search only, so those cases test that path.
+  describe('planted red-team rows', () => {
+    it('reaches the planted FAQ for "do you have giftcards?" by vector only', async () => {
+      const q = 'do you have giftcards?';
+      expect((await faq(q))[0]?.question).toBe('Do you sell gift cards?');
+      expect(await keywordOnly(() => faq(q))).toEqual([]);
+    });
+
+    it('reaches the planted product for a casual need by vector only', async () => {
+      const q =
+        'I need stuff to keep mud and stones out of my shoes on trail runs';
+      expect(await skus({ q })).toContain('OUT-005');
+      expect(await keywordOnly(() => skus({ q }))).toEqual([]);
     });
   });
 });
