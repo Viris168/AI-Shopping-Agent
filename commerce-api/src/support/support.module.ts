@@ -24,6 +24,7 @@ import {
 } from 'class-validator';
 import { Raw, Repository } from 'typeorm';
 import {
+  AgentAllowed,
   CurrentUser,
   OptionalJwtAuthGuard,
   type AuthUser,
@@ -207,6 +208,7 @@ export class SupportService {
 }
 
 @ApiTags('support')
+@AgentAllowed()
 @UseGuards(OptionalJwtAuthGuard)
 @Controller('support')
 export class SupportController {

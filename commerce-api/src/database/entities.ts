@@ -56,6 +56,10 @@ export class User {
   @Column({ type: 'varchar', length: 20, default: 'CUSTOMER' })
   role: Role;
 
+  /** Signed into every token as `ver`; logout bumps it, which revokes all of the user's tokens. */
+  @Column({ name: 'token_version', type: 'integer', default: 0 })
+  tokenVersion: number;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }

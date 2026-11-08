@@ -8,6 +8,8 @@ The shopper's cart is the only state chat turns can change, so it is reset befor
 import asyncio
 import dataclasses
 import re
+import time
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -58,37 +60,79 @@ class RecordingClient(CommerceClient):
         return data
 
 
+@dataclasses.dataclass(frozen=True)
+class Shopper:
+    """A logged-in demo user: the chat token the agent gets, and the session for cart setup."""
+
+    auth: Auth
+    session_token: str | None
+
+
+GUEST_SHOPPER = Shopper(GUEST, None)
+# Renew tokens this long before they expire, so one never lapses mid-case.
+_RENEW_EARLY_S = 120
+
+
+def _expires(body: dict[str, Any]) -> float:
+    return datetime.fromisoformat(str(body["expiresAt"]).replace("Z", "+00:00")).timestamp()
+
+
 class Logins:
-    """One login per demo user per run: commerce-api limits logins to 10/min per IP."""
+    """One login per demo user per run (commerce-api limits logins to 10/min per IP).
+
+    Chat tokens last 15 minutes and sessions an hour, so both are renewed as a run goes on.
+    """
 
     def __init__(self, settings: Settings, password: str) -> None:
         self._settings = settings
         self._password = password
-        self._cache: dict[str, Auth] = {}
+        self._sessions: dict[str, tuple[str, float]] = {}
+        self._chats: dict[str, tuple[Auth, float]] = {}
 
-    async def auth(self, user: str) -> Auth:
+    def _url(self, path: str) -> str:
+        return self._settings.commerce_api_url.rstrip("/") + path
+
+    async def _session(self, http: httpx.AsyncClient, user: str) -> str:
+        cached = self._sessions.get(user)
+        if cached and cached[1] - _RENEW_EARLY_S > time.time():
+            return cached[0]
+        resp = await http.post(
+            self._url("/auth/login"), json={"email": USERS[user], "password": self._password}
+        )
+        token = resp.cookies.get("session")
+        if resp.status_code != 200 or not token:
+            raise RuntimeError(f"Login as {user} failed ({resp.status_code}); run `npm run seed`")
+        self._sessions[user] = (token, _expires(resp.json()))
+        return token
+
+    async def shopper(self, user: str) -> Shopper:
         if user == "guest":
-            return GUEST
-        if user not in self._cache:
-            url = self._settings.commerce_api_url.rstrip("/") + "/auth/login"
-            async with httpx.AsyncClient(timeout=10) as http:
-                resp = await http.post(url, json={"email": USERS[user], "password": self._password})
-            if resp.status_code != 200:
-                raise RuntimeError(
-                    f"Login as {user} failed ({resp.status_code}); run `npm run seed`"
+            return GUEST_SHOPPER
+        async with httpx.AsyncClient(timeout=10) as http:
+            session = await self._session(http, user)
+            cached = self._chats.get(user)
+            if not cached or cached[1] - _RENEW_EARLY_S <= time.time():
+                resp = await http.post(
+                    self._url("/auth/agent-token"), headers={"Authorization": f"Bearer {session}"}
                 )
-            auth = verify_bearer(f"Bearer {resp.json()['accessToken']}", self._settings)
-            if auth.is_guest:
-                raise RuntimeError(
-                    "Token rejected: agent-service JWT_SECRET must match commerce-api"
-                )
-            self._cache[user] = auth
-        return self._cache[user]
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Chat token for {user} failed ({resp.status_code})")
+                auth = verify_bearer(f"Bearer {resp.json()['token']}", self._settings)
+                if auth.is_guest:
+                    raise RuntimeError(
+                        "Token rejected: agent-service JWT_SECRET must match commerce-api"
+                    )
+                cached = (auth, _expires(resp.json()))
+                self._chats[user] = cached
+        return Shopper(cached[0], session)
 
 
-async def reset_cart(http: httpx.AsyncClient, auth: Auth, setup: Setup) -> None:
-    """Empties the shopper's cart and coupon, then loads `setup`, as the shopper (not the agent)."""
-    headers = {"Authorization": f"Bearer {auth.token}"}
+async def reset_cart(http: httpx.AsyncClient, session_token: str, setup: Setup) -> None:
+    """Empties the shopper's cart and coupon, then loads `setup`, as the shopper (not the agent).
+
+    Uses the storefront session: the chat token only works with agent-service's service token.
+    """
+    headers = {"Authorization": f"Bearer {session_token}"}
 
     async def call(method: str, path: str, **kwargs: Any) -> Any:
         resp = await http.request(method, path, headers=headers, **kwargs)
@@ -110,18 +154,21 @@ async def reset_cart(http: httpx.AsyncClient, auth: Auth, setup: Setup) -> None:
 async def run_case(
     case: Case,
     settings: Settings,
-    auth: Auth,
+    shopper: Shopper,
     *,
     llm: LLM | None = None,  # tests pass a fake; evals use the real model
     http: httpx.AsyncClient | None = None,
 ) -> list[TurnRecord]:
+    auth = shopper.auth
     if not auth.is_guest:
+        if shopper.session_token is None:
+            raise ValueError(f"{case.id}: a logged-in shopper needs a session for cart setup")
         setup_http = http or httpx.AsyncClient(
             base_url=settings.commerce_api_url.rstrip("/") + "/",
             timeout=settings.commerce_timeout_s,
         )
         try:
-            await reset_cart(setup_http, auth, case.setup)
+            await reset_cart(setup_http, shopper.session_token, case.setup)
         finally:
             if setup_http is not http:
                 await setup_http.aclose()

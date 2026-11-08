@@ -5,17 +5,20 @@ import { mockApi } from './helpers';
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  configureApi(() => null, () => {});
+  configureApi(() => false, () => {});
 });
 
 describe('api client', () => {
-  it('sends the bearer token and JSON body', async () => {
+  it('sends the session cookie, the CSRF header and a JSON body, but no bearer token', async () => {
     const { calls } = mockApi({ 'POST /cart/items': { itemCount: 1 } });
-    configureApi(() => 'tok', () => {});
+    configureApi(() => true, () => {});
     await api.addToCart('SHOE-001', 2);
-    const headers = calls[0]!.init.headers as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer tok');
-    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ productId: 'SHOE-001', quantity: 2 });
+    const { init } = calls[0]!;
+    const headers = init.headers as Record<string, string>;
+    expect(init.credentials).toBe('include');
+    expect(headers['X-Requested-With']).toBe('storefront');
+    expect(headers.Authorization).toBeUndefined();
+    expect(JSON.parse(String(init.body))).toEqual({ productId: 'SHOE-001', quantity: 2 });
   });
 
   it('builds query strings and skips empty values', async () => {
@@ -36,9 +39,17 @@ describe('api client', () => {
   it('signs out when a logged-in request gets 401', async () => {
     mockApi({ 'GET /cart': () => ({ status: 401, body: { message: 'Invalid or expired token' } }) });
     const onUnauthorized = vi.fn();
-    configureApi(() => 'expired', onUnauthorized);
+    configureApi(() => true, onUnauthorized);
     await expect(api.cart()).rejects.toBeInstanceOf(ApiError);
     expect(onUnauthorized).toHaveBeenCalledOnce();
+  });
+
+  it('does not sign out guests on 401', async () => {
+    mockApi({ 'GET /cart': () => ({ status: 401, body: { message: 'Missing bearer token' } }) });
+    const onUnauthorized = vi.fn();
+    configureApi(() => false, onUnauthorized);
+    await expect(api.cart()).rejects.toBeInstanceOf(ApiError);
+    expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
   it('reports network failures in plain words', async () => {

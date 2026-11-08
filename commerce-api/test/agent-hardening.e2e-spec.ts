@@ -7,8 +7,9 @@ import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import type { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module.js';
-import { DEMO_PASSWORD, seed } from '../src/database/seed.js';
+import { seed } from '../src/database/seed.js';
 import { configureApp } from '../src/setup.js';
+import { agentToken, login as loginAs } from './auth.js';
 
 // Agent readiness (docs/ARCHITECTURE.md §11.1–11.4): service token, audit failures,
 // idempotency keys and per-user throttling. Real Postgres (shop_test), reseeded per test.
@@ -29,6 +30,7 @@ describe('agent hardening (e2e)', () => {
   let db: DataSource;
   let aliceToken: string;
   let bobToken: string;
+  let aliceAgent: string;
 
   beforeAll(async () => {
     app = await createApp();
@@ -36,6 +38,7 @@ describe('agent hardening (e2e)', () => {
     await seed(db);
     aliceToken = await login();
     bobToken = await login('bob@example.com');
+    aliceAgent = await agentToken(app, aliceToken);
   });
 
   beforeEach(() => seed(db));
@@ -43,13 +46,7 @@ describe('agent hardening (e2e)', () => {
   afterAll(() => app.close());
 
   const http = () => request(app.getHttpServer());
-  const login = async (email = 'alice@example.com') =>
-    (
-      await http()
-        .post('/api/v1/auth/login')
-        .send({ email, password: DEMO_PASSWORD })
-        .expect(200)
-    ).body.accessToken as string;
+  const login = (email?: string) => loginAs(app, email);
   const agent = (token?: string) => {
     const post = (path: string, body?: object) => {
       const req = http()
@@ -92,7 +89,7 @@ describe('agent hardening (e2e)', () => {
     });
 
     it('accepts agent traffic with the token, and audits only that', async () => {
-      await agent(aliceToken)
+      await agent(aliceAgent)
         .post('/api/v1/cart/items', { productId: 'SHOE-002' })
         .expect(200);
       // A storefront mutation (no agent headers) isn't audited.
@@ -114,10 +111,10 @@ describe('agent hardening (e2e)', () => {
 
   describe('audit', () => {
     it('logs failed agent mutations with status and message', async () => {
-      await agent(aliceToken)
+      await agent(aliceAgent)
         .post('/api/v1/cart/items', { productId: 'SHOE-003' })
         .expect(400);
-      await agent(aliceToken)
+      await agent(aliceAgent)
         .post('/api/v1/returns', {
           orderNumber: 'ORD-9999',
           reason: 'x',
@@ -303,12 +300,10 @@ describe('per-user throttling (e2e)', () => {
   });
 
   const tokenFor = (sub = randomUUID()) =>
-    jwt.signAsync({
-      sub,
-      email: `${sub}@example.com`,
-      name: 'T',
-      role: 'CUSTOMER',
-    });
+    jwt.signAsync(
+      { sub, ver: 0, name: 'T', role: 'CUSTOMER' },
+      { audience: 'storefront' },
+    );
   const products = (token?: string) => {
     const req = request(app.getHttpServer()).get('/api/v1/products');
     return token ? req.auth(token, { type: 'bearer' }) : req;

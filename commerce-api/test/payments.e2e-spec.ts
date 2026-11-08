@@ -6,10 +6,11 @@ import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import type { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module.js';
-import { DEMO_PASSWORD, seed } from '../src/database/seed.js';
+import { seed } from '../src/database/seed.js';
 import { StockReleaseJob } from '../src/orders/stock-release.job.js';
 import { PaymentsService } from '../src/payments/payments.module.js';
 import { configureApp } from '../src/setup.js';
+import { login } from './auth.js';
 
 // Stripe Checkout + stock release (docs/ARCHITECTURE.md §11.7). Stripe's API is stubbed;
 // webhooks are signed for real with a test secret. Real Postgres (shop_test), reseeded per test.
@@ -37,12 +38,7 @@ describe('payments (e2e)', () => {
     db = app.get(getDataSourceToken());
     payments = app.get(PaymentsService);
     await seed(db);
-    token = (
-      await http()
-        .post('/api/v1/auth/login')
-        .send({ email: 'alice@example.com', password: DEMO_PASSWORD })
-        .expect(200)
-    ).body.accessToken;
+    token = await login(app);
   });
 
   beforeEach(async () => {
@@ -213,12 +209,7 @@ describe('payments (e2e)', () => {
 
     it("is not found for someone else's order", async () => {
       const { orderNumber } = await checkout();
-      const bob = (
-        await http()
-          .post('/api/v1/auth/login')
-          .send({ email: 'bob@example.com', password: DEMO_PASSWORD })
-          .expect(200)
-      ).body.accessToken;
+      const bob = await login(app, 'bob@example.com');
       await http()
         .post(`/api/v1/orders/${orderNumber}/payment`)
         .auth(bob, { type: 'bearer' })

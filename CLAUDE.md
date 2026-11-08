@@ -68,7 +68,7 @@ npm run build                     # dist/widget.js
 
 ## Non-negotiable rules
 
-1. **The agent never gets privileged access.** It calls `commerce-api` only with the shopper's JWT. Never add an admin/service credential that can read or change other users' data.
+1. **The agent never gets privileged access.** It calls `commerce-api` only with the shopper's short-lived chat token (JWT audience `agent`, customers only, `@AgentAllowed()` routes only). Never pass it the storefront session, and never add an admin/service credential that can read or change other users' data.
 2. **Ownership is enforced in the query.** In `commerce-api`, every user-scoped read/write filters by `userId` in the `where` clause (see `OrdersService.get`). Never fetch by ID and check afterwards.
 3. **The agent never calls `POST /checkout`.** Payment happens only on the storefront checkout page.
 4. **Confirm-first tools run only from `/v1/actions/{id}/confirm`.** Never execute `create_return` or `create_support_ticket` directly from the model's tool call.
@@ -101,7 +101,8 @@ npm run build                     # dist/widget.js
 
 - All API calls go through `src/api.ts`; show `ApiError.message` to shoppers as-is (commerce-api writes it for them).
 - Prices come formatted from the API; never compute or format money in the UI.
-- Login token lives in `localStorage` via `src/storage.ts`; a 401 on a logged-in request signs the shopper out.
+- The session is an httpOnly cookie set by commerce-api; page code never sees a token. `src/api.ts` sends `credentials: 'include'` and `X-Requested-With` (CSRF). Only the signed-in user (not secret) is cached in `localStorage` via `src/storage.ts`; a 401 on a signed-in request signs the shopper out.
+- The chat widget gets a short-lived chat token from `POST /auth/agent-token` (`ChatWidget.tsx`), never the session.
 - Shop filters live in the URL query string.
 
 ### widget

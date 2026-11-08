@@ -1,4 +1,5 @@
 import type {
+  AgentToken,
   Cart,
   Category,
   CheckoutResult,
@@ -27,15 +28,15 @@ export class ApiError extends Error {
   }
 }
 
-type TokenGetter = () => string | null;
+type SignedInCheck = () => boolean;
 type UnauthorizedHandler = () => void;
 
-let getToken: TokenGetter = () => null;
+let signedIn: SignedInCheck = () => false;
 let onUnauthorized: UnauthorizedHandler = () => {};
 
 /** Wired up once by AuthProvider. */
-export function configureApi(token: TokenGetter, unauthorized: UnauthorizedHandler) {
-  getToken = token;
+export function configureApi(isSignedIn: SignedInCheck, unauthorized: UnauthorizedHandler) {
+  signedIn = isSignedIn;
   onUnauthorized = unauthorized;
 }
 
@@ -53,15 +54,17 @@ export async function request<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const token = getToken();
+  const wasSignedIn = signedIn();
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
       method,
+      // The session cookie rides along; commerce-api needs X-Requested-With on cookie writes (CSRF).
+      credentials: 'include',
       headers: {
         Accept: 'application/json',
+        'X-Requested-With': 'storefront',
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
@@ -71,7 +74,7 @@ export async function request<T>(
   const data: unknown = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
     // An expired session on a logged-in request: sign out so the UI asks to log in again.
-    if (res.status === 401 && token) onUnauthorized();
+    if (res.status === 401 && wasSignedIn) onUnauthorized();
     throw new ApiError(res.status, messageOf(data, res.status));
   }
   return data as T;
@@ -103,7 +106,10 @@ export const api = {
     request<Session>('POST', '/auth/login', { email, password }),
   register: (name: string, email: string, password: string) =>
     request<Session>('POST', '/auth/register', { name, email, password }),
+  /** Revokes the session on every device and clears the cookie. */
+  logout: () => request<null>('POST', '/auth/logout'),
   me: () => request<User>('GET', '/auth/me'),
+  agentToken: () => request<AgentToken>('POST', '/auth/agent-token'),
 
   products: (query: ProductQuery) =>
     request<ProductPage>('GET', `/products${q({ ...query })}`),

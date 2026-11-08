@@ -8,9 +8,8 @@ import { CartPage } from '../src/pages/CartPage';
 import { emptyCart, mockApi, renderApp } from './helpers';
 
 const session = {
-  accessToken: 'tok',
-  tokenType: 'Bearer',
   user: { id: 'u1', email: 'alice@example.com', name: 'Alice', role: 'CUSTOMER' },
+  expiresAt: '2030-01-01T00:00:00.000Z',
 };
 const cartWithJacket = {
   ...emptyCart,
@@ -51,7 +50,17 @@ describe('login', () => {
     await user.type(screen.getByLabelText('Password'), 'Password123!');
     await user.click(screen.getByRole('button', { name: 'Log in' }));
     expect(await screen.findByText('Your orders page')).toBeTruthy();
-    expect(localStorage.getItem('storefront.token')).toBe('tok');
+    expect(JSON.parse(localStorage.getItem('storefront.user')!)).toMatchObject({ email: 'alice@example.com' });
+  });
+
+  it('signs out shoppers who still have a token from the old scheme', () => {
+    localStorage.setItem('storefront.token', 'old-bearer-token');
+    localStorage.setItem('storefront.user', JSON.stringify(session.user));
+    mockApi({});
+    renderApp(<LoginPage />, { path: '/login' });
+    expect(localStorage.getItem('storefront.token')).toBeNull();
+    expect(localStorage.getItem('storefront.user')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeTruthy();
   });
 
   it('shows the API error for a wrong password', async () => {
@@ -67,7 +76,6 @@ describe('login', () => {
 
 describe('cart and Pay', () => {
   it('applies a coupon, pays, and opens the PAID order', async () => {
-    localStorage.setItem('storefront.token', 'tok');
     localStorage.setItem('storefront.user', JSON.stringify(session.user));
     let paid = false;
     const { calls } = mockApi({
@@ -103,7 +111,7 @@ describe('cart and Pay', () => {
   });
 
   it('sends the shopper to the payment page when checkout returns one', async () => {
-    localStorage.setItem('storefront.token', 'tok');
+    localStorage.setItem('storefront.user', JSON.stringify(session.user));
     const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined);
     mockApi({
       'GET /cart': cartWithJacket,
@@ -132,7 +140,7 @@ describe('cart and Pay', () => {
   });
 
   it('keeps the shopper on the cart when Pay fails', async () => {
-    localStorage.setItem('storefront.token', 'tok');
+    localStorage.setItem('storefront.user', JSON.stringify(session.user));
     mockApi({
       'GET /cart': cartWithJacket,
       'POST /checkout': () => ({ status: 400, body: { message: 'Only 0 of "Packable Rain Jacket" in stock' } }),

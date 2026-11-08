@@ -18,7 +18,7 @@ Three deployable parts plus two data stores:
 | PostgreSQL | Managed | Built (schema) | All commerce data + `agent_action_logs`; new `conversations` table |
 | Redis | Managed | New | Sessions, pending actions, rate limits |
 
-**Core principle:** the agent has no database access and no privileged credentials. Every read or write goes through `commerce-api` using the shopper's own JWT, so the API's existing ownership checks protect data even if the model is manipulated.
+**Core principle:** the agent has no database access and no privileged credentials. Every read or write goes through `commerce-api` using a short-lived chat token for the shopper (never their storefront session), so the API's existing ownership checks protect data even if the model is manipulated.
 
 ## 2. System diagram
 
@@ -36,10 +36,10 @@ flowchart LR
   end
   CL[Claude API]
 
-  W -- "POST /v1/chat (SSE)<br/>Bearer shopper JWT" --> AS
+  W -- "POST /v1/chat (SSE)<br/>Bearer chat token" --> AS
   SF -- "browse, checkout" --> CA
   AS -- "messages + tools" --> CL
-  AS -- "tool calls<br/>Bearer shopper JWT<br/>X-Client: ai-agent<br/>X-Service-Token" --> CA
+  AS -- "tool calls<br/>Bearer chat token<br/>X-Client: ai-agent<br/>X-Service-Token" --> CA
   AS --- R
   CA --- PG
   AS -- "transcripts" --> PG
@@ -175,7 +175,7 @@ agent-service/
 | GET | `/v1/config` | — | `{enabled, rolloutPercent}` (widget kill switch and rollout, cached 60 s) |
 | GET | `/health` | — | `{status, redis, commerceApi}` |
 
-Auth: `Authorization: Bearer <shopper JWT>` optional (guest if absent/invalid).
+Auth: `Authorization: Bearer <chat token>` optional (guest if absent, invalid, not audience `agent`, or not a `CUSTOMER`).
 
 **SSE events**
 
@@ -210,7 +210,10 @@ Host integration:
 ```html
 <script src="https://chat.yourstore.com/v1/widget.js" data-store="main" async></script>
 <script>
-  window.ShopChat = { getToken: () => fetch('/session/token').then(r => r.ok ? r.text() : null) };
+  // A short-lived chat token (15 min, audience "agent"); the session itself stays an httpOnly cookie.
+  window.ShopChat = { getToken: () => fetch('/api/v1/auth/agent-token', {
+    method: 'POST', credentials: 'include', headers: { 'X-Requested-With': 'shop' },
+  }).then(r => r.ok ? r.json().then(b => b.token) : null) };
 </script>
 ```
 
@@ -250,12 +253,15 @@ agent-service appends each turn's new messages (masked) after the turn; a failed
 
 | Threat | Control |
 |---|---|
-| Agent reads another user's data | Shopper JWT forwarded; API filters by `userId` in queries |
+| Agent reads another user's data | Chat token forwarded; API filters by `userId` in queries |
+| Agent used for payment or account changes | Chat tokens only work on `@AgentAllowed()` routes; `/checkout`, payment and `/auth/*` return 403 |
+| Staff permissions reach the model | Chat tokens are issued to `CUSTOMER` accounts only; the role is re-checked on every call |
+| CSRF on the cookie session | `SameSite=Lax` + `X-Requested-With` required on cookie writes |
 | Prompt injection from product/FAQ text | Tool results wrapped as data; mutations need human click; scoped token; server-side validation |
 | Spoofed agent traffic | `X-Service-Token` required for `X-Client: ai-agent` |
 | Replay / double submit | Idempotency keys; single-use pending actions |
 | Abuse / cost attacks | Message length cap, per-user/IP rate limits, token budgets, bot protection if needed |
-| Token leakage | JWT never persisted; auth headers redacted in logs |
+| Token leakage | Session in an httpOnly cookie (no page access); chat token is 15 min and useless without the service token; logout bumps `token_version`, revoking all tokens; auth headers and cookies redacted in logs |
 | PII exposure | Masking in logs/traces/transcripts; 90-day retention |
 | XSS via model output | Widget renders text as text (no HTML); links allowlisted to store domains |
 

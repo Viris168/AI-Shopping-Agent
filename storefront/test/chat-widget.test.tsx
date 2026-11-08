@@ -5,9 +5,8 @@ import { ChatWidget } from '../src/components/ChatWidget';
 import { emptyCart, mockApi, renderApp } from './helpers';
 
 const session = {
-  accessToken: 'tok',
-  tokenType: 'Bearer',
   user: { id: 'u1', email: 'alice@example.com', name: 'Alice', role: 'CUSTOMER' },
+  expiresAt: '2030-01-01T00:00:00.000Z',
 };
 
 let auth: ReturnType<typeof useAuth>;
@@ -35,18 +34,42 @@ describe('chat widget', () => {
     expect(scripts[0]!.dataset.api).toBe(location.origin);
   });
 
-  it('gives the widget the current shopper token', async () => {
-    mockApi({ 'POST /auth/login': session, 'GET /cart': emptyCart });
+  it('gives the widget a short-lived chat token, never the session', async () => {
+    let issued = 0;
+    const { calls } = mockApi({
+      'POST /auth/login': session,
+      'POST /auth/logout': () => ({ status: 204, body: null }),
+      'POST /auth/agent-token': () => ({
+        body: { token: `chat-${++issued}`, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() },
+      }),
+      'GET /cart': emptyCart,
+    });
     renderApp(<Harness />);
-    expect(window.ShopChat?.getToken?.()).toBeNull();
+    expect(await window.ShopChat?.getToken?.()).toBeNull();
     await act(() => auth.login('alice@example.com', 'Password123!'));
-    expect(window.ShopChat?.getToken?.()).toBe('tok');
+    expect(await window.ShopChat?.getToken?.()).toBe('chat-1');
+    // Cached until shortly before it expires; concurrent asks share one request.
+    await Promise.all([window.ShopChat?.getToken?.(), window.ShopChat?.getToken?.()]);
+    expect(calls.filter((c) => c.path === '/auth/agent-token')).toHaveLength(1);
     act(() => auth.logout());
-    expect(window.ShopChat?.getToken?.()).toBeNull();
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/auth/logout')).toBe(true);
+    expect(await window.ShopChat?.getToken?.()).toBeNull();
+    // The next shopper gets a new token, not the cached one.
+    await act(() => auth.login('alice@example.com', 'Password123!'));
+    expect(await window.ShopChat?.getToken?.()).toBe('chat-2');
+  });
+
+  it('chats as a guest when no chat token is issued (e.g. staff accounts)', async () => {
+    localStorage.setItem('storefront.user', JSON.stringify(session.user));
+    mockApi({
+      'POST /auth/agent-token': () => ({ status: 403, body: { message: 'The assistant is for shopper accounts only' } }),
+      'GET /cart': emptyCart,
+    });
+    renderApp(<Harness />);
+    expect(await window.ShopChat?.getToken?.()).toBeNull();
   });
 
   it('reloads the cart when the agent changes it', async () => {
-    localStorage.setItem('storefront.token', 'tok');
     localStorage.setItem('storefront.user', JSON.stringify(session.user));
     const { calls } = mockApi({ 'GET /cart': emptyCart });
     renderApp(<Harness />);
@@ -56,7 +79,11 @@ describe('chat widget', () => {
   });
 
   it('clears the chat on logout but keeps it when a guest logs in', async () => {
-    mockApi({ 'POST /auth/login': session, 'GET /cart': emptyCart });
+    mockApi({
+      'POST /auth/login': session,
+      'POST /auth/logout': () => ({ status: 204, body: null }),
+      'GET /cart': emptyCart,
+    });
     renderApp(<Harness />);
     const reset = vi.fn();
     window.ShopChat!.reset = reset;

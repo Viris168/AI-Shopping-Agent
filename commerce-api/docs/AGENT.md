@@ -14,7 +14,7 @@ How the AI shopping agent (`agent-service`) talks to this backend: headers, auth
 
 | Header | Required | Value | Effect |
 |---|---|---|---|
-| `Authorization` | for login-only routes | `Bearer <shopper JWT>` | Identifies the shopper |
+| `Authorization` | for login-only routes | `Bearer <chat token>` | Identifies the shopper. Must be a chat token (audience `agent`, from `POST /auth/agent-token`), never the storefront session; anything else is 401 |
 | `X-Client` | yes | `ai-agent` | Marks agent traffic; 403 without a valid `X-Service-Token` |
 | `X-Conversation-Id` | yes | conversation UUID | Stored in audit log and tickets |
 | `X-Service-Token` | yes | `SERVICE_TOKEN` | Proves the call comes from agent-service; enables audit and the agent-guest rate-limit bucket |
@@ -45,7 +45,7 @@ Base URL: `{COMMERCE_API_URL}` = `http://commerce-api:3000/api/v1`.
 
 **Transcripts (agent-service internals, not model tools):** `POST /conversations/{id}/turns` `{messages[≤100], summary?, outcome?, tokensIn?, tokensOut?}` appends a turn, creating the row on first use; `POST /conversations/{id}/feedback` `{messageId, rating: up|down, comment?}`. Both: `{id}` is a UUID, optional JWT, `X-Service-Token` required (else 403 `Only the shopping assistant can do this`), `204` on success, `404 Conversation not found` if the row belongs to someone else. Messages must already be masked.
 
-**Off-limits to the agent:** `POST /checkout`, `POST /orders/{orderNumber}/payment` (403 with a service token), `POST /auth/register`, `POST /auth/login`. Payment and credentials stay in the storefront.
+**Off-limits to the agent:** every route without `@AgentAllowed()`, including `POST /checkout`, `POST /orders/{orderNumber}/payment`, and all of `/auth/*` (403 `This can only be done on the store website, not in chat` with a service token). Payment and credentials stay in the storefront.
 
 **Not a tool:** `DELETE /cart/coupon` (JWT) removes the cart's coupon. The storefront and the eval harness use it (evals reset the cart before each case).
 
@@ -133,6 +133,8 @@ Empty `results` means no grounded answer — the agent must say it isn't sure.
 | 400 | `Idempotency-Key must be 1–100 letters, digits or "-_.:" characters` | Bug in agent-service; don't retry |
 | 401 | `Missing bearer token` · `Invalid or expired token` | Ask shopper to log in (widget refreshes token) |
 | 403 | `Agent requests need a valid service token` | Config error (`SERVICE_TOKEN` mismatch); apologise and alert |
+| 403 | `This can only be done on the store website, not in chat` | Bug in agent-service (route not allowed); link to the storefront |
+| 403 | `The assistant is for shopper accounts only` | Staff account; continue as guest |
 | 404 | `Order not found` · `Product not found` · `Item not in cart` | Ask to double-check; never imply the order exists for someone else |
 | 409 | `This request is already being processed; please retry shortly` | Same key still running: wait, retry with the same key |
 | 422 | `This Idempotency-Key was already used for a different request` | Bug in agent-service (key reused); don't retry |

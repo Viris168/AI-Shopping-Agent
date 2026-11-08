@@ -46,7 +46,7 @@ async def run_one(
     case: Case, settings: Settings, logins: Logins, llm: LLM | None
 ) -> tuple[Verdict, list[dict[str, Any]]]:
     try:
-        turns = await run_case(case, settings, await logins.auth(case.user))
+        turns = await run_case(case, settings, await logins.shopper(case.user))
     except Exception as exc:  # a crash is a failed case, not a crashed run
         return Verdict(False, [f"error: {type(exc).__name__}: {exc}"]), []
     verdict = await score(case, turns, llm.complete_fast if llm else None)

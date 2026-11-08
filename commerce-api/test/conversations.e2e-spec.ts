@@ -6,8 +6,9 @@ import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import type { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module.js';
-import { DEMO_PASSWORD, seed } from '../src/database/seed.js';
+import { seed } from '../src/database/seed.js';
 import { configureApp } from '../src/setup.js';
+import { agentToken, login as loginAs } from './auth.js';
 
 // Transcript storage (docs/ARCHITECTURE.md §5.2): agent-only, owner-scoped, append-only.
 const SERVICE_TOKEN = process.env.SERVICE_TOKEN!;
@@ -17,6 +18,8 @@ describe('conversations (e2e)', () => {
   let db: DataSource;
   let aliceToken: string;
   let bobToken: string;
+  let aliceAgent: string;
+  let bobAgent: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -29,6 +32,8 @@ describe('conversations (e2e)', () => {
     await seed(db);
     aliceToken = await login();
     bobToken = await login('bob@example.com');
+    aliceAgent = await agentToken(app, aliceToken);
+    bobAgent = await agentToken(app, bobToken);
   });
 
   beforeEach(() => seed(db));
@@ -36,13 +41,7 @@ describe('conversations (e2e)', () => {
   afterAll(() => app.close());
 
   const http = () => request(app.getHttpServer());
-  const login = async (email = 'alice@example.com') =>
-    (
-      await http()
-        .post('/api/v1/auth/login')
-        .send({ email, password: DEMO_PASSWORD })
-        .expect(200)
-    ).body.accessToken as string;
+  const login = (email?: string) => loginAs(app, email);
   const agent = (path: string, body: object, token?: string) => {
     const req = http()
       .post(path)
@@ -72,7 +71,7 @@ describe('conversations (e2e)', () => {
     await turn(
       id,
       { messages: [msg('user', 'hi')], tokensIn: 10, tokensOut: 2 },
-      aliceToken,
+      aliceAgent,
     ).expect(204);
     await turn(
       id,
@@ -82,7 +81,7 @@ describe('conversations (e2e)', () => {
         tokensIn: 5,
         tokensOut: 1,
       },
-      aliceToken,
+      aliceAgent,
     ).expect(204);
 
     const saved = await row(id);
@@ -102,9 +101,9 @@ describe('conversations (e2e)', () => {
     await turn(
       id,
       { messages: [], outcome: 'handoff', summary: 'S1' },
-      aliceToken,
+      aliceAgent,
     ).expect(204);
-    await turn(id, { messages: [msg('user', 'x')] }, aliceToken).expect(204);
+    await turn(id, { messages: [msg('user', 'x')] }, aliceAgent).expect(204);
     expect(await row(id)).toMatchObject({ outcome: 'handoff', summary: 'S1' });
   });
 
@@ -113,7 +112,7 @@ describe('conversations (e2e)', () => {
     await turn(id, { messages: [msg('user', 'guest hi')] }).expect(204);
     expect((await row(id)).user_id).toBeNull();
 
-    await turn(id, { messages: [msg('user', 'now alice')] }, aliceToken).expect(
+    await turn(id, { messages: [msg('user', 'now alice')] }, aliceAgent).expect(
       204,
     );
     expect((await row(id)).user_id).toBe(await userId('alice@example.com'));
@@ -122,7 +121,7 @@ describe('conversations (e2e)', () => {
     await turn(id, { messages: [msg('user', 'guest again')] })
       .expect(404)
       .expect((r) => expect(r.body.message).toBe('Conversation not found'));
-    await turn(id, { messages: [msg('user', 'bob')] }, bobToken).expect(404);
+    await turn(id, { messages: [msg('user', 'bob')] }, bobAgent).expect(404);
     expect((await row(id)).messages).toHaveLength(2);
   });
 
@@ -140,16 +139,16 @@ describe('conversations (e2e)', () => {
   });
 
   it('validates the body and the id', async () => {
-    await turn(randomUUID(), { messages: 'nope' }, aliceToken).expect(400);
+    await turn(randomUUID(), { messages: 'nope' }, aliceAgent).expect(400);
     await turn(
       randomUUID(),
       { messages: [], outcome: 'won' },
-      aliceToken,
+      aliceAgent,
     ).expect(400);
-    await turn(randomUUID(), { messages: [], extra: 1 }, aliceToken).expect(
+    await turn(randomUUID(), { messages: [], extra: 1 }, aliceAgent).expect(
       400,
     );
-    await turn('not-a-uuid', { messages: [] }, aliceToken).expect(400);
+    await turn('not-a-uuid', { messages: [] }, aliceAgent).expect(400);
   });
 
   it('audits transcript writes without copying the transcript', async () => {
@@ -157,7 +156,7 @@ describe('conversations (e2e)', () => {
     await turn(
       id,
       { messages: [msg('user', 'secret-ish')] },
-      aliceToken,
+      aliceAgent,
     ).expect(204);
     await expect
       .poll(() =>
@@ -174,22 +173,22 @@ describe('conversations (e2e)', () => {
 
   it('stores feedback for the owner only', async () => {
     const id = randomUUID();
-    await turn(id, { messages: [msg('user', 'hi')] }, aliceToken).expect(204);
+    await turn(id, { messages: [msg('user', 'hi')] }, aliceAgent).expect(204);
     const fb = (body: object, token?: string) =>
       agent(`/api/v1/conversations/${id}/feedback`, body, token);
 
     await fb(
       { messageId: `${id}:1`, rating: 'down', comment: ' wrong size ' },
-      aliceToken,
+      aliceAgent,
     ).expect(204);
-    await fb({ messageId: `${id}:3`, rating: 'up' }, aliceToken).expect(204);
-    await fb({ messageId: `${id}:1`, rating: 'up' }, bobToken).expect(404);
+    await fb({ messageId: `${id}:3`, rating: 'up' }, aliceAgent).expect(204);
+    await fb({ messageId: `${id}:1`, rating: 'up' }, bobAgent).expect(404);
     await fb({ messageId: `${id}:1`, rating: 'up' }).expect(404);
-    await fb({ messageId: 'm', rating: 'meh' }, aliceToken).expect(400);
+    await fb({ messageId: 'm', rating: 'meh' }, aliceAgent).expect(400);
     await agent(
       `/api/v1/conversations/${randomUUID()}/feedback`,
       { messageId: 'm', rating: 'up' },
-      aliceToken,
+      aliceAgent,
     ).expect(404);
 
     const { feedback } = await row(id);

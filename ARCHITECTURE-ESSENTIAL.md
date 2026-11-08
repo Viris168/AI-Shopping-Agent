@@ -11,7 +11,7 @@ Browser                      Cloud
 │ (script tag) │            │  FastAPI + loop  │          └────────────┘
 └──────────────┘            │  confirm gate    │── Redis (sessions, actions, limits)
        │ browse/checkout    └────────┬─────────┘
-       ▼                             │ shopper JWT + X-Client: ai-agent
+       ▼                             │ chat token + X-Client: ai-agent
 ┌──────────────┐                     ▼
 │  Storefront  │──────────▶ ┌──────────────────┐
 └──────────────┘            │  commerce-api    │── PostgreSQL
@@ -27,7 +27,7 @@ Browser                      Cloud
 
 ## Five rules that hold the design together
 
-1. **The agent has no special access.** It calls `commerce-api` with the shopper's own JWT. The API's ownership checks protect data even if the model is tricked.
+1. **The agent has no special access.** It calls `commerce-api` with the shopper's short-lived chat token (15 min, customers only), which works only with agent-service's service token and only on the tool routes. The storefront session stays in an httpOnly cookie. The API's ownership checks protect data even if the model is tricked.
 2. **Facts come from tools.** Prices, stock, order status, policies and dates are never generated from memory.
 3. **Risky actions need a human click.** `create_return` and `create_support_ticket` become pending actions; only `POST /v1/actions/{id}/confirm` runs them.
 4. **The agent never takes payment.** It links to the storefront checkout; it never calls `POST /checkout` or `POST /orders/{n}/payment`.

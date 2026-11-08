@@ -12,7 +12,7 @@ const label = (key: string) => key.charAt(0).toUpperCase() + key.slice(1);
 
 export function ProductPage() {
   const { slug = '' } = useParams();
-  const { token } = useAuth();
+  const { user } = useAuth();
   const { setCart } = useCart();
   const navigate = useNavigate();
   const location = useLocation();
@@ -43,7 +43,7 @@ export function ProductPage() {
   const maxQty = Math.min(20, p.stock);
 
   const addToCart = async () => {
-    if (!token) {
+    if (!user) {
       navigate(`/login?next=${encodeURIComponent(location.pathname)}`);
       return;
     }
@@ -97,7 +97,7 @@ export function ProductPage() {
                 </select>
               </label>
               <button type="button" className="btn btn-primary" onClick={addToCart} disabled={adding}>
-                {adding ? 'Adding…' : token ? 'Add to cart' : 'Log in to buy'}
+                {adding ? 'Adding…' : user ? 'Add to cart' : 'Log in to buy'}
               </button>
             </div>
           )}

@@ -6,8 +6,9 @@ import type { App } from 'supertest/types.js';
 import type { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module.js';
 import { ConversationRetentionJob } from '../src/conversations/retention.job.js';
-import { DEMO_PASSWORD, seed } from '../src/database/seed.js';
+import { seed } from '../src/database/seed.js';
 import { configureApp } from '../src/setup.js';
+import { agentToken, login as loginAs } from './auth.js';
 
 // Integration tests against a real Postgres (shop_test), freshly seeded before each test.
 describe('commerce-api (e2e)', () => {
@@ -35,13 +36,7 @@ describe('commerce-api (e2e)', () => {
   afterAll(() => app.close());
 
   const http = () => request(app.getHttpServer());
-  const login = async (email = 'alice@example.com') =>
-    (
-      await http()
-        .post('/api/v1/auth/login')
-        .send({ email, password: DEMO_PASSWORD })
-        .expect(200)
-    ).body.accessToken as string;
+  const login = (email?: string) => loginAs(app, email);
   const as = (token: string) => ({
     get: (path: string) => http().get(path).auth(token, { type: 'bearer' }),
     post: (path: string, body?: object) =>
@@ -459,7 +454,7 @@ describe('commerce-api (e2e)', () => {
     });
 
     it('logs agent mutations with the conversation id', async () => {
-      const token = aliceToken;
+      const token = await agentToken(app, aliceToken);
       await http()
         .post('/api/v1/cart/items')
         .auth(token, { type: 'bearer' })
