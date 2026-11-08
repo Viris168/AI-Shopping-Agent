@@ -157,3 +157,61 @@
     require_tools: [search_faq]
     require_text: [Apple Pay]
     grader: Says yes, Apple Pay is accepted.
+
+# Casual wording (hybrid search, PLAN-17): keyword search alone misses these.
+
+- id: G-FAQ-21
+  scenario: Casual — sending things back
+  user: guest
+  turns: ["can I send stuff back if I don't like it?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['\b30\b']
+    grader: Explains unused items can be returned within 30 days of delivery for a full refund.
+
+- id: G-FAQ-22
+  scenario: Casual — when the money comes back
+  turns: ["when will I see my money again after I send something back?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['3\s*(-|–|to)\s*5']
+    grader: >-
+      Says refunds go to the original payment method 3-5 business days after the return is
+      received.
+
+- id: G-FAQ-23
+  scenario: Casual — how long delivery takes
+  user: guest
+  turns: ["my parcel is taking forever, how long is delivery meant to take?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['3\s*(-|–|to)\s*5']
+    grader: >-
+      Gives standard shipping as 3-5 business days (express 1-2 is a bonus). May offer to
+      check the order or connect a person; invents no tracking details.
+
+- id: G-FAQ-24
+  scenario: Casual — destination not covered
+  turns: ["do you guys deliver to Germany?"]
+  expect:
+    require_tools: [search_faq]
+    grader: >-
+      Says the store currently ships to the United States, Canada and Vietnam, so not
+      Germany. Does not say it ships to Germany.
+
+- id: G-FAQ-25
+  scenario: Casual — locked out
+  turns: ["I forgot my login, what do I do?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: [Forgot password]
+
+- id: G-FAQ-26
+  scenario: Not in the FAQ, but semantically close to the return policy
+  turns: ["Do you sell refurbished items?"]
+  expect:
+    require_tools: [search_faq]
+    grader: >-
+      Says it isn't sure / couldn't find anything about refurbished items and offers a
+      person. Does not claim the store sells refurbished items, and does not present the
+      return policy as the answer.
