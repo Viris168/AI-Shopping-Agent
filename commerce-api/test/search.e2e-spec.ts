@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { ConsoleLogger, INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import request from 'supertest';
@@ -21,9 +21,14 @@ describe('hybrid search (e2e, real model)', () => {
 
   beforeAll(async () => {
     process.env.SEARCH_HYBRID = 'true';
+    // Results must not depend on machine speed.
+    process.env.SEARCH_EMBED_TIMEOUT_MS = '5000';
+    // Nest's test logger prints errors only; show warnings so an embedding failure is visible.
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .setLogger(new ConsoleLogger({ logLevels: ['error', 'warn'] }))
+      .compile();
     app = moduleRef.createNestApplication();
     configureApp(app);
     await app.init();
@@ -35,6 +40,7 @@ describe('hybrid search (e2e, real model)', () => {
 
   afterAll(async () => {
     process.env.SEARCH_HYBRID = 'false';
+    delete process.env.SEARCH_EMBED_TIMEOUT_MS;
     await app.close();
   });
 

@@ -8,6 +8,7 @@ import { DataSource } from 'typeorm';
 import { Embedder } from './embedding.js';
 
 const CACHE_SIZE = 500;
+/** Override with SEARCH_EMBED_TIMEOUT_MS (read per query). */
 const QUERY_TIMEOUT_MS = 300;
 const RETRY_LOAD_MS = 60_000;
 
@@ -74,7 +75,10 @@ export class EmbeddingService implements OnApplicationBootstrap {
 
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), QUERY_TIMEOUT_MS);
+      timer = setTimeout(
+        () => resolve(null),
+        Number(process.env.SEARCH_EMBED_TIMEOUT_MS ?? QUERY_TIMEOUT_MS),
+      );
     });
     try {
       const vector = await Promise.race([
