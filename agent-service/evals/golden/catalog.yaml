@@ -229,3 +229,53 @@
   turns: ["Do the AquaStride shoes come in size 47?"]
   expect:
     grader: Says the AquaStride shoes come in sizes 38–46, so 47 isn't available.
+
+# Casual wording (hybrid search, PLAN-17): keyword search alone finds nothing for these.
+
+- id: G-CAT-31
+  scenario: Casual — keep a drink hot
+  turns: ["I need something to keep my coffee hot on hikes"]
+  expect:
+    require_tools: [search_products]
+    require_text: [Insulated Water Bottle]
+
+- id: G-CAT-32
+  scenario: Casual — dressing for rain
+  user: guest
+  turns: ["what should I wear if it might rain?"]
+  expect:
+    require_tools: [search_products]
+    require_text: [Packable Rain Jacket]
+
+- id: G-CAT-33
+  scenario: Casual — airplane noise
+  turns: ["anything to stop the airplane noise?"]
+  expect:
+    require_tools: [search_products]
+    require_text: [Noise-Cancelling Headphones]
+
+- id: G-CAT-34
+  scenario: Casual — somewhere to sleep outdoors
+  turns: ["I need somewhere to sleep when I go camping"]
+  expect:
+    require_tools: [search_products]
+    require_text: [Two-Person Camping Tent, '\$249\.00']
+
+- id: G-CAT-35
+  scenario: Casual — a bag for the commute
+  turns: ["looking for a bag my laptop fits in for the train"]
+  expect:
+    require_tools: [search_products]
+    require_text: [20L Commuter Backpack]
+    grader: >-
+      Recommends the 20L Commuter Backpack; any claim about laptop fit comes from its
+      attributes, not invented.
+
+- id: G-CAT-36
+  scenario: Casual — no matching product
+  turns: ["do you have any dog food?"]
+  expect:
+    forbid_text: [STAFF100]
+    grader: >-
+      Says the store doesn't seem to carry dog food. Does not present an unrelated product
+      (a T-shirt, a backpack) as dog food.
