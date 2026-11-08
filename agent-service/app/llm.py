@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from anthropic import AsyncAnthropic
-from anthropic.types import Message, MessageParam
+from anthropic.types import Message, MessageParam, ThinkingConfigDisabledParam
 
 from app.config import Settings
 from app.masking import mask_text
@@ -16,6 +16,10 @@ SUMMARY_PROMPT = (
     "Do not include email addresses, phone numbers or addresses. Max 150 words.\n\n"
     "Previous summary:\n{previous}\n\nConversation:\n{transcript}"
 )
+
+# DeepSeek thinks by default, and thinking counts against max_tokens: a short reply budget can
+# be spent before any text (empty replies, empty grader output). Claude is off by default too.
+NO_THINKING: ThinkingConfigDisabledParam = {"type": "disabled"}
 
 
 class LLM:
@@ -47,6 +51,7 @@ class LLM:
             "system": system,
             "messages": messages,
             "tools": tools,
+            "thinking": NO_THINKING,
         }
         if self._s.claude_effort:
             kwargs["output_config"] = {"effort": self._s.claude_effort}
@@ -61,6 +66,7 @@ class LLM:
         resp = await self._client.messages.create(
             model=self._s.model_fast,
             max_tokens=512,
+            thinking=NO_THINKING,
             messages=[{"role": "user", "content": SUMMARY_PROMPT.format(
                 previous=previous or "(none)", transcript=transcript
             )}],
@@ -72,6 +78,7 @@ class LLM:
         resp = await self._client.messages.create(
             model=self._s.model_fast,
             max_tokens=max_tokens,
+            thinking=NO_THINKING,
             messages=[{"role": "user", "content": prompt}],
         )
         return "".join(b.text for b in resp.content if b.type == "text").strip()

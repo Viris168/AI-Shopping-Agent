@@ -264,6 +264,21 @@ describe('commerce-api (e2e)', () => {
         );
     });
 
+    it('caps a cart line at 20 across repeated adds', async () => {
+      const alice = as(aliceToken);
+      await alice
+        .post('/api/v1/cart/items', { productId: 'CLO-001', quantity: 20 })
+        .expect(200);
+      await alice
+        .post('/api/v1/cart/items', { productId: 'CLO-001', quantity: 5 })
+        .expect(400)
+        .expect((r) =>
+          expect(message(r.body)).toBe(
+            'You can have up to 20 of one item in your cart',
+          ),
+        );
+    });
+
     it('Pay marks the order PAID, takes stock and empties the cart', async () => {
       const alice = as(aliceToken);
       await alice

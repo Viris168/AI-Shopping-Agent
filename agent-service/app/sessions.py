@@ -13,6 +13,7 @@ from redis.asyncio import Redis
 
 from app.auth import Auth
 from app.commerce_client import ApiError, CommerceClient, seg
+from app.guardrails import defang_control_tags
 from app.masking import mask, mask_text
 
 log = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ class Session:
             self.messages.append({"role": "user", "content": blocks})
 
     def append_user(self, text: str) -> None:
-        self._append_user_blocks([{"type": "text", "text": text}])
+        self._append_user_blocks([{"type": "text", "text": defang_control_tags(text)}])
 
     def append_assistant(self, content: Sequence[ContentBlock]) -> None:
         self.messages.append({

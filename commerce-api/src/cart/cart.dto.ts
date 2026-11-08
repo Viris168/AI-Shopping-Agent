@@ -11,6 +11,9 @@ import {
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 
+/** Most of one product a cart line can hold, across repeated adds too. */
+export const MAX_QTY_PER_ITEM = 20;
+
 export class AddCartItemDto {
   /** Product UUID, SKU or slug. */
   @Transform(trim)
@@ -21,7 +24,7 @@ export class AddCartItemDto {
 
   @IsInt()
   @Min(1)
-  @Max(20)
+  @Max(MAX_QTY_PER_ITEM)
   quantity = 1;
 }
 
@@ -29,7 +32,7 @@ export class UpdateCartItemDto {
   /** 0 removes the item. */
   @IsInt()
   @Min(0)
-  @Max(20)
+  @Max(MAX_QTY_PER_ITEM)
   quantity: number;
 }
 
