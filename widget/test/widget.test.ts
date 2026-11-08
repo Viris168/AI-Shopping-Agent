@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { mockFetch, sse, sseResponse } from './helpers';
+import { jsonResponse, mockFetch, sse, sseResponse } from './helpers';
 
 let root: ShadowRoot;
 const $ = <T extends Element>(sel: string) => root.querySelector<T>(sel)!;
@@ -12,7 +12,10 @@ beforeAll(async () => {
   script.dataset.api = 'https://chat.shop.test';
   script.dataset.store = 'test';
   document.body.append(script);
+  const fetch = mockFetch(jsonResponse(200, { enabled: true, rolloutPercent: 100 }));
   await import('../src/index');
+  await vi.waitFor(() => expect(document.getElementById('shopchat-root')).not.toBeNull());
+  expect(fetch).toHaveBeenCalledWith('https://chat.shop.test/v1/config', { credentials: 'omit' });
   root = document.getElementById('shopchat-root')!.shadowRoot!;
 });
 
@@ -64,4 +67,17 @@ describe('widget', () => {
     expect($('.badge').textContent).toBe('Only 3 left');
     expect(root.querySelector('.feedback')).not.toBeNull();
   });
-});
+
+  it('shows the fallback card with a retry when the model is down', async () => {
+    mockFetch(sseResponse(sse(['error', { code: 'model_unavailable', message: 'down', retryable: true }], ['done', {}])));
+    const input = $<HTMLTextAreaElement>('textarea');
+    input.value = 'hello?';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect($('.card-fallback')).not.toBeNull());
+
+    const card = $('.card-fallback');
+    expect(card.getAttribute('role')).toBe('alert');
+    expect(card.querySelector('.card-title')!.textContent).toBe("The assistant isn't available right now");
+    expect([...card.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Try again']);
+    expect(root.querySelector('.card-error')).toBeNull();
+  });});

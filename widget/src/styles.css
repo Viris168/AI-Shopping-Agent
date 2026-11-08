@@ -121,6 +121,7 @@ button, textarea, a { font: inherit; color: inherit; }
 .card-confirm { border-color: var(--sc-accent); border-width: 2px; }
 .card-success { border-color: var(--sc-success); }
 .card-error { border-color: var(--sc-danger); }
+.card-fallback { background: var(--sc-surface); }
 .card-error p { margin: 0; color: var(--sc-danger); }
 .card p { margin: 0; }
 .confirm-summary { font-weight: 550; }

@@ -130,7 +130,11 @@ export class Controller {
             update((m) => ({
               ...m,
               status: 'error',
-              error: { message: data.message || this.i18n.t('errGeneric'), retryable: Boolean(data.retryable) },
+              error: {
+                message: data.message || this.i18n.t('errGeneric'),
+                retryable: Boolean(data.retryable),
+                ...(data.code === 'model_unavailable' && { fallback: true }),
+              },
             }));
             break;
         }
@@ -165,7 +169,9 @@ export class Controller {
             : status === 0
               ? [t('errNetwork'), true]
               : [t('errGeneric'), true];
-    this.store.updateMessage(id, (m) => ({ ...m, status: 'error', error: { message, retryable } }));
+    // 503: the kill switch is on. Show the fallback card; the next page load hides the widget.
+    const error = { message, retryable, ...(status === 503 && { fallback: true }) };
+    this.store.updateMessage(id, (m) => ({ ...m, status: 'error', error }));
     return 'error';
   }
 

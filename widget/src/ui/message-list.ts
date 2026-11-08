@@ -1,4 +1,5 @@
 import { type CardContext, renderCard } from '../cards';
+import { fallback } from '../cards/fallback';
 import { button } from '../cards/product';
 import { el, linkify } from '../safe';
 import type { ChatState, Message } from '../state';
@@ -41,7 +42,9 @@ export function createMessageList(ctx: CardContext, actions: ListActions, helpUr
       const node = renderCard(card, ctx);
       if (node) root.append(node);
     }
-    if (m.status === 'error' && m.error) {
+    if (m.status === 'error' && m.error?.fallback) {
+      root.append(fallback(ctx, helpUrl, m.error.retryable ? () => actions.retry(m.id) : null));
+    } else if (m.status === 'error' && m.error) {
       const help = helpUrl && ctx.links.safeUrl(helpUrl);
       root.append(
         el('div', { class: 'card card-error', role: 'alert' },

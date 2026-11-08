@@ -15,7 +15,8 @@ export interface Message {
   status: 'streaming' | 'done' | 'error';
   /** Server messageId from the `meta` event; needed for thumbs up/down. */
   serverId?: string;
-  error?: { message: string; retryable: boolean };
+  /** `fallback`: the assistant itself is down or switched off, not just this reply. */
+  error?: { message: string; retryable: boolean; fallback?: boolean };
   rating?: 'up' | 'down';
 }
 

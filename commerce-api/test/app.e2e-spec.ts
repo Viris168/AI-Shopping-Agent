@@ -59,6 +59,17 @@ describe('commerce-api (e2e)', () => {
         .expect(200)
         .expect({ status: 'ok', database: 'up' }));
 
+    it("keeps the caller's X-Request-Id, and replaces an unsafe one", async () => {
+      await http()
+        .get('/api/v1/categories')
+        .set('X-Request-Id', 'turn-1234-abcd')
+        .expect('X-Request-Id', 'turn-1234-abcd');
+      const res = await http()
+        .get('/api/v1/categories')
+        .set('X-Request-Id', 'bad id with spaces');
+      expect(res.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
+    });
+
     it('searches with filters and returns the contract shape', async () => {
       const res = await http()
         .get('/api/v1/products')

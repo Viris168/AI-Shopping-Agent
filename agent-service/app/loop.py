@@ -10,6 +10,7 @@ from typing import Any, cast
 
 from anthropic.types import MessageParam
 
+from app import telemetry
 from app.actions import ActionStore, PendingAction
 from app.auth import Auth
 from app.commerce_client import CommerceClient
@@ -18,7 +19,7 @@ from app.guardrails import TokenBudget, suspect_facts, wrap_tool_result
 from app.llm import LLM
 from app.sessions import Session, SessionStore, TranscriptStore
 from app.sse import Emit
-from app.tools.registry import Registry, ToolContext, ToolOutput
+from app.tools.registry import Registry, Tool, ToolContext, ToolOutput
 
 log = logging.getLogger(__name__)
 
@@ -80,6 +81,31 @@ def tool_result(call_id: str, out: ToolOutput) -> dict[str, Any]:
     return block
 
 
+def tool_status(out: ToolOutput) -> str:
+    """ok; rejected = the request was refused (login, validation, not found: usually the
+    model's or shopper's input); error = the store failed (5xx, 429, unreachable)."""
+    if not out.is_error:
+        return "ok"
+    error = out.for_model.get("error")
+    status = error.get("status") if isinstance(error, dict) else None
+    return "error" if isinstance(status, int) and (status >= 500 or status == 429) else "rejected"
+
+
+async def run_tool(tool: Tool, raw: Any, ctx: ToolContext) -> ToolOutput:
+    """Run a tool under its own span; feeds the tool error-rate alert."""
+    watch = telemetry.Stopwatch()
+    with telemetry.span(f"tool {tool.name}", **{"gen_ai.tool.name": tool.name}) as span:
+        out = await tool.run(raw, ctx)
+        status = tool_status(out)
+        span.set_attribute("tool.status", status)
+        if status == "error":
+            telemetry.mark_error(span, "tool_error")
+    attrs = {"tool": tool.name, "status": status}
+    telemetry.tool_calls.add(1, attrs)
+    telemetry.tool_duration.record(watch.elapsed, attrs)
+    return out
+
+
 @dataclass
 class Agent:
     settings: Settings
@@ -100,6 +126,7 @@ class Agent:
     ) -> None:
         if user_msg is not None:
             session.append_user(user_msg)
+        telemetry.annotate(**{"conversation.id": session.id, "user.guest": auth.is_guest})
         tools = self.registry.schemas(auth)
         usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0}
         reply: list[str] = []
@@ -166,10 +193,11 @@ class Agent:
     ) -> ToolOutput:
         tool = self.registry.get(name)
         if tool is None:
+            telemetry.tool_calls.add(1, {"tool": "unknown", "status": "rejected"})
             return ToolOutput({"error": f"unknown tool {name}"}, is_error=True)
         # Guests never see login-only tools; if called anyway, prepare() returns login_required.
         if not tool.confirm:
-            out = await tool.run(raw, self._ctx(auth, session.id))
+            out = await run_tool(tool, raw, self._ctx(auth, session.id))
             if out.card:
                 emit("card", out.card)
             return out
@@ -183,6 +211,7 @@ class Agent:
             summary=tool.describe(prepared), auth=auth, conversation_id=session.id,
         )
         emit("confirm_request", action.public())
+        telemetry.actions.add(1, {"tool": tool.name, "result": "requested"})
         return ToolOutput({"status": "awaiting_user_confirmation"})
 
     async def confirm(self, action: PendingAction, auth: Auth, emit: Emit) -> None:
@@ -190,7 +219,14 @@ class Agent:
         tool = self.registry.get(action.tool)
         if tool is None:
             raise RuntimeError(f"unknown action tool {action.tool}")
-        out = await tool.run(action.args, self._ctx(auth, action.conversation_id, action.idem_key))
+        telemetry.annotate(**{"conversation.id": action.conversation_id})
+        ctx = self._ctx(auth, action.conversation_id, action.idem_key)
+        out = await run_tool(tool, action.args, ctx)
+        telemetry.actions.add(1, {
+            "tool": action.tool, "result": "confirmed" if not out.is_error else "failed",
+        })
+        if action.tool == "create_support_ticket" and not out.is_error:
+            telemetry.handoffs.add(1)
         if out.card:
             emit("card", out.card)
             if action.tool == "create_support_ticket":
@@ -210,6 +246,7 @@ class Agent:
         await self.run_turn(session, None, auth, emit)
 
     async def cancel(self, action: PendingAction, auth: Auth) -> None:
+        telemetry.actions.add(1, {"tool": action.tool, "result": "cancelled"})
         session = await self.sessions.get(action.conversation_id)
         if session is not None:
             session.append_event(f"Shopper pressed Cancel for {action.tool}.")

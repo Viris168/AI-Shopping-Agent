@@ -72,6 +72,8 @@ Optional attributes:
 
 Theming uses CSS variables on `#shopchat-root`: `--shopchat-accent`, `--shopchat-bg`, `--shopchat-text`, `--shopchat-radius`, `--shopchat-font` and more.
 
+The widget mounts only if agent-service's `GET /v1/config` says the assistant is on and this browser is inside the rollout percentage; staff can preview with `?shopchat=on` ([infra/monitoring](./infra/monitoring/README.md#rollout)). When the model is down or the assistant is switched off mid-chat, it shows a fallback card pointing at `data-help-url`.
+
 The widget fires `shopchat:open`, `shopchat:close` and `shopchat:cart-updated` (with the cart as `detail`) on `window`. It also adds `ShopChat.open()`, `.close()`, `.toggle()` and `.reset()`.
 
 ## Where agent-service differs from the docs
@@ -84,4 +86,4 @@ The widget fires `shopchat:open`, `shopchat:close` and `shopchat:cart-updated` (
 | `{auth_state}` and `{today}` sit mid-prompt | Login and Context sections go last | Keeps the fixed part cacheable (AGENT.md §2) |
 | ~150 golden and ~40 red-team cases | The 13 + 6 examples from AGENT.md §8; 2 red-team cases skipped | The skipped two need poisoned seed data |
 | Token budget per conversation | `TOKEN_BUDGET` = 300,000 | No number given; tune after beta |
-| OpenTelemetry, metrics, alerts (ARCHITECTURE §8) | Not built | Phase 3 |
+| Audit insert failure alert (ARCHITECTURE §8) | Rule written (`infra/monitoring/alerts-logs.yaml`), can't fire yet | Needs commerce-api logs shipped to Loki |
