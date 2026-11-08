@@ -20,6 +20,8 @@ export default defineConfig({
       SERVICE_TOKEN: 'test-service-token-at-least-32-characters',
       LOG_LEVEL: 'silent',
       RATE_LIMIT_PER_MIN: '10000',
+      // No embedding model in most suites; test/search.e2e-spec.ts switches it on.
+      SEARCH_HYBRID: 'false',
     },
   },
 });
