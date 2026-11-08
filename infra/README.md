@@ -15,7 +15,7 @@ manual run   ─► deploy-production.yml
 |---|---|
 | `compose.yml` | The stack on the VM: commerce-api, agent-service, edge (Caddy), optional postgres/redis, one-shot migrate |
 | `edge/Dockerfile`, `edge/Caddyfile` | TLS and routing (`API_DOMAIN` → commerce-api, `CHAT_DOMAIN` → agent-service), plus `/v1/widget.js` built in |
-| `deploy.sh` | Runs on the VM: pull → migrate → `up --wait` |
+| `deploy.sh` | Runs on the VM: pull → migrate → embed → `up --wait` |
 | `smoke.sh` | Runs from the runner against the public URLs |
 | `setup-github-env.sh` | Creates a GitHub Environment and fills in its secrets and variables |
 | `rollout-check.sh` | Exit gate for a rollout step: tool errors, cross-user rows, duplicate returns, transcript sample (read-only) |
@@ -33,7 +33,7 @@ stdin), and Compose passes them to the containers. They never go into an image.
 | `ANTHROPIC_API_KEY` | agent-service | DeepSeek key by default (`ANTHROPIC_BASE_URL`). Use a different key from CI's eval key |
 | `JWT_SECRET` | both | Same value for both services, different per environment, 32+ chars. Generated |
 | `SERVICE_TOKEN` | both | agent-service → commerce-api `X-Service-Token`, 32+ chars. Generated |
-| `DATABASE_URL` | commerce-api, migrate | Managed Postgres 16, or `postgres:5432` if bundled |
+| `DATABASE_URL` | commerce-api, migrate | Managed Postgres 16 with the `vector` extension available, or `postgres:5432` if bundled |
 | `REDIS_URL` | agent-service | Managed Redis, or `redis:6379` if bundled |
 | `POSTGRES_PASSWORD` | postgres | Only with `BUNDLED_DATASTORES=true` |
 | `DEPLOY_SSH_KEY` | workflow | Private half of a deploy-only key. Generated |

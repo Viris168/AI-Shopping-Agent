@@ -5,6 +5,7 @@ import { AgentHardening1794130000000 } from './1794130000000-AgentHardening.js';
 import { Conversations1794140351353 } from './1794140351353-Conversations.js';
 import { Payments1794163827211 } from './1794163827211-Payments.js';
 import { HelpdeskForwarding1794170000000 } from './1794170000000-HelpdeskForwarding.js';
+import { Embeddings1794180000000 } from './1794180000000-Embeddings.js';
 
 export const MIGRATIONS = [
   Init1794128955639,
@@ -13,4 +14,5 @@ export const MIGRATIONS = [
   Conversations1794140351353,
   Payments1794163827211,
   HelpdeskForwarding1794170000000,
+  Embeddings1794180000000,
 ];

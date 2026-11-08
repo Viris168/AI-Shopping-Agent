@@ -1,10 +1,19 @@
 FROM node:24-slim AS build
 WORKDIR /srv
 COPY package.json package-lock.json ./
+# CPU only: don't download onnxruntime's ~270 MB CUDA/TensorRT libraries (embedding model, src/search/).
+ENV ONNXRUNTIME_NODE_INSTALL=skip
 RUN npm ci
 COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY src ./src
-RUN npm run build && npm prune --omit=dev
+# Embedding runtime trimmed to what Linux needs: no macOS/Windows builds, no browser runtime
+# (onnxruntime-web, ~140 MB; transformers.js uses onnxruntime-node under Node).
+RUN npm run build && npm prune --omit=dev \
+  && rm -rf node_modules/onnxruntime-node/bin/napi-v*/darwin node_modules/onnxruntime-node/bin/napi-v*/win32 \
+     node_modules/onnxruntime-web
+# Bake the embedding model into node_modules so production never downloads it (src/search/embedding.ts).
+# Embeds one query, so the build fails if the trimmed runtime can't run the model.
+RUN node -e "import('./dist/search/embedding.js').then(async (m) => { const v = await new m.Embedder().embedQuery('test'); if (v.length !== m.EMBEDDING_DIMS) process.exit(1); })"
 
 FROM node:24-slim
 ENV NODE_ENV=production

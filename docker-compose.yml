@@ -12,7 +12,7 @@ x-secrets: &secrets
 
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16 # Postgres 16 + the vector extension (hybrid search)
     environment:
       POSTGRES_USER: shop
       POSTGRES_PASSWORD: shop

@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: shop
           POSTGRES_PASSWORD: shop
@@ -36,6 +36,8 @@ jobs:
     env:
       # e2e global setup creates shop_test and runs the migrations (test/global-setup.ts).
       TEST_DATABASE_URL: postgresql://shop:shop@localhost:5432/shop_test
+      # CPU only: skip onnxruntime's CUDA download during npm ci (embedding model, src/search/).
+      ONNXRUNTIME_NODE_INSTALL: skip
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -50,6 +52,15 @@ jobs:
         run: npm test
       - name: Integration tests (real Postgres, seeded per test)
         run: npm run test:e2e
+      - name: Seed and embed with the real model (pgvector)
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+          NODE_ENV: development
+        run: |
+          node dist/database/seed.js
+          # A second run must find nothing to do: every row has a current embedding.
+          node dist/database/embed.js | tee embed.log
+          grep -q "products: 0 embedded, .* faq: 0 embedded" embed.log
       - name: Entities match migrations
         env:
           DATABASE_URL: ${{ env.TEST_DATABASE_URL }}

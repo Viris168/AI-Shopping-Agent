@@ -36,6 +36,10 @@ fi
 echo "deploy: running migrations"
 compose --profile migrate run --rm migrate
 
+# Before traffic: new or changed products/FAQs get their search vectors (model is in the image).
+echo "deploy: embedding search data"
+compose --profile migrate run --rm migrate node dist/database/embed.js
+
 echo "deploy: starting services"
 compose up -d --wait --wait-timeout 180 --remove-orphans
 

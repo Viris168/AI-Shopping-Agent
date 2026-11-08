@@ -28,7 +28,8 @@ cd commerce-api
 cp .env.example .env              # first time; set DATABASE_URL, JWT_SECRET
 npm install
 npm run migration:run             # apply migrations
-npm run seed                      # demo data; login alice@example.com / Password123!
+npm run seed                      # demo data + embeddings; login alice@example.com / Password123!
+npm run embed                     # re-embed changed products/FAQs (hybrid search)
 npm run start:dev                 # http://localhost:3000, Swagger at /docs
 npm run build                     # compile to dist/
 npm run migration:generate        # after changing entities.ts

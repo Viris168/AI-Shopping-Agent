@@ -13,6 +13,7 @@ import {
   User,
   type OrderStatus,
 } from './entities.js';
+import { embedAll, formatCounts } from './embed.js';
 import { dataSourceOptions } from './options.js';
 import {
   CATEGORIES,
@@ -219,6 +220,8 @@ if (
   try {
     await seed(db);
     console.log('Seeded demo data. Log in as alice@example.com / Password123!');
+    // Only here, not in seed(): e2e tests seed before every test and don't need vectors.
+    console.log(`Embeddings · ${formatCounts(await embedAll(db))}`);
   } finally {
     await db.destroy();
   }

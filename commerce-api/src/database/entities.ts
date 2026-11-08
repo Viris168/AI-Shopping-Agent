@@ -127,6 +127,19 @@ export class Product {
   @JoinColumn({ name: 'category_id' })
   category: Category;
 
+  // Hybrid search (src/search/embedding.ts). Never selected unless asked for; filled by `npm run embed`.
+  @Column({ type: 'vector', length: 384, nullable: true, select: false })
+  embedding: string | null;
+
+  @Column({
+    name: 'embedding_hash',
+    type: 'varchar',
+    length: 64,
+    nullable: true,
+    select: false,
+  })
+  embeddingHash: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
@@ -363,6 +376,19 @@ export class FaqArticle {
 
   @Column({ type: 'text' })
   answer: string;
+
+  // Hybrid search (src/search/embedding.ts). Never selected unless asked for; filled by `npm run embed`.
+  @Column({ type: 'vector', length: 384, nullable: true, select: false })
+  embedding: string | null;
+
+  @Column({
+    name: 'embedding_hash',
+    type: 'varchar',
+    length: 64,
+    nullable: true,
+    select: false,
+  })
+  embeddingHash: string | null;
 }
 
 @Entity('support_tickets')

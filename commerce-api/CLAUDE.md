@@ -18,7 +18,8 @@ Docs (read before larger changes):
 cp .env.example .env              # first time; set JWT_SECRET
 npm install
 npm run migration:run             # apply migrations (needs Postgres at DATABASE_URL)
-npm run seed                      # demo data; alice@example.com / Password123!
+npm run seed                      # demo data, then embeddings; alice@example.com / Password123!
+npm run embed                     # re-embed changed products/FAQs for hybrid search (-- --force: all)
 npm run start:dev                 # http://localhost:3000 · Swagger /docs · /health
 npm run build                     # compile to dist/
 npm start                         # run dist/main.js
@@ -30,7 +31,7 @@ Local Postgres:
 
 ```bash
 # Port 5433 so it doesn't clash with a system Postgres on 5432. Tests use a separate shop_test database.
-docker run -d --name shop-db -p 127.0.0.1:5433:5432 -e POSTGRES_USER=shop -e POSTGRES_PASSWORD=shop -e POSTGRES_DB=shop -v shop-db-data:/var/lib/postgresql/data postgres:16
+docker run -d --name shop-db -p 127.0.0.1:5433:5432 -e POSTGRES_USER=shop -e POSTGRES_PASSWORD=shop -e POSTGRES_DB=shop -v shop-db-data:/var/lib/postgresql/data pgvector/pgvector:pg16
 ```
 
 Always run `npm run build` after changes; it is the type check.
@@ -45,7 +46,8 @@ src/
 ├── products/  cart/   split files (controller, service, dto, module)
 ├── orders/ returns/ faq/ support/ health/   single *.module.ts files
 ├── common/            audit + idempotency interceptors, service-token middleware, user throttler, money.ts
-└── database/          entities.ts, data-source.ts, migrations/, seed.ts
+├── search/            embedding model (bge-small, local) + EmbeddingService for hybrid search
+└── database/          entities.ts, data-source.ts, migrations/, seed.ts, embed.ts
 ```
 
 ## Rules (do not break)
