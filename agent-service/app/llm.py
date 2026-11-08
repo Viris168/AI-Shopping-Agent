@@ -1,4 +1,5 @@
-"""Claude client: model routing, prompt caching, streaming. All model calls go through here."""
+"""Model client (DeepSeek via its Anthropic-compatible API by default): model routing, prompt
+caching, streaming. All model calls go through here."""
 
 import json
 from collections.abc import AsyncIterator, Callable
@@ -77,6 +78,7 @@ class LLM:
         key = settings.anthropic_api_key
         self._client = client or AsyncAnthropic(
             api_key=key.get_secret_value() if key else None,
+            base_url=settings.anthropic_base_url or None,
             timeout=settings.model_timeout_s,
             max_retries=2,
         )
@@ -92,7 +94,8 @@ class LLM:
         """One main-model call, streaming text deltas. Returns the complete message.
 
         Caching: tools render before system, so the breakpoint on the static system
-        block caches tools + static prompt. Put per-request text after it.
+        block caches tools + static prompt. Put per-request text after it. DeepSeek ignores
+        cache_control and caches prompt prefixes on its own.
         """
         kwargs: dict[str, Any] = {
             "model": self._s.model_main,

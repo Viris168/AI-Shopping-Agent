@@ -15,10 +15,13 @@ class Settings(BaseSettings):
 
     app_env: Literal["development", "test", "production"] = "development"
 
-    # Model access. No key → the SDK falls back to an `ant auth login` profile.
+    # Model access: DeepSeek through its Anthropic-compatible API, so the Anthropic SDK and
+    # message format stay as they are. ANTHROPIC_API_KEY holds the DeepSeek key.
+    # Set ANTHROPIC_BASE_URL empty (and Claude model IDs) to call Anthropic directly.
     anthropic_api_key: SecretStr | None = None
-    model_main: str = "claude-sonnet-5"
-    model_fast: str = "claude-haiku-4-5"
+    anthropic_base_url: str | None = "https://api.deepseek.com/anthropic"
+    model_main: str = "deepseek-v4-pro"
+    model_fast: str = "deepseek-flash"
     claude_effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     max_output_tokens: int = 1024
     model_timeout_s: float = 30

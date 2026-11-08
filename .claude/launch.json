@@ -17,7 +17,7 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": [
         "-c",
-        "cd agent-service && exec .venv/bin/uvicorn app.main:app --reload --port 8000"
+        "cd agent-service && exec env -u ANTHROPIC_BASE_URL -u CLAUDE_EFFORT .venv/bin/uvicorn app.main:app --reload --port 8000"
       ],
       "port": 8000
     },

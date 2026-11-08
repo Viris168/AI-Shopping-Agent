@@ -309,9 +309,10 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 
 | Variable | Example | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | — | Model access |
-| `MODEL_MAIN` | `claude-sonnet-5` | Agent loop |
-| `MODEL_FAST` | `claude-haiku-4-5` | Summaries, ticket text, eval grading |
+| `ANTHROPIC_API_KEY` | — | Model access (a DeepSeek key by default) |
+| `ANTHROPIC_BASE_URL` | `https://api.deepseek.com/anthropic` | DeepSeek's Anthropic-compatible API; empty → Anthropic |
+| `MODEL_MAIN` | `deepseek-v4-pro` | Agent loop |
+| `MODEL_FAST` | `deepseek-flash` | Summaries, ticket text, eval grading |
 | `COMMERCE_API_URL` | `http://commerce-api:3000/api/v1` | Tool backend |
 | `SERVICE_TOKEN` | — | Sent as `X-Service-Token` |
 | `JWT_SECRET` / `JWT_ISSUER` | — / `commerce-api` | Verify shopper tokens |

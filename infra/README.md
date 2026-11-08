@@ -4,7 +4,7 @@ One Linux VM per environment runs the stack with Docker Compose. GitHub Actions 
 holds the secrets (GitHub Environment secrets), and deploys over SSH.
 
 ```
-push to main ─► deploy-staging.yml
+manual run   ─► deploy-staging.yml   (push to main once the VM exists)
                   build commerce-api, agent-service, edge ─► ghcr.io/<owner>/<repo>/<name>:<sha>
                   _deploy.yml (environment: staging): pin digests → write VM .env → migrate → up --wait → smoke
 manual run   ─► deploy-production.yml
@@ -67,7 +67,7 @@ To rotate a secret, `gh secret set NAME --env <env>` and run the deploy again. R
 
 ## Day to day
 
-- **Staging**: merge to `main`.
+- **Staging**: run `deploy-staging` from the Actions tab (manual until the staging VM exists; then restore the `push` trigger in `deploy-staging.yml` so merging to `main` deploys).
 - **Production**: Actions → deploy-production → Run workflow. Leave the SHA blank to promote the
   latest staging deploy. A reviewer then approves the `production` job.
 - **Rollback**: run deploy-production with an earlier SHA. Migrations aren't rolled back, so
