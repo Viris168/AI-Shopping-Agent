@@ -57,6 +57,8 @@ def _configure_logging() -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _configure_logging()
     settings = get_settings()
+    if settings.service_token is None or not settings.service_token.get_secret_value():
+        log.warning("SERVICE_TOKEN is not set; commerce-api will reject every tool call (403)")
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     try:
         async with services(settings, redis) as agent:

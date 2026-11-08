@@ -59,8 +59,8 @@ class Settings(BaseSettings):
             secret = self.jwt_secret.get_secret_value()
             if secret == DEV_JWT_SECRET or len(secret) < 32:
                 raise ValueError("JWT_SECRET must be set to at least 32 characters in production")
-            if self.service_token is None:
-                raise ValueError("SERVICE_TOKEN must be set in production")
+            if self.service_token is None or len(self.service_token.get_secret_value()) < 32:
+                raise ValueError("SERVICE_TOKEN must be at least 32 characters in production")
         return self
 
 
