@@ -1,0 +1,333 @@
+# Architecture — AI Shopping Assistant
+
+| | |
+|---|---|
+| Last updated | 2026-11-08 |
+| Short version | [ARCHITECTURE-ESSENTIAL.md](./ARCHITECTURE-ESSENTIAL.md) |
+| Agent details | [AGENT.md](./AGENT.md) |
+
+## 1. Overview
+
+Three deployable parts plus two data stores:
+
+| Part | Tech | State | Responsibility |
+|---|---|---|---|
+| `commerce-api/` | NestJS 11, TypeORM, PostgreSQL | **Built** | Source of truth: users, catalog, cart, orders, returns, FAQ, tickets, agent audit log |
+| `agent-service/` | Python 3.12, FastAPI, Anthropic SDK, httpx, Redis | **To build** | LLM loop, tools, confirmation gate, sessions, guardrails, SSE streaming |
+| `widget/` | TypeScript, Vite library mode, Shadow DOM | **To build** | Embeddable chat UI, cards, confirm buttons |
+| PostgreSQL | Managed | Built (schema) | All commerce data + `agent_action_logs`; new `conversations` table |
+| Redis | Managed | New | Sessions, pending actions, rate limits |
+
+**Core principle:** the agent has no database access and no privileged credentials. Every read or write goes through `commerce-api` using the shopper's own JWT, so the API's existing ownership checks protect data even if the model is manipulated.
+
+## 2. System diagram
+
+```mermaid
+flowchart LR
+  subgraph Browser
+    SF[Storefront]
+    W[Chat widget<br/>Shadow DOM]
+  end
+  subgraph Cloud
+    AS[agent-service<br/>FastAPI + agent loop]
+    CA[commerce-api<br/>NestJS]
+    R[(Redis)]
+    PG[(PostgreSQL)]
+  end
+  CL[Claude API]
+
+  W -- "POST /v1/chat (SSE)<br/>Bearer shopper JWT" --> AS
+  SF -- "browse, checkout" --> CA
+  AS -- "messages + tools" --> CL
+  AS -- "tool calls<br/>Bearer shopper JWT<br/>X-Client: ai-agent<br/>X-Service-Token" --> CA
+  AS --- R
+  CA --- PG
+  AS -- "transcripts" --> PG
+```
+
+## 3. Request flows
+
+### 3.1 Chat turn (read-only tools)
+
+```mermaid
+sequenceDiagram
+  participant W as Widget
+  participant A as agent-service
+  participant R as Redis
+  participant C as Claude
+  participant API as commerce-api
+
+  W->>A: POST /v1/chat {conversationId, message} + JWT
+  A->>A: validate JWT signature/expiry, rate limit, length check
+  A->>R: load session
+  A->>C: messages + tools (stream)
+  C-->>A: tool_use get_order(orderNumber)
+  A->>API: GET /api/v1/orders/A1B2C3 (Bearer JWT)
+  API-->>A: order DTO
+  A->>C: tool_result
+  C-->>A: text stream
+  A-->>W: SSE text_delta… card(order_status)… done
+  A->>R: save session
+```
+
+### 3.2 Confirm-first action (e.g. return)
+
+```mermaid
+sequenceDiagram
+  participant W as Widget
+  participant A as agent-service
+  participant R as Redis
+  participant API as commerce-api
+
+  Note over A: model calls create_return(...)
+  A->>R: store pending action {id, tool, args, idemKey, exp 10m}
+  A-->>W: SSE confirm_request {actionId, summary}
+  Note over A: tool_result to model = "awaiting user confirmation"
+  W->>A: POST /v1/actions/{id}/confirm + JWT
+  A->>R: load + delete pending action (atomic)
+  A->>API: POST /api/v1/returns (Idempotency-Key)
+  API-->>A: {returnId, nextSteps}
+  A-->>W: SSE card(return_created) + model follow-up text
+```
+
+Rules:
+- Only the confirm endpoint executes a pending action. Nothing the model outputs can confirm.
+- The pending action is bound to the user ID and conversation ID; a different user's JWT is rejected.
+- Expired or already-used actions return `409`.
+
+### 3.3 Human handoff
+
+1. Trigger: shopper asks for a human, two failed attempts, tool budget exhausted, or sensitive topic.
+2. Haiku writes a ticket summary from the transcript.
+3. Widget shows a confirm card with the summary; on confirm, `POST /api/v1/support/tickets`.
+4. SSE `handoff` event with ticket ID and expected response time.
+5. `SupportService` forwards to the helpdesk (integration point already marked in code).
+
+## 4. Components
+
+### 4.1 commerce-api (existing)
+
+Global prefix `api/v1` (except `/health`). Swagger at `/docs`.
+
+| Module | Routes used by agent | Auth |
+|---|---|---|
+| products | `GET /products`, `GET /products/:idOrSlug`, `GET /products/:idOrSlug/recommendations`, `GET /categories` | none |
+| faq | `GET /faq/search?q=&topic=` | none |
+| cart | `GET /cart`, `POST /cart/items`, `PATCH /cart/items/:productId`, `DELETE /cart/items/:productId`, `POST /cart/coupon` | JWT |
+| orders | `GET /orders`, `GET /orders/:orderNumber` | JWT |
+| returns | `POST /returns`, `GET /returns` | JWT |
+| support | `POST /support/tickets` | optional JWT |
+| cart | `POST /checkout` | **never called by the agent** |
+
+Cross-cutting: `helmet`, CORS allowlist, global `ValidationPipe` (whitelist + forbid unknown), `ThrottlerGuard`, `pino` logging with auth header redaction, `AgentAuditInterceptor`.
+
+**Required changes (Phase 1):**
+
+| Change | Why |
+|---|---|
+| Throttle by JWT `sub` (fallback IP); separate limit for service-token traffic | IP throttling makes all agent users share one 120/min bucket |
+| Verify `X-Service-Token` before honouring `X-Client: ai-agent` | Header can be spoofed today |
+| Audit failed agent mutations; alert on audit insert failure | Interceptor logs only successes and swallows errors |
+| `Idempotency-Key` on `POST /returns` and `POST /support/tickets` | Safe retries of confirmed actions |
+| Add `conversations` table + migration | Transcript storage for support and evals |
+
+### 4.2 agent-service (new)
+
+```
+agent-service/
+├── pyproject.toml
+├── app/
+│   ├── main.py              # FastAPI app, routes, lifespan
+│   ├── config.py            # pydantic-settings
+│   ├── auth.py              # JWT verification (shared secret / issuer commerce-api)
+│   ├── llm.py               # Anthropic client, model routing, caching, retries
+│   ├── loop.py              # agent loop (tool rounds, limits, streaming)
+│   ├── sse.py               # event encoding
+│   ├── sessions.py          # Redis session store + summarisation trigger
+│   ├── actions.py           # pending actions (confirm gate)
+│   ├── guardrails.py        # input limits, budget, output checks
+│   ├── commerce_client.py   # httpx client for commerce-api
+│   ├── prompts/system.md
+│   └── tools/
+│       ├── registry.py      # Tool dataclass, schema export, guest filtering
+│       ├── catalog.py       # search_products, get_product, get_recommendations, list_categories
+│       ├── faq.py           # search_faq
+│       ├── cart.py          # view_cart, add_to_cart, update_cart_item, remove_cart_item, apply_coupon
+│       ├── orders.py        # list_orders, get_order, create_return
+│       └── support.py       # create_support_ticket
+├── evals/
+│   ├── golden/*.yaml
+│   ├── redteam/*.yaml
+│   └── run.py
+└── tests/
+```
+
+**Public endpoints**
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/v1/chat` | `{conversationId?, message, locale?}` | SSE stream |
+| POST | `/v1/actions/{actionId}/confirm` | — | SSE stream (result + follow-up) |
+| POST | `/v1/actions/{actionId}/cancel` | — | `204` |
+| POST | `/v1/feedback` | `{conversationId, messageId, rating: up\|down, comment?}` | `204` |
+| GET | `/health` | — | `{status, redis, commerceApi}` |
+
+Auth: `Authorization: Bearer <shopper JWT>` optional (guest if absent/invalid).
+
+**SSE events**
+
+| Event | Data |
+|---|---|
+| `meta` | `{conversationId, messageId}` |
+| `text_delta` | `{text}` |
+| `card` | `{type: product_list\|product\|cart\|order\|order_list\|return_created\|ticket_created\|checkout_link, data}` |
+| `confirm_request` | `{actionId, kind, summary, expiresAt}` |
+| `handoff` | `{ticketId, expectedResponse}` |
+| `error` | `{code, message, retryable}` |
+| `done` | `{usage?}` |
+
+### 4.3 widget (new)
+
+```
+widget/
+├── package.json
+├── vite.config.ts           # lib mode → dist/widget.js (IIFE)
+└── src/
+    ├── index.ts             # bootstrap from <script data-*>, mount Shadow DOM
+    ├── api.ts               # fetch + SSE parsing, reconnect
+    ├── state.ts             # messages, pending confirms, sessionStorage
+    ├── ui/                  # bubble, panel, message list, composer
+    ├── cards/               # product, cart, order, confirm, ticket
+    ├── i18n/                # locale strings
+    └── styles.css           # scoped, CSS variables for theming
+```
+
+Host integration:
+
+```html
+<script src="https://chat.yourstore.com/v1/widget.js" data-store="main" async></script>
+<script>
+  window.ShopChat = { getToken: () => fetch('/session/token').then(r => r.ok ? r.text() : null) };
+</script>
+```
+
+Events emitted to host: `shopchat:cart-updated`, `shopchat:open`, `shopchat:close`.
+
+## 5. Data
+
+### 5.1 Existing (PostgreSQL)
+
+`users`, `categories`, `products`, `carts`, `cart_items`, `coupons`, `orders`, `order_items`, `return_requests`, `faq_articles`, `support_tickets`, `agent_action_logs`. Money is stored as integer cents. See `commerce-api/src/database/entities.ts`.
+
+### 5.2 New table: `conversations`
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | conversation ID |
+| user_id | uuid null | set once the shopper is logged in |
+| messages | jsonb | masked transcript |
+| summary | text null | rolling summary |
+| outcome | varchar(16) | `resolved` / `handoff` / `abandoned` |
+| tokens_in, tokens_out | int | cost tracking |
+| created_at, updated_at | timestamptz | retention job deletes after 90 days |
+
+### 5.3 Redis keys
+
+| Key | Value | TTL |
+|---|---|---|
+| `sess:{conversationId}` | messages, summary, userId | 24 h |
+| `action:{actionId}` | tool, args, userId, conversationId, idemKey | 10 min |
+| `rl:user:{id}` / `rl:ip:{ip}` | counters | 60 s |
+| `budget:{conversationId}` | tokens used | 24 h |
+
+## 6. Security
+
+| Threat | Control |
+|---|---|
+| Agent reads another user's data | Shopper JWT forwarded; API filters by `userId` in queries |
+| Prompt injection from product/FAQ text | Tool results wrapped as data; mutations need human click; scoped token; server-side validation |
+| Spoofed agent traffic | `X-Service-Token` required for `X-Client: ai-agent` |
+| Replay / double submit | Idempotency keys; single-use pending actions |
+| Abuse / cost attacks | Message length cap, per-user/IP rate limits, token budgets, bot protection if needed |
+| Token leakage | JWT never persisted; auth headers redacted in logs |
+| PII exposure | Masking in logs/traces/transcripts; 90-day retention |
+| XSS via model output | Widget renders text as text (no HTML); links allowlisted to store domains |
+
+## 7. Reliability
+
+- Timeouts: 10 s per commerce-api call, 30 s per model call, 45 s per turn.
+- Retries: 2 with exponential backoff on 429/5xx; mutations only with idempotency key.
+- Limits: 6 tool rounds per turn.
+- Degradation: model failure → fallback card; commerce-api failure → tool error result, model apologises and offers handoff.
+- Kill switch: feature flag hides widget; agent-service also returns `503` when disabled.
+- Stateless replicas (≥ 2); state in Redis/Postgres.
+
+## 8. Observability
+
+- **Tracing:** OpenTelemetry; spans for turn, model call, each tool call; attributes: conversation ID, model, tokens, tool name, status.
+- **Logs:** JSON; request ID propagated to commerce-api via `X-Request-Id`.
+- **Metrics:** first-token latency p50/p95, turn latency, tool error rate, handoff rate, confirm acceptance, thumbs ratio, tokens per conversation, active SSE streams.
+- **Alerts:** tool errors > 5% for 5 min; p95 first token > 4 s; audit insert failures; model API error spike.
+
+## 9. Evals
+
+| Suite | Size | Pass bar | Runs |
+|---|---|---|---|
+| Golden conversations | ~150 | ≥ 90% | CI on every prompt/tool/model change |
+| Red team | ~40 | 100% | CI |
+| Weekly transcript sample | 50 | Review | Manual, feeds golden set |
+
+Details in [AGENT.md §8](./AGENT.md#8-evals).
+
+## 10. Deployment
+
+| Component | Runtime | Scaling | Notes |
+|---|---|---|---|
+| commerce-api | Node 22 container | CPU | `migration:run:prod` as pre-deploy job |
+| agent-service | Python container, uvicorn | concurrent streams | LB idle timeout ≥ 120 s |
+| widget | CDN static | — | `/v1/widget.js` immutable + short-cache loader |
+| PostgreSQL | managed | — | pgvector later |
+| Redis | managed | — | — |
+
+Domains: `api.yourstore.com` → commerce-api; `chat.yourstore.com` → agent-service + widget CDN.
+
+Secrets (secret manager): `ANTHROPIC_API_KEY`, `JWT_SECRET`, `SERVICE_TOKEN`, `DATABASE_URL`, `REDIS_URL`.
+
+CI/CD: lint/type/test → API integration tests on seeded Postgres → evals → deploy staging → smoke → manual promote.
+
+Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget dev server).
+
+## 11. Configuration (agent-service)
+
+| Variable | Example | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | — | Model access |
+| `MODEL_MAIN` | `claude-sonnet-5` | Agent loop |
+| `MODEL_FAST` | `claude-haiku-4-5` | Summaries, ticket text, eval grading |
+| `COMMERCE_API_URL` | `http://commerce-api:3000/api/v1` | Tool backend |
+| `SERVICE_TOKEN` | — | Sent as `X-Service-Token` |
+| `JWT_SECRET` / `JWT_ISSUER` | — / `commerce-api` | Verify shopper tokens |
+| `REDIS_URL` | `redis://redis:6379/0` | Sessions, actions, limits |
+| `DATABASE_URL` | — | Transcripts |
+| `MAX_TOOL_ROUNDS` | `6` | Loop cap |
+| `TURN_TIMEOUT_S` | `45` | Turn cap |
+| `MAX_MESSAGE_CHARS` | `2000` | Input cap |
+| `RATE_LIMIT_PER_MIN` | `20` | Messages per user/IP |
+| `CORS_ORIGINS` | `https://yourstore.com` | Widget host origins |
+| `AGENT_ENABLED` | `true` | Kill switch |
+
+## 12. Rollout plan
+
+| Phase | Dates | Exit gate |
+|---|---|---|
+| 1 · Foundations | 9–15 Nov | Read-only chat answers product, order, FAQ questions end to end in dev |
+| 2 · Full agent and widget | 16–29 Nov | Golden ≥ 90%, red team 100% |
+| 3 · Production readiness | 30 Nov–6 Dec | p95 first token < 4 s at peak; alerts verified |
+| 4 · Rollout | 7–18 Dec | Each step (staff → 5% → 25% → 100%): tool errors < 5%, handoff and thumbs stable |
+
+## 13. Future
+
+- pgvector hybrid search for products and FAQ
+- Live human takeover inside the widget
+- Order-change tools (cancel before shipping, address change) once the API supports them
+- Proactive help (e.g. on checkout errors)

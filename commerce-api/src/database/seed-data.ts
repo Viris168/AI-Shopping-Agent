@@ -1,0 +1,253 @@
+import type { FaqTopic } from './entities.js';
+
+// Demo catalog and FAQ for `npm run seed`.
+
+export const CATEGORIES = [
+  { name: 'Shoes', slug: 'shoes' },
+  { name: 'Clothing', slug: 'clothing' },
+  { name: 'Electronics', slug: 'electronics' },
+  { name: 'Outdoor', slug: 'outdoor' },
+];
+
+export const PRODUCTS = [
+  {
+    sku: 'SHOE-001',
+    slug: 'trailrunner-3',
+    name: 'Trailrunner 3 Running Shoes',
+    brand: 'Stride',
+    category: 'shoes',
+    description:
+      'Lightweight trail running shoes with a grippy outsole and breathable mesh upper.',
+    priceCents: 8999,
+    stock: 24,
+    rating: 4.6,
+    attributes: { sizes: '38-46', waterproof: 'no' },
+    tags: ['running', 'trail', 'sneakers'],
+  },
+  {
+    sku: 'SHOE-002',
+    slug: 'citywalk-leather-sneakers',
+    name: 'CityWalk Leather Sneakers',
+    brand: 'Urbano',
+    category: 'shoes',
+    description: 'Minimal white leather sneakers for everyday wear.',
+    priceCents: 6999,
+    stock: 40,
+    rating: 4.4,
+    attributes: { sizes: '36-45', material: 'leather' },
+    tags: ['sneakers', 'casual', 'leather'],
+  },
+  {
+    sku: 'SHOE-003',
+    slug: 'summit-waterproof-boots',
+    name: 'Summit Waterproof Hiking Boots',
+    brand: 'Stride',
+    category: 'shoes',
+    description: 'Waterproof mid-cut hiking boots with ankle support.',
+    priceCents: 12999,
+    stock: 0,
+    rating: 4.7,
+    attributes: { sizes: '38-47', waterproof: 'yes' },
+    tags: ['hiking', 'boots', 'waterproof'],
+  },
+  {
+    sku: 'SHOE-004',
+    slug: 'aquastride-waterproof-runners',
+    name: 'AquaStride Waterproof Running Shoes',
+    brand: 'Stride',
+    category: 'shoes',
+    description:
+      'Waterproof running shoes with a sealed membrane for wet roads and trails.',
+    priceCents: 11500,
+    stock: 9,
+    rating: 4.5,
+    attributes: { sizes: '38-46', waterproof: 'yes' },
+    tags: ['running', 'waterproof', 'sneakers'],
+  },
+  {
+    sku: 'CLO-001',
+    slug: 'merino-crew-tshirt',
+    name: 'Merino Crew T-Shirt',
+    brand: 'Woolly',
+    category: 'clothing',
+    description:
+      'Soft merino wool t-shirt that resists odor. Great for travel.',
+    priceCents: 4500,
+    stock: 60,
+    rating: 4.5,
+    attributes: { sizes: 'XS-XXL', material: 'merino wool' },
+    tags: ['shirt', 'wool', 'travel'],
+  },
+  {
+    sku: 'CLO-002',
+    slug: 'packable-rain-jacket',
+    name: 'Packable Rain Jacket',
+    brand: 'Northline',
+    category: 'clothing',
+    description:
+      'Ultralight waterproof rain jacket that packs into its own pocket.',
+    priceCents: 7900,
+    stock: 15,
+    rating: 4.3,
+    attributes: { sizes: 'S-XL', waterproof: 'yes' },
+    tags: ['jacket', 'rain', 'waterproof', 'travel'],
+  },
+  {
+    sku: 'CLO-003',
+    slug: 'fleece-pullover-hoodie',
+    name: 'Fleece Pullover Hoodie',
+    brand: 'Northline',
+    category: 'clothing',
+    description: 'Warm recycled-fleece hoodie with a kangaroo pocket.',
+    priceCents: 5900,
+    stock: 33,
+    rating: 4.2,
+    attributes: { sizes: 'S-XXL', material: 'recycled fleece' },
+    tags: ['hoodie', 'fleece', 'warm'],
+  },
+  {
+    sku: 'ELEC-001',
+    slug: 'noise-cancelling-headphones',
+    name: 'Noise-Cancelling Headphones',
+    brand: 'Sonic',
+    category: 'electronics',
+    description:
+      'Over-ear wireless headphones with active noise cancelling and 30-hour battery.',
+    priceCents: 19900,
+    stock: 12,
+    rating: 4.8,
+    attributes: { battery: '30 h', connection: 'Bluetooth 5.3' },
+    tags: ['audio', 'wireless', 'bluetooth', 'headphones'],
+  },
+  {
+    sku: 'ELEC-002',
+    slug: 'wireless-earbuds',
+    name: 'Wireless Earbuds',
+    brand: 'Sonic',
+    category: 'electronics',
+    description:
+      'Compact bluetooth earbuds with a charging case and sweat resistance.',
+    priceCents: 9900,
+    stock: 50,
+    rating: 4.4,
+    attributes: { battery: '8 h + 24 h case', connection: 'Bluetooth 5.3' },
+    tags: ['audio', 'wireless', 'bluetooth', 'earbuds', 'running'],
+  },
+  {
+    sku: 'ELEC-003',
+    slug: 'usb-c-fast-charger-65w',
+    name: 'USB-C Fast Charger 65W',
+    brand: 'Voltix',
+    category: 'electronics',
+    description: 'Compact 65W USB-C charger for laptops and phones.',
+    priceCents: 3999,
+    stock: 80,
+    rating: 4.6,
+    attributes: { power: '65 W', ports: '2x USB-C' },
+    tags: ['charger', 'usb-c', 'laptop', 'phone'],
+  },
+  {
+    sku: 'OUT-001',
+    slug: 'insulated-water-bottle-1l',
+    name: 'Insulated Water Bottle 1L',
+    brand: 'Summit',
+    category: 'outdoor',
+    description: 'Stainless steel bottle that keeps drinks cold for 24 hours.',
+    priceCents: 3200,
+    stock: 100,
+    rating: 4.7,
+    attributes: { capacity: '1 L' },
+    tags: ['bottle', 'hiking', 'travel'],
+  },
+  {
+    sku: 'OUT-002',
+    slug: 'daypack-28l',
+    name: '28L Daypack',
+    brand: 'Summit',
+    category: 'outdoor',
+    description:
+      'Water-resistant hiking daypack with laptop sleeve and hip belt.',
+    priceCents: 8500,
+    stock: 18,
+    rating: 4.5,
+    attributes: { capacity: '28 L', laptop: 'up to 15"' },
+    tags: ['backpack', 'hiking', 'laptop', 'travel'],
+  },
+  {
+    sku: 'OUT-003',
+    slug: 'commuter-backpack-20l',
+    name: '20L Commuter Backpack',
+    brand: 'Urbano',
+    category: 'outdoor',
+    description: 'Slim everyday backpack with a padded laptop pocket.',
+    priceCents: 5500,
+    stock: 25,
+    rating: 4.1,
+    attributes: { capacity: '20 L', laptop: 'up to 14"' },
+    tags: ['backpack', 'laptop', 'commute'],
+  },
+  {
+    sku: 'OUT-004',
+    slug: 'two-person-tent',
+    name: 'Two-Person Camping Tent',
+    brand: 'Summit',
+    category: 'outdoor',
+    description: 'Freestanding three-season tent that sets up in five minutes.',
+    priceCents: 24900,
+    stock: 7,
+    rating: 4.6,
+    attributes: { capacity: '2 people', seasons: '3' },
+    tags: ['tent', 'camping'],
+  },
+];
+
+export const FAQS: { topic: FaqTopic; question: string; answer: string }[] = [
+  {
+    topic: 'shipping',
+    question: 'How long does shipping take?',
+    answer:
+      'Standard shipping takes 3-5 business days. Express shipping takes 1-2 business days. Orders over $50 ship free with standard shipping.',
+  },
+  {
+    topic: 'shipping',
+    question: 'Do you ship internationally?',
+    answer:
+      'We currently ship to the United States, Canada and Vietnam. International delivery takes 7-14 business days.',
+  },
+  {
+    topic: 'returns',
+    question: 'What is your return policy?',
+    answer:
+      'You can return unused items within 30 days of delivery for a full refund. Start a return from your order page or ask the assistant. Return shipping is free for exchanges.',
+  },
+  {
+    topic: 'returns',
+    question: 'How long do refunds take?',
+    answer:
+      'Refunds are issued to the original payment method 3-5 business days after we receive your return.',
+  },
+  {
+    topic: 'payment',
+    question: 'Which payment methods do you accept?',
+    answer:
+      'We accept Visa, Mastercard, American Express, PayPal and Apple Pay.',
+  },
+  {
+    topic: 'orders',
+    question: 'Can I change or cancel my order?',
+    answer:
+      'You can change or cancel an order within 1 hour of placing it. After that it may already be packed; contact support and we will do our best.',
+  },
+  {
+    topic: 'account',
+    question: 'How do I reset my password?',
+    answer:
+      'Use "Forgot password" on the login page. We will email you a reset link that is valid for 1 hour.',
+  },
+  {
+    topic: 'warranty',
+    question: 'Do products come with a warranty?',
+    answer:
+      'Electronics have a 1-year warranty against manufacturing defects. Shoes and clothing are covered for 90 days.',
+  },
+];
