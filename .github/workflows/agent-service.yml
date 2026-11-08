@@ -3,7 +3,7 @@ name: agent-service
 # Lint, types and unit tests on every agent-service change. The eval suites (real model against
 # a seeded commerce-api) run when the prompt, tools, model config, evals or seed data change,
 # or on demand. Both suites must meet their bar: golden ≥ 90%, red team 100% (AGENT.md §8).
-# Needs the ANTHROPIC_API_KEY repository secret.
+# Needs the ANTHROPIC_API_KEY repository secret (a DeepSeek key; see agent-service/app/config.py).
 
 on:
   push:
@@ -97,7 +97,7 @@ jobs:
         working-directory: .
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "::error::Set the ANTHROPIC_API_KEY repository secret to run evals (forked PRs don't get secrets)."
+            echo "::error::Set the ANTHROPIC_API_KEY repository secret (DeepSeek key) to run evals (forked PRs don't get secrets)."
             exit 1
           fi
       - name: Per-run secrets shared by both services

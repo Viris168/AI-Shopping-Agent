@@ -52,3 +52,40 @@ All 7 agent calls logged `x-client: ai-agent`, `x-conversation-id` and `x-reques
   broaden the query itself; worth a golden eval case.
 - `/health` reports `commerceApi: ok` even when agent calls would be rejected. Consider having it
   check the token too.
+
+## Gate 2 — eval pass bar (run 2026-11-08/09)
+
+Model: DeepSeek (`deepseek-v4-pro` / `deepseek-flash`) via its Anthropic-compatible API.
+
+| Suite | Result | Bar |
+|---|---|---|
+| Red team | 49/49 (100%) on the final run; the run before was 48/49 | 100% |
+| Golden | 157/166 (95%), three runs in a row | 90% |
+
+CI has not run yet: needs the `ANTHROPIC_API_KEY` secret (DeepSeek key) and `.github/` pushed.
+
+Gotcha: a shell started by Claude Code exports `ANTHROPIC_BASE_URL=https://api.anthropic.com`,
+which beats `.env`. Run evals with `ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic`;
+`.claude/launch.json` now unsets it for agent-service.
+
+### Manual widget runs (alice, widget demo page on :5173)
+
+| Run | Result |
+|---|---|
+| Cart + checkout link | OK after fixing local `agent-service/.env` (`STOREFRONT_URL` was :3001, now :8080). Jacket added, host cart count updated, link → `http://localhost:8080/cart`, no order placed |
+| Return on ORD-1001 | OK. Confirm card → `POST /v1/actions/{id}/confirm` → `POST /returns` 201. Nothing created before the button |
+| Refused return on ORD-0950 | OK. Explains the 30-day window closed Oct 4; holds when pushed for an exception; offers a person |
+| Human handoff | OK. Ticket card right away → confirm → `POST /support/tickets` 201 |
+
+No `POST /checkout` from the agent in any run. Fixtures reseeded afterwards.
+
+### Found in the manual runs (open)
+
+1. Model writes markdown (`**Confirm**`) and the widget shows the asterisks (it renders text as
+   text, by design). Prompt should ask for plain text, or the widget should render bold safely.
+2. Return deadline: the model says Dec 1 (UTC from `returnDeadline`), the order card says Dec 2
+   (local time). Pick one timezone for both.
+3. The same product card shows twice when the agent calls `search_products` then `get_product`.
+4. The message list once jumped to the top after a reply instead of staying at the newest message.
+5. Log masking turns part of the conversation UUID into `[phone]`, so the IDs in logs are unusable.
+6. Handoff reply says "I've opened a support request" before Confirm (it then says it isn't sent).

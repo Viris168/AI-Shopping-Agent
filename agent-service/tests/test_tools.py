@@ -175,6 +175,16 @@ async def test_search_faq_returns_only_question_and_answer() -> None:
     assert api.requests[0].url.params["topic"] == "returns"
 
 
+async def test_search_faq_retries_without_a_topic_that_finds_nothing() -> None:
+    hit = {"topic": "orders", "question": "Gift cards?", "answer": "Yes."}
+    api = FakeApi({"GET faq/search": lambda r: httpx.Response(
+        200, json={"results": [] if "topic" in r.url.params else [hit]})})
+    out = await run("search_faq", {"q": "gift cards", "topic": "payment"}, api)
+    assert out.for_model == {"results": [hit]}
+    assert [dict(r.url.params) for r in api.requests] == [
+        {"q": "gift cards", "topic": "payment"}, {"q": "gift cards"}]
+
+
 async def test_search_faq_rejects_unknown_topics() -> None:
     out = await run("search_faq", {"q": "x", "topic": "admin"}, FakeApi())
     assert out.is_error

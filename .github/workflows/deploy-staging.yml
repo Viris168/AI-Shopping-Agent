@@ -1,15 +1,17 @@
 name: deploy-staging
 
-# Every push to main: build the three images once, tag them with the commit SHA, deploy them to
-# staging and smoke-test. deploy-production.yml later promotes these exact digests.
+# Build the three images once, tag them with the commit SHA, deploy them to staging and
+# smoke-test. deploy-production.yml later promotes these exact digests.
+#
+# Manual only until the staging VM exists (infra/README.md, First-time setup). Then restore:
+#   push:
+#     branches: [main]
+#     paths-ignore: ["**.md", "storefront/**"]
 #
 # Tests and evals gate the merge, not this workflow: protect `main` so the commerce-api,
 # agent-service and widget checks must pass on the PR (infra/README.md).
 
 on:
-  push:
-    branches: [main]
-    paths-ignore: ["**.md", "storefront/**"]
   workflow_dispatch:
 
 permissions:

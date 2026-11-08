@@ -1,6 +1,6 @@
 # Local stack: postgres, redis, commerce-api, agent-service. Containers run in production
 # mode (JSON logs, secrets required); only the seed command opts into development.
-#   cp .env.example .env              # set JWT_SECRET, SERVICE_TOKEN, ANTHROPIC_API_KEY
+#   cp .env.example .env              # set JWT_SECRET, SERVICE_TOKEN, ANTHROPIC_API_KEY (DeepSeek key)
 #   docker compose up --build
 #   docker compose run --rm -e NODE_ENV=development migrate node dist/database/seed.js
 #                                     # demo data, wipes the db (alice@example.com)
@@ -60,7 +60,7 @@ services:
     build: ./agent-service
     environment:
       <<: *secrets
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY (your DeepSeek key) in .env}
       APP_ENV: production
       COMMERCE_API_URL: http://commerce-api:3000/api/v1
       REDIS_URL: redis://redis:6379/0

@@ -1,6 +1,6 @@
 """Store policies and FAQ."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,11 +13,18 @@ class SearchFaq(BaseModel):
     topic: Literal["shipping", "returns", "payment", "orders", "account", "warranty"] | None = None
 
 
-async def search_faq(args: SearchFaq, ctx: ToolContext) -> ToolOutput:
-    data = await ctx.client.request(
-        "GET", "faq/search", auth=ctx.auth, conversation_id=ctx.conversation_id,
-        params=args.model_dump(exclude_none=True),
+async def _search(params: dict[str, str], ctx: ToolContext) -> dict[str, Any]:
+    data: dict[str, Any] = await ctx.client.request(
+        "GET", "faq/search", auth=ctx.auth, conversation_id=ctx.conversation_id, params=params,
     )
+    return data
+
+
+async def search_faq(args: SearchFaq, ctx: ToolContext) -> ToolOutput:
+    data = await _search(args.model_dump(exclude_none=True), ctx)
+    if args.topic and not data.get("results"):
+        # The model's topic guess can hide the answer ("gift cards" is filed under orders).
+        data = await _search({"q": args.q}, ctx)
     results = [
         {"topic": r.get("topic"), "question": r.get("question"), "answer": r.get("answer")}
         for r in data.get("results", [])

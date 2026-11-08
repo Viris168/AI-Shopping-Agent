@@ -23,7 +23,7 @@ npm run start:dev             # http://localhost:3000, Swagger at /docs
 
 ```bash
 cd agent-service
-cp .env.example .env          # set ANTHROPIC_API_KEY, and JWT_SECRET to match commerce-api
+cp .env.example .env          # set ANTHROPIC_API_KEY (DeepSeek key), and JWT_SECRET to match commerce-api
 pip install -e ".[dev]"       # or: uv sync --extra dev
 uvicorn app.main:app --reload --port 8000
 ```
