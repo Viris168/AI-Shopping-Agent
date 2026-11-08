@@ -5,7 +5,8 @@
 //
 // Optional data-* attributes: data-api (agent-service origin; default: the script's origin),
 // data-locale, data-link-domains (extra allowed link hosts, comma-separated, e.g. carriers),
-// data-help-url (fallback "track an order / contact us" page), data-max-chars.
+// data-help-url (fallback "track an order / contact us" page), data-privacy-url (linked from the
+// storage notice), data-max-chars.
 //
 // Before mounting it asks agent-service whether it's switched on and inside the rollout
 // (src/rollout.ts); otherwise nothing is added to the page.
@@ -108,7 +109,7 @@ function mount(script: HTMLScriptElement | null): void {
   panel = createPanel(i18n, { list: list.element, composer: composer.element }, {
     close: () => setOpen(false),
     reset: () => controller.reset(),
-  });
+  }, { links, url: data.privacyUrl ?? null });
 
   const render = () => {
     const s = state.state;

@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module.js';
@@ -40,7 +41,6 @@ export function requestId(req: IncomingMessage, res: ServerResponse): string {
   return id;
 }
 
-
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -70,6 +70,8 @@ export function requestId(req: IncomingMessage, res: ServerResponse): string {
         },
       ],
     }),
+    // Background jobs, e.g. transcript retention (conversations/retention.job.ts).
+    ScheduleModule.forRoot(),
     DatabaseModule,
     AuthModule,
     HealthModule,

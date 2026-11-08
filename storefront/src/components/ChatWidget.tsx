@@ -11,6 +11,8 @@ const SCRIPT_ID = 'shopchat-script';
 const WIDGET_SRC = import.meta.env.VITE_WIDGET_SRC ?? '/widget.js';
 // agent-service origin. Empty = this origin (the dev server proxies /v1 to it).
 const AGENT_URL = import.meta.env.VITE_AGENT_URL ?? '';
+// Off-store hosts the widget may link to: carrier tracking pages (commerce-api orders.module.ts).
+const LINK_DOMAINS = 'ups.com,fedex.com,usps.com,dhl.com';
 
 export function ChatWidget() {
   const { token, user } = useAuth();
@@ -31,6 +33,7 @@ export function ChatWidget() {
     script.dataset.store = STORE;
     script.dataset.api = AGENT_URL || location.origin;
     script.dataset.helpUrl = `${location.origin}/help`;
+    script.dataset.linkDomains = LINK_DOMAINS;
     document.body.append(script);
     // No cleanup: the widget mounts once per page and survives route changes on purpose.
   }, []);

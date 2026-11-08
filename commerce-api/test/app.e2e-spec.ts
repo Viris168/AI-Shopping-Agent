@@ -5,6 +5,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import type { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module.js';
+import { ConversationRetentionJob } from '../src/conversations/retention.job.js';
 import { DEMO_PASSWORD, seed } from '../src/database/seed.js';
 import { configureApp } from '../src/setup.js';
 
@@ -472,6 +473,27 @@ describe('commerce-api (e2e)', () => {
           db.query(`SELECT action, conversation_id FROM agent_action_logs`),
         )
         .toEqual([{ action: 'POST /cart/items', conversation_id: 'conv-42' }]);
+    });
+  });
+
+  describe('conversation retention', () => {
+    const insert = (id: string, ageDays: number) =>
+      db.query(
+        `INSERT INTO conversations (id, created_at, updated_at)
+         VALUES ($1, now() - make_interval(days => $2), now() - make_interval(days => $2))`,
+        [id, ageDays],
+      );
+
+    it('deletes transcripts untouched for 90 days and keeps newer ones', async () => {
+      const stale = '00000000-0000-4000-8000-000000000001';
+      const fresh = '00000000-0000-4000-8000-000000000002';
+      await insert(stale, 91);
+      await insert(fresh, 89);
+
+      expect(await app.get(ConversationRetentionJob).run()).toBe(1);
+      expect(await db.query(`SELECT id FROM conversations`)).toEqual([
+        { id: fresh },
+      ]);
     });
   });
 });

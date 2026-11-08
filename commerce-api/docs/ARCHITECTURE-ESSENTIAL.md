@@ -46,7 +46,7 @@ JWT 1 h · rate limit 120/min (register 5, login 10) · return window 30 days ·
 - [x] Audit failed agent calls; stop swallowing audit errors
 - [x] `Idempotency-Key` on returns, tickets, checkout
 - [x] Refuse to start in production without a strong `JWT_SECRET`
-- [ ] Real carrier tracking URLs
+- [x] Real carrier tracking URLs
 - [x] `conversations` table
 
 ## Later

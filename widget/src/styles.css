@@ -171,6 +171,11 @@ button, textarea, a { font: inherit; color: inherit; }
 .feedback { display: flex; gap: 2px; align-self: flex-start; }
 .feedback .icon-btn { min-width: 32px; min-height: 32px; font-size: 14px; opacity: 0.75; }
 
+.notice {
+  margin: 0; padding: 0 12px 10px;
+  color: var(--sc-muted); font-size: 12px; line-height: 1.4;
+}
+.notice a { color: inherit; }
 .composer {
   display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end;
   padding: 10px 12px 12px; border-top: 1px solid var(--sc-border);

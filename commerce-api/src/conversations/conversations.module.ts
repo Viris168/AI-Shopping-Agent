@@ -43,6 +43,7 @@ import {
   type ConversationFeedback,
   type ConversationOutcome,
 } from '../database/entities.js';
+import { ConversationRetentionJob } from './retention.job.js';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -196,6 +197,6 @@ export class ConversationsController {
 
 @Module({
   controllers: [ConversationsController],
-  providers: [ConversationsService],
+  providers: [ConversationsService, ConversationRetentionJob],
 })
 export class ConversationsModule {}

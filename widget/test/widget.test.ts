@@ -11,6 +11,7 @@ beforeAll(async () => {
   script.dataset.shopchat = '';
   script.dataset.api = 'https://chat.shop.test';
   script.dataset.store = 'test';
+  script.dataset.privacyUrl = 'https://evil.example/privacy';
   document.body.append(script);
   const fetch = mockFetch(jsonResponse(200, { enabled: true, rolloutPercent: 100 }));
   await import('../src/index');
@@ -24,6 +25,13 @@ describe('widget', () => {
     expect(root.querySelector('style')).not.toBeNull();
     expect(typeof window.ShopChat?.open).toBe('function');
     expect(window.ShopChat?.getToken?.()).toBe('host-token');
+  });
+
+  it('tells shoppers the chat is stored, and only links privacy pages on allowed hosts', () => {
+    const notice = $<HTMLElement>('#shopchat-notice');
+    expect(notice.textContent).toContain('90 days');
+    expect($('.panel').getAttribute('aria-describedby')).toBe('shopchat-notice');
+    expect(notice.querySelector('a')).toBeNull(); // evil.example isn't a store domain
   });
 
   it('opens and closes from the keyboard, returning focus to the bubble', async () => {
@@ -80,4 +88,5 @@ describe('widget', () => {
     expect(card.querySelector('.card-title')!.textContent).toBe("The assistant isn't available right now");
     expect([...card.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Try again']);
     expect(root.querySelector('.card-error')).toBeNull();
-  });});
+  });
+});

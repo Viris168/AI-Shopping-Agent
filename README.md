@@ -53,6 +53,7 @@ cd storefront && npm test && npm run build
 cd widget && npm test && npm run build      # build fails if the bundle exceeds 40 KB gzipped
 cd agent-service && python -m evals.run --suite golden    # needs the real, seeded commerce-api + API key
 cd agent-service && python -m evals.run --suite redteam   # same; see agent-service/evals/README.md
+k6 run -e AGENT_URL=https://staging-chat.example -e PEAK_VUS=50 loadtest/chat.js   # real model calls; staging only, see the file header
 ```
 
 ## Embedding the widget
@@ -67,8 +68,9 @@ cd agent-service && python -m evals.run --suite redteam   # same; see agent-serv
 Optional attributes:
 - `data-api`: agent-service URL. Defaults to the script's own origin.
 - `data-locale`: `en` or `vi`. Defaults to the page language.
-- `data-link-domains`: extra hosts links may point to, such as carrier tracking sites. Only the store's own domains are allowed by default.
+- `data-link-domains`: extra hosts links may point to, such as carrier tracking sites (`ups.com,fedex.com,usps.com,dhl.com`). Only the store's own domains are allowed by default, so without this the order card has no tracking link.
 - `data-help-url`: the page offered when chat fails.
+- `data-privacy-url`: linked from the storage notice under the message box ("kept in this tab, stored 90 days"). Must be on an allowed host.
 
 Theming uses CSS variables on `#shopchat-root`: `--shopchat-accent`, `--shopchat-bg`, `--shopchat-text`, `--shopchat-radius`, `--shopchat-font` and more.
 
