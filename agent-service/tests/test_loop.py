@@ -288,7 +288,7 @@ async def test_cancel_tells_the_model_without_running_anything(redis: FakeAsyncR
     action = await agent.actions.take(events.first("confirm_request")["actionId"], ALICE)
     assert action is not None
 
-    await agent.cancel(action)
+    await agent.cancel(action, ALICE)
     saved = await agent.sessions.get(session.id)
     assert saved is not None
     assert saved.messages[-1]["content"][-1]["text"] == (

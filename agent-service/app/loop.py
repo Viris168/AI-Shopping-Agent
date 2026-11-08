@@ -1,4 +1,4 @@
-"""The agent loop (AGENT.md §4): tool rounds, confirm gate, budgets, follow-ups."""
+"""The agent loop (AGENT.md §4): tool rounds, confirm gate, budgets, follow-ups, transcripts."""
 
 import logging
 from collections.abc import Callable
@@ -16,7 +16,7 @@ from app.commerce_client import CommerceClient
 from app.config import Settings
 from app.guardrails import TokenBudget, suspect_facts, wrap_tool_result
 from app.llm import LLM
-from app.sessions import Session, SessionStore
+from app.sessions import Session, SessionStore, TranscriptStore
 from app.sse import Emit
 from app.tools.registry import Registry, ToolContext, ToolOutput
 
@@ -88,6 +88,7 @@ class Agent:
     actions: ActionStore
     budget: TokenBudget
     client: CommerceClient
+    transcripts: TranscriptStore | None = None  # None in unit tests and evals
     on_tool_call: OnToolCall | None = None  # evals record calls here
 
     def _ctx(self, auth: Auth, conversation_id: str, idem_key: str | None = None) -> ToolContext:
@@ -146,6 +147,8 @@ class Agent:
             emit("text_delta", {"text": FALLBACK_HANDOFF_TEXT})
 
         suspect_facts("".join(reply), tool_texts)
+        # Before summarising, so messages are saved before they can be folded away.
+        await self._record(session, auth, usage)
         await self.sessions.maybe_summarise(session, self.llm.summarise)
         await self.sessions.save(session)
         emit("done", {"usage": usage})
@@ -191,13 +194,20 @@ class Agent:
         if session is None or session.user_id != auth.user_id:
             emit("done", {})
             return
+        if action.tool == "create_support_ticket" and not out.is_error:
+            session.outcome = "handoff"
         session.append_event(
             f"Shopper pressed Confirm for {action.tool}. Result: {wrap_tool_result(out.for_model)}"
         )
         await self.run_turn(session, None, auth, emit)
 
-    async def cancel(self, action: PendingAction) -> None:
+    async def cancel(self, action: PendingAction, auth: Auth) -> None:
         session = await self.sessions.get(action.conversation_id)
         if session is not None:
             session.append_event(f"Shopper pressed Cancel for {action.tool}.")
+            await self._record(session, auth, {})
             await self.sessions.save(session)
+
+    async def _record(self, session: Session, auth: Auth, usage: dict[str, int]) -> None:
+        if self.transcripts is not None:
+            await self.transcripts.record(session, auth, usage)

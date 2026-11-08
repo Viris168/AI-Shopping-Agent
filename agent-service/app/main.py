@@ -13,13 +13,13 @@ from redis.asyncio import Redis
 
 from app.actions import ActionStore
 from app.auth import Auth, get_auth
-from app.commerce_client import CommerceClient
+from app.commerce_client import ApiError, CommerceClient
 from app.config import Settings, get_settings
 from app.guardrails import RateLimiter, TokenBudget, check_message
 from app.llm import LLM
 from app.loop import Agent
-from app.masking import MaskingFilter, mask
-from app.sessions import SessionStore
+from app.masking import MaskingFilter
+from app.sessions import SessionStore, TranscriptStore
 from app.sse import Emit, sse_response
 from app.tools.registry import build_registry
 
@@ -42,6 +42,7 @@ async def services(settings: Settings, redis: Redis) -> AsyncIterator[Agent]:
             actions=ActionStore(redis, settings.action_ttl_s),
             budget=TokenBudget(redis, settings.token_budget, settings.session_ttl_s),
             client=client,
+            transcripts=TranscriptStore(client),
         )
     finally:
         await client.aclose()
@@ -152,14 +153,26 @@ async def confirm_action(
 async def cancel_action(action_id: ActionId, auth: AuthDep, agent: AgentDep) -> Response:
     action = await agent.actions.take(action_id, auth)
     if action is not None:
-        await agent.cancel(action)
+        await agent.cancel(action, auth)
     return Response(status_code=204)
 
 
 @app.post("/v1/feedback", status_code=204)
-async def feedback(body: FeedbackRequest, auth: AuthDep) -> Response:
-    # TODO: persist with the conversations table (ARCHITECTURE.md §5.2).
-    log.info("feedback %s", mask(body.model_dump() | {"userId": auth.user_id}))
+async def feedback(
+    body: FeedbackRequest, request: Request, auth: AuthDep, agent: AgentDep
+) -> Response:
+    await _rate_limit(request, auth)
+    if agent.transcripts is None:
+        raise HTTPException(503, "Feedback can't be saved right now.")
+    try:
+        await agent.transcripts.feedback(
+            body.conversationId, body.messageId, body.rating, body.comment, auth
+        )
+    except ApiError as exc:
+        if exc.status == 404:
+            raise HTTPException(404, "We couldn't find that conversation.") from exc
+        log.warning("feedback_save_failed %s: %s", body.conversationId, exc.status)
+        raise HTTPException(503, "Feedback can't be saved right now.") from exc
     return Response(status_code=204)
 
 

@@ -117,6 +117,7 @@ Global prefix `api/v1` (except `/health`). Swagger at `/docs`.
 | orders | `GET /orders`, `GET /orders/:orderNumber` | JWT |
 | returns | `POST /returns`, `GET /returns` | JWT |
 | support | `POST /support/tickets` | optional JWT |
+| conversations | `POST /conversations/:id/turns`, `POST /conversations/:id/feedback` (transcripts, not a tool) | optional JWT + service token |
 | cart | `POST /checkout` | **never called by the agent** |
 
 Cross-cutting: `helmet`, CORS allowlist, global `ValidationPipe` (whitelist + forbid unknown), `ThrottlerGuard`, `pino` logging with auth header redaction, `AgentAuditInterceptor`.
@@ -129,7 +130,7 @@ Cross-cutting: `helmet`, CORS allowlist, global `ValidationPipe` (whitelist + fo
 | Verify `X-Service-Token` before honouring `X-Client: ai-agent` | Header can be spoofed today |
 | Audit failed agent mutations; alert on audit insert failure | Interceptor logs only successes and swallows errors |
 | `Idempotency-Key` on `POST /returns` and `POST /support/tickets` | Safe retries of confirmed actions |
-| Add `conversations` table + migration | Transcript storage for support and evals |
+| Add `conversations` table + migration (done) | Transcript storage for support and evals |
 
 ### 4.2 agent-service (new)
 
@@ -227,9 +228,12 @@ Events emitted to host: `shopchat:cart-updated`, `shopchat:open`, `shopchat:clos
 | user_id | uuid null | set once the shopper is logged in |
 | messages | jsonb | masked transcript |
 | summary | text null | rolling summary |
-| outcome | varchar(16) | `resolved` / `handoff` / `abandoned` |
-| tokens_in, tokens_out | int | cost tracking |
+| outcome | varchar(16) null | `resolved` / `handoff` / `abandoned`; agent-service sets `handoff` on a confirmed ticket |
+| tokens_in, tokens_out | int | cost tracking (summed per turn) |
+| feedback | jsonb | `[{messageId, rating, comment, at}]` from `/v1/feedback` |
 | created_at, updated_at | timestamptz | retention job deletes after 90 days |
+
+agent-service appends each turn's new messages (masked) after the turn; a failed write is retried with the next turn and never fails the shopper's turn. Writes need the service token and are owner-scoped in the query: a guest row can be claimed on login, a shopper's row is never written by anyone else. Audit rows for these writes keep route params only, not the transcript.
 
 ### 5.3 Redis keys
 
