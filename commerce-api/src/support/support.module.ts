@@ -22,7 +22,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
-import { LessThanOrEqual, Repository } from 'typeorm';
+import { Raw, Repository } from 'typeorm';
 import {
   CurrentUser,
   OptionalJwtAuthGuard,
@@ -145,7 +145,9 @@ export class TicketForwarder {
     if (!this.helpdesk.enabled) return 0;
     const due = await this.tickets.find({
       select: { id: true },
-      where: { nextForwardAt: LessThanOrEqual(new Date()) },
+      // Database clock, same as the claim in forward(): a JS Date is only ms-precise, so a row
+      // made due with now() could look a fraction of a ms in the future and be skipped.
+      where: { nextForwardAt: Raw((col) => `${col} <= now()`) },
       order: { nextForwardAt: 'ASC' },
       take: BATCH,
     });
