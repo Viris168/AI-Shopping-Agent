@@ -1,0 +1,6 @@
+# Applies only to infra/edge/Dockerfile (repo-root context): send just what it needs.
+*
+!widget/
+!infra/edge/Caddyfile
+widget/node_modules
+widget/dist

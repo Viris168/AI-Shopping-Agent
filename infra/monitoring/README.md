@@ -1,0 +1,138 @@
+# Monitoring, alerts and the kill switch
+
+agent-service sends traces and metrics over **OTLP/HTTP** (`app/telemetry.py`). Nothing here is
+tied to one vendor. The files assume a Prometheus-compatible metrics store and Grafana, e.g.
+**Grafana Cloud** (free tier is enough for staging and the first rollout steps), or a
+self-hosted OpenTelemetry Collector → Prometheus/Tempo.
+
+| File | What |
+|---|---|
+| `dashboard.json` | Grafana dashboard "Shopping assistant": the ARCHITECTURE.md §8 metrics |
+| `alerts.yaml` | Prometheus/Mimir alert rules: tool errors, first-token latency, model errors, failing turns |
+| `alerts-logs.yaml` | Loki rule: commerce-api audit insert failures (needs log shipping, see [Logs](#logs)) |
+
+Verified against Prometheus 3.5 with its OTLP receiver: `promtool check rules` passes, and every
+dashboard and alert query returns data from real agent-service exports.
+
+## Setup
+
+1. **Grafana Cloud stack** (or your own backend). Under *Connections → OpenTelemetry (OTLP)*, note
+   the endpoint (`https://otlp-gateway-<region>.grafana.net/otlp`), the instance ID, and create
+   an access token with `metrics:write` and `traces:write`.
+2. **GitHub Environment** (each of `staging`, `production`): re-run
+   `infra/setup-github-env.sh <env>` and fill in the monitoring step, or set them yourself:
+   ```bash
+   gh variable set OTEL_EXPORTER_OTLP_ENDPOINT --env staging --body https://otlp-gateway-<region>.grafana.net/otlp
+   gh secret set OTEL_EXPORTER_OTLP_HEADERS --env staging   # Authorization=Basic%20<base64 of instanceId:token>
+   ```
+   The next deploy passes them to agent-service. Empty endpoint → nothing is exported.
+3. **Dashboard**: Grafana → *Dashboards → New → Import* → upload `dashboard.json` → pick the
+   Prometheus data source. The *Environment* picker lists `staging/agent-service` and
+   `production/agent-service` (the `job` label is `DEPLOY_ENV/agent-service`).
+4. **Alerts**: `mimirtool rules load alerts.yaml` (address and token for your Grafana Cloud
+   Prometheus), or *Alerting → Alert rules → Import*. Then route `severity=page` to whoever is on
+   call and `severity=warning` to a channel. Check that a test notification arrives.
+5. **Verify the alerts** before the 5% step (rollout exit gate "alerts verified"): on staging,
+   stop commerce-api for 10 minutes while chatting (→ `AgentToolErrorRateHigh`), and set a wrong
+   `ANTHROPIC_API_KEY` (→ `AgentModelErrorSpike`, fallback card in the widget).
+
+Locally, any OTLP collector works, e.g. `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`. Logs
+are text in development and JSON (with `request_id` and `trace_id`) when `APP_ENV=production`.
+
+## What gets measured
+
+| Metric (Prometheus name) | Labels | Meaning |
+|---|---|---|
+| `agent_turn_first_token_seconds` | `route` | Request → first text_delta |
+| `agent_turn_duration_seconds` | `route`, `outcome` | Request → done; `outcome` is ok, an error code, or cancelled |
+| `agent_turn_errors_total` | `route`, `error_type` | `model_unavailable` (fallback card), `timeout`, `internal` |
+| `agent_streams_active` | `route` | Open SSE streams |
+| `agent_model_calls_total`, `agent_model_duration_seconds` | `gen_ai_operation_name`, `gen_ai_request_model`, `status`, `error_type` | One model API call (after the SDK's 2 retries) |
+| `agent_model_tokens_total` | `gen_ai_token_type` (input, output, cache_read) | Tokens |
+| `agent_tool_calls_total`, `agent_tool_duration_seconds` | `tool`, `status` | `ok`; `rejected` (login, not found, bad input: expected); `error` (store 5xx/429/unreachable) |
+| `agent_conversations_total` | — | New conversations |
+| `agent_handoffs_total` | — | Support tickets created |
+| `agent_actions_total` | `tool`, `result` | Confirm cards: requested, confirmed, failed, cancelled, expired |
+| `agent_feedback_total` | `rating` | Thumbs up/down |
+| `agent_disabled_rejections_total` | — | Requests refused by the kill switch |
+
+Traces: one root span per turn (`turn chat`, `turn confirm`) with `conversation.id`, then a span
+per model call (`chat <model>`, token counts), per tool (`tool <name>`) and per commerce-api
+request (`commerce-api GET`). Spans carry no message text or personal data.
+
+**Request IDs.** Every agent-service response has `X-Request-Id`, and every commerce-api call in
+that turn sends the same ID. commerce-api logs it as `req.id` and echoes it back. To follow one
+turn: search both services' logs for the ID, or open the trace from a log line's `trace_id`.
+
+## Kill switch
+
+Turning the assistant off makes `/v1/chat` and `/v1/actions/*/confirm` answer `503` (the open
+widget shows its fallback card), and `/v1/config` reports `enabled: false`, so the widget stops
+appearing on page loads within a minute. Pending confirm cards can't be confirmed.
+
+**Instant, no deploy**: set the Redis flag (all replicas, takes effect on the next request):
+
+```bash
+ssh <vm> 'cd ~/shop && docker compose exec redis redis-cli SET flag:agent_enabled 0'
+```
+
+With managed Redis, run `redis-cli -u "$REDIS_URL" SET flag:agent_enabled 0` from anywhere that
+can reach it. Turn it back on with `DEL flag:agent_enabled`.
+
+**Durable**: set the GitHub Environment variable `AGENT_ENABLED=false` and redeploy. Redis can't
+turn on an assistant that `AGENT_ENABLED` turned off.
+
+## Rollout
+
+`/v1/config` also carries `rolloutPercent`. Each browser picks a fixed bucket 0–99 and sees the
+widget if its bucket is below the percentage, so raising it only ever adds shoppers.
+
+| Step (ARCHITECTURE.md §12) | Setting |
+|---|---|
+| Staff | `0`; staff open the store with `?shopchat=on` once (`?shopchat=off` to undo) |
+| 5% / 25% / 100% | `SET flag:rollout_percent 5` (then 25, 100) |
+
+The `ROLLOUT_PERCENT` variable sets the value after a deploy (unset: production 0, staging 100).
+The Redis flag wins while it exists; `DEL flag:rollout_percent` goes back to the variable. Before
+each step, check the dashboard: tool errors < 5%, handoff and thumbs-up rates steady.
+
+## Runbooks
+
+### Tool errors
+
+`AgentToolErrorRateHigh`: over 5% of tool calls hit a store failure. On the dashboard, *Tool
+error rate* by tool shows whether it's one route or all of them. All of them → commerce-api or
+its database is down (`docker compose logs commerce-api`, `/health`). One tool → that route's
+logs in commerce-api, by request ID. If shoppers are getting nowhere, use the kill switch.
+
+### Slow first token
+
+`AgentFirstTokenSlow`: p95 over 4 s. Compare *Model call duration* (provider slow → nothing to
+fix locally; consider the kill switch if it's very slow) with *Tool duration* (a slow store
+call before the first reply).
+
+### Model errors
+
+`AgentModelErrorSpike`: over 10% of model calls fail after retries; shoppers see the fallback
+card. `error_type` tells you which: `401`/`403` → key revoked or wrong (`ANTHROPIC_API_KEY`);
+`429` → rate or spend limit; `5xx`/`529` → provider outage (status page);
+`APIConnectionError`/`APITimeoutError` → network. Long outage: switch the assistant off.
+
+### Failing turns
+
+`AgentTurnsFailing`: timeouts or crashes. `internal` → the traceback is in agent-service's logs
+(`turn failed`). `timeout` → a turn hit `TURN_TIMEOUT_S`; check model and tool durations.
+
+### Audit insert failures
+
+`CommerceAuditInsertFailed`: an agent change happened, but its `agent_action_logs` row didn't save.
+The log line names the action. Check the database (disk, connections), then record the missed
+actions by hand from commerce-api's request logs.
+
+## Logs
+
+commerce-api's audit failures are only in its logs, so that alert needs the containers' logs in
+Loki. On the VM, run Grafana Alloy (or any Docker log shipper) reading the `shop` project's
+containers and labelling them `service_name=<compose service>`. This repo doesn't ship that
+agent yet; until it does, `CommerceAuditInsertFailed` can't fire. Check by hand with
+`docker compose logs commerce-api | grep audit_insert_failed`.

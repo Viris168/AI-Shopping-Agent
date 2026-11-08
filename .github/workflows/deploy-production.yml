@@ -1,0 +1,66 @@
+name: deploy-production
+
+# Manual promote: deploys images that already passed staging (deploy + smoke) to production.
+# Nothing is rebuilt; the same digests move forward. The `production` environment's required
+# reviewers approve the deploy job before it can read production secrets (infra/README.md).
+#
+# Rollback: run this again with the SHA of an earlier good deploy. Migrations aren't reverted,
+# which is why they must stay backward compatible (infra/deploy.sh).
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit to promote (blank = the latest successful staging deploy)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.pick.outputs.sha }}
+    steps:
+      - id: pick
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          staging_runs() {
+            gh run list --workflow deploy-staging.yml --branch main --status success \
+              --limit 1 --json headSha --jq '.[0].headSha // empty' "$@"
+          }
+          if [ -z "$INPUT_SHA" ]; then
+            sha=$(staging_runs)
+            [ -n "$sha" ] || { echo "::error::No successful staging deploy on main yet"; exit 1; }
+          else
+            [[ $INPUT_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Give the full 40-character commit SHA"; exit 1; }
+            sha=$(staging_runs --commit "$INPUT_SHA")
+            [ -n "$sha" ] || { echo "::error::$INPUT_SHA has no successful deploy-staging run on main; deploy it to staging first"; exit 1; }
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Promoting \`$sha\` (passed staging) to production" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: resolve
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: production
+      sha: ${{ needs.resolve.outputs.sha }}
+    secrets: inherit

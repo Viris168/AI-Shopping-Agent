@@ -1,0 +1,130 @@
+# Staging / production stack on one VM, run by infra/deploy.sh. Not for local development
+# (that's ../docker-compose.yml).
+#
+# Every value comes from ~/shop/.env, which the deploy workflow writes from the GitHub
+# Environment on each deploy (images pinned by digest, secrets, domains). Nothing here is secret.
+#
+# Postgres and Redis are optional: deploy with the `datastores` profile to run them here
+# (fine for staging), or point DATABASE_URL / REDIS_URL at managed services (recommended for
+# production) and leave the profile off.
+
+name: shop
+
+x-hardening: &hardening
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: { max-size: 20m, max-file: "5" }
+
+x-commerce-env: &commerce-env
+  NODE_ENV: production
+  DATABASE_URL: ${DATABASE_URL:?}
+  JWT_SECRET: ${JWT_SECRET:?}
+  SERVICE_TOKEN: ${SERVICE_TOKEN:?}
+
+services:
+  postgres:
+    profiles: [datastores]
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_DB: shop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-} # required with this profile; deploy.sh checks
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop -d shop"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    profiles: [datastores]
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # One-shot pre-deploy job: `docker compose run --rm migrate` (deploy.sh). Not read-only:
+  # npm writes its logs under $HOME.
+  migrate:
+    profiles: [migrate]
+    image: ${COMMERCE_API_IMAGE:?}
+    command: ["npm", "run", "migration:run:prod"]
+    environment: *commerce-env
+    depends_on:
+      postgres: { condition: service_healthy, required: false }
+
+  commerce-api:
+    <<: *hardening
+    image: ${COMMERCE_API_IMAGE:?}
+    environment:
+      <<: *commerce-env
+      TRUST_PROXY: "1" # Caddy
+      CORS_ORIGINS: ${API_CORS_ORIGINS:?}
+      STOREFRONT_URL: ${STOREFRONT_URL:?}
+    depends_on:
+      postgres: { condition: service_healthy, required: false }
+
+  agent-service:
+    <<: *hardening
+    image: ${AGENT_SERVICE_IMAGE:?}
+    environment:
+      APP_ENV: production
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?}
+      JWT_SECRET: ${JWT_SECRET:?}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?}
+      REDIS_URL: ${REDIS_URL:?}
+      COMMERCE_API_URL: http://commerce-api:3000/api/v1
+      STOREFRONT_URL: ${STOREFRONT_URL:?}
+      CORS_ORIGINS: ${CHAT_CORS_ORIGINS:?}
+      # Kill switch and rollout; Redis flags override them at runtime (infra/monitoring/README.md).
+      AGENT_ENABLED: ${AGENT_ENABLED:-true}
+      ROLLOUT_PERCENT: ${ROLLOUT_PERCENT:-100}
+      # Traces and metrics over OTLP/HTTP; empty endpoint → no export.
+      DEPLOY_ENV: ${DEPLOY_ENV:?}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      # Only Caddy can reach this container (no published port), so trust its X-Forwarded-For;
+      # otherwise every shopper shares Caddy's IP for rate limiting.
+      FORWARDED_ALLOW_IPS: "*"
+    depends_on:
+      redis: { condition: service_healthy, required: false }
+      commerce-api: { condition: service_healthy }
+
+  # TLS + routing (infra/edge/Caddyfile) and the widget bundle, built into one image.
+  edge:
+    image: ${EDGE_IMAGE:?}
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?}
+      CHAT_DOMAIN: ${CHAT_DOMAIN:?}
+      ACME_EMAIL: ${ACME_EMAIL:?}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data # certificates: keep across deploys or Let's Encrypt rate-limits you
+      - caddy_config:/config
+    logging:
+      driver: json-file
+      options: { max-size: 20m, max-file: "5" }
+    depends_on:
+      commerce-api: { condition: service_healthy }
+      agent-service: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:

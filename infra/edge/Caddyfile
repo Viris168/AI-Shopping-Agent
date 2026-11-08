@@ -1,0 +1,28 @@
+# API_DOMAIN → commerce-api, CHAT_DOMAIN → agent-service + /v1/widget.js.
+# Caddy gets and renews the TLS certificates itself; DNS for both names must point at this VM.
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy commerce-api:3000
+}
+
+{$CHAT_DOMAIN} {
+	# widget.js isn't content-hashed, so keep the cache short: a deploy reaches shoppers in minutes.
+	handle /v1/widget.js {
+		root * /srv/widget
+		rewrite * /widget.js
+		encode zstd gzip
+		header Cache-Control "public, max-age=300"
+		file_server
+	}
+
+	# Chat replies are server-sent events: no compression, flush every chunk.
+	handle {
+		reverse_proxy agent-service:8000 {
+			flush_interval -1
+		}
+	}
+}

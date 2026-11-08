@@ -295,9 +295,11 @@ Details in [AGENT.md §8](./AGENT.md#8-evals).
 
 Domains: `api.yourstore.com` → commerce-api; `chat.yourstore.com` → agent-service + widget CDN.
 
-Secrets (secret manager): `ANTHROPIC_API_KEY`, `JWT_SECRET`, `SERVICE_TOKEN`, `DATABASE_URL`, `REDIS_URL`.
+Secrets (GitHub Environment secrets, per environment): `ANTHROPIC_API_KEY`, `JWT_SECRET`, `SERVICE_TOKEN`, `DATABASE_URL`, `REDIS_URL`.
 
-CI/CD: lint/type/test → API integration tests on seeded Postgres → evals → deploy staging → smoke → manual promote.
+CI/CD: lint/type/test → API integration tests on seeded Postgres → evals (all on the PR) → merge → deploy staging → smoke → manual promote of the same image digests.
+
+Staging and production each run on one VM with Docker Compose behind Caddy (TLS, widget). Images live in GHCR. Setup and runbook: [infra/README.md](./infra/README.md).
 
 Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget dev server).
 
