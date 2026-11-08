@@ -7,3 +7,6 @@
 .ruff_cache
 tests
 evals/results
+.git
+.env.*
+!.env.example

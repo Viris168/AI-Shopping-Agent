@@ -133,7 +133,6 @@ Exit gates per phase are listed in [ARCHITECTURE.md §12](./ARCHITECTURE.md#12-r
 - Anthropic API account and key
 - Storefront endpoint that returns the shopper's JWT to the widget (`/session/token`)
 - Helpdesk choice for ticket handoff
-- Real carrier tracking URLs (current link is a placeholder)
 
 ## 11. Risks
 

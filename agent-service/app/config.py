@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Same fallback commerce-api uses outside production (commerce-api/src/auth/jwt.config.ts).
@@ -47,7 +47,18 @@ class Settings(BaseSettings):
     action_ttl_s: int = 600
 
     cors_origins: str = "http://localhost:5173"
+
+    # Kill switch and rollout (ARCHITECTURE.md §7, §12). Redis keys flag:agent_enabled and
+    # flag:rollout_percent override these at runtime without a redeploy.
     agent_enabled: bool = True
+    rollout_percent: int = Field(100, ge=0, le=100)
+
+    # Telemetry (app/telemetry.py). Unset endpoint → no export. DEPLOY_ENV names the
+    # environment in traces and metrics (staging and production both run APP_ENV=production).
+    deploy_env: str | None = None
+    otel_exporter_otlp_endpoint: str | None = None
+    otel_exporter_otlp_headers: SecretStr | None = None
+    trace_sample_ratio: float = Field(1.0, ge=0, le=1)
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -1,17 +1,18 @@
 """HTTP client for commerce-api. Every agent call goes through here.
 
 Always sends the shopper's own JWT (never a privileged credential), the agent
-headers that `AgentAuditInterceptor` keys on, and a request ID.
+headers that `AgentAuditInterceptor` keys on, and the incoming request's ID, so commerce-api's
+log lines for one chat turn share the agent's `X-Request-Id`.
 """
 
 import asyncio
 import logging
-import uuid
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 
+from app import telemetry
 from app.auth import Auth
 from app.config import Settings
 
@@ -71,7 +72,7 @@ class CommerceClient:
         headers = {
             "Accept": "application/json",
             "X-Client": "ai-agent",
-            "X-Request-Id": str(uuid.uuid4()),
+            "X-Request-Id": telemetry.request_id(),
         }
         if self._settings.service_token is not None:
             headers["X-Service-Token"] = self._settings.service_token.get_secret_value()
@@ -86,29 +87,38 @@ class CommerceClient:
 
         # Reads are always safe to retry; writes only with an idempotency key.
         retryable = method == "GET" or idempotency_key is not None
-        attempt = 0
-        while True:
-            try:
-                resp = await self._http.request(
-                    method, path.lstrip("/"), headers=headers, params=params, json=json
-                )
-            except httpx.TransportError as exc:
-                if retryable and attempt < MAX_RETRIES:
+        # Span name stays low-cardinality; the path (order numbers, product IDs) is an attribute.
+        with telemetry.span(f"commerce-api {method}", **{
+            "http.request.method": method, "url.path": path,
+        }) as span:
+            attempt = 0
+            while True:
+                try:
+                    resp = await self._http.request(
+                        method, path.lstrip("/"), headers=headers, params=params, json=json
+                    )
+                except httpx.TransportError as exc:
+                    if retryable and attempt < MAX_RETRIES:
+                        attempt += 1
+                        await asyncio.sleep(0.25 * 2**attempt)
+                        continue
+                    log.warning("commerce-api %s %s failed: %s", method, path, type(exc).__name__)
+                    telemetry.mark_error(span, type(exc).__name__)
+                    raise ApiError(503, "The store is not responding right now.") from exc
+
+                if resp.status_code in RETRY_STATUS and retryable and attempt < MAX_RETRIES:
                     attempt += 1
                     await asyncio.sleep(0.25 * 2**attempt)
                     continue
-                log.warning("commerce-api %s %s failed: %s", method, path, type(exc).__name__)
-                raise ApiError(503, "The store is not responding right now.") from exc
-
-            if resp.status_code in RETRY_STATUS and retryable and attempt < MAX_RETRIES:
-                attempt += 1
-                await asyncio.sleep(0.25 * 2**attempt)
-                continue
-            if resp.is_error:
-                raise ApiError(resp.status_code, _error_message(resp))
-            if resp.status_code == 204 or not resp.content:
-                return None
-            return resp.json()
+                span.set_attribute("http.response.status_code", resp.status_code)
+                span.set_attribute("http.request.resend_count", attempt)
+                if resp.is_error:
+                    if resp.status_code >= 500:
+                        telemetry.mark_error(span, str(resp.status_code))
+                    raise ApiError(resp.status_code, _error_message(resp))
+                if resp.status_code == 204 or not resp.content:
+                    return None
+                return resp.json()
 
     async def ping(self) -> bool:
         # /health sits outside the /api/v1 prefix (commerce-api/src/setup.ts).

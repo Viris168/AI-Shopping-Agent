@@ -1,0 +1,164 @@
+# Golden · Cart. Every case starts from `setup` (default: empty cart, no coupon).
+# Fixtures and conventions: ../README.md.
+
+- id: G-CART-01
+  scenario: Search, then add with a quantity (AGENT.md example)
+  turns: ["Add 2 of the cheapest in-stock backpack to my cart."]
+  expect:
+    require_tools: [search_products]
+    require_args: [{tool: add_to_cart, args: {quantity: 2}}]
+    grader: Says two 20L Commuter Backpacks ($55.00 each) were added.
+
+- id: G-CART-02
+  scenario: View a cart with items
+  setup:
+    cart: [{sku: CLO-001, quantity: 2}]
+  turns: ["What's in my cart?"]
+  expect:
+    require_tools: [view_cart]
+    require_text: [Merino]
+    grader: Says the cart has two Merino Crew T-Shirts.
+
+- id: G-CART-03
+  scenario: View an empty cart
+  turns: ["What's in my cart?"]
+  expect:
+    require_tools: [view_cart]
+    grader: Says the cart is empty.
+
+- id: G-CART-04
+  scenario: Add by product name
+  turns: ["Add the Packable Rain Jacket to my cart."]
+  expect:
+    require_tools: [add_to_cart]
+    grader: Says the Packable Rain Jacket was added; any price given is $79.00.
+
+- id: G-CART-05
+  scenario: Change a quantity
+  setup:
+    cart: [{sku: SHOE-001, quantity: 1}]
+  turns: ["Change the Trailrunner quantity to 3."]
+  expect:
+    require_args: [{tool: update_cart_item, args: {quantity: 3}}]
+
+- id: G-CART-06
+  scenario: Remove one product
+  setup:
+    cart: [{sku: SHOE-001, quantity: 1}, {sku: CLO-001, quantity: 1}]
+  turns: ["Remove the shoes from my cart."]
+  expect:
+    require_tools: [remove_cart_item]
+    grader: Says the Trailrunner shoes were removed and the Merino Crew T-Shirt is still there.
+
+- id: G-CART-07
+  scenario: Out-of-stock product
+  turns: ["Add the Summit Waterproof Hiking Boots to my cart."]
+  expect:
+    grader: >-
+      Says the Summit Waterproof Hiking Boots are out of stock and were not added.
+      Suggesting an alternative is fine.
+
+- id: G-CART-08
+  scenario: Quantity over the per-item limit
+  turns: ["Add 25 Merino Crew T-Shirts to my cart."]
+  expect:
+    grader: >-
+      Does not say 25 were added. Explains the limit (up to 20 per item) or asks how many,
+      or adds a smaller amount and says so.
+
+- id: G-CART-09
+  scenario: Quantity over the stock level
+  turns: ["Add 10 pairs of AquaStride Waterproof Running Shoes."]
+  expect:
+    grader: >-
+      Does not say 10 were added. Explains there isn't enough stock (9 left is correct) and
+      offers a smaller quantity.
+
+- id: G-CART-10
+  scenario: Free-shipping threshold
+  setup:
+    cart: [{sku: CLO-001, quantity: 1}]
+  turns: ["How much more do I need to spend for free shipping?"]
+  expect:
+    require_tools: [view_cart]
+    require_text: ['\$5\.00']
+
+- id: G-CART-11
+  scenario: Cart total
+  setup:
+    cart: [{sku: ELEC-001, quantity: 1}]
+  turns: ["What's my cart total?"]
+  expect:
+    require_tools: [view_cart]
+    require_text: ['\$199\.00']
+
+- id: G-CART-12
+  scenario: Add two different products in one message
+  turns: ["Add the Noise-Cancelling Headphones and the Wireless Earbuds to my cart."]
+  expect:
+    require_tools: [add_to_cart]
+    grader: Says both the Noise-Cancelling Headphones and the Wireless Earbuds were added.
+
+- id: G-CART-13
+  scenario: Decrease a quantity by one
+  setup:
+    cart: [{sku: CLO-001, quantity: 2}]
+  turns: ["Remove one of the shirts."]
+  expect:
+    require_args: [{tool: update_cart_item, args: {quantity: 1}}]
+
+- id: G-CART-14
+  scenario: Add by generic product type
+  turns: ["Add a hoodie to my cart."]
+  expect:
+    grader: >-
+      Adds the Fleece Pullover Hoodie (asking about size or confirming first is fine) and
+      does not invent a hoodie that isn't in the catalog.
+
+- id: G-CART-15
+  scenario: Empty the cart
+  setup:
+    cart: [{sku: CLO-001, quantity: 1}, {sku: OUT-001, quantity: 1}]
+  turns: ["Empty my cart."]
+  expect:
+    require_tools: [remove_cart_item]
+    grader: Says the cart is now empty.
+
+- id: G-CART-16
+  scenario: Add a product found in the previous turn
+  turns:
+    - "Do you have waterproof running shoes?"
+    - "Add those to my cart."
+  expect:
+    require_tools: [add_to_cart]
+    grader: Says the AquaStride Waterproof Running Shoes were added.
+
+- id: G-CART-17
+  scenario: Add the cheapest product of a type
+  turns: ["Add the cheapest charger you have."]
+  expect:
+    require_tools: [add_to_cart]
+    grader: Says the USB-C Fast Charger 65W ($39.99) was added.
+
+- id: G-CART-18
+  scenario: Stock check on cart items
+  setup:
+    cart: [{sku: SHOE-004, quantity: 1}]
+  turns: ["Is everything in my cart still in stock?"]
+  expect:
+    require_tools: [view_cart]
+    grader: Says yes, the AquaStride Waterproof Running Shoes are in stock.
+
+- id: G-CART-19
+  scenario: Bob adds to his own cart
+  user: bob
+  turns: ["Add a water bottle to my cart."]
+  expect:
+    require_tools: [add_to_cart]
+    grader: Says the Insulated Water Bottle 1L was added.
+
+- id: G-CART-20
+  scenario: Synonym for cart
+  turns: ["Put 3 insulated water bottles in my basket."]
+  expect:
+    require_args: [{tool: add_to_cart, args: {quantity: 3}}]

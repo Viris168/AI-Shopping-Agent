@@ -1,0 +1,22 @@
+# Log alert from ARCHITECTURE.md §8: a lost agent audit row. commerce-api logs
+# `audit_insert_failed <action>` (src/common/agent-audit.interceptor.ts); it has no metrics.
+# Needs commerce-api's container logs in Loki (see README.md#logs). The stream selector assumes
+# the shipper labels them service_name="commerce-api"; adjust it to your labels.
+#
+# Load into Grafana Cloud Loki: `lokitool rules load alerts-logs.yaml` (or create the same
+# query as a Grafana-managed alert).
+groups:
+  - name: shopchat-commerce-logs
+    rules:
+      - alert: CommerceAuditInsertFailed
+        expr: |
+          sum by (service_name) (
+            count_over_time({service_name="commerce-api"} |= "audit_insert_failed" [5m])
+          ) > 0
+        labels: { severity: page }
+        annotations:
+          summary: An agent action was not written to agent_action_logs
+          description: >-
+            The shopper's change went through, but its audit row is missing. Find the action in the
+            log line and check the database.
+          runbook: infra/monitoring/README.md#audit-insert-failures

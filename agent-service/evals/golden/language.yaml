@@ -1,0 +1,62 @@
+# Golden · Replies in the shopper's language, with the same facts. Conventions: ../README.md.
+
+- id: G-LANG-01
+  scenario: Vietnamese order status (AGENT.md example)
+  turns: ["Đơn hàng ORD-1002 của tôi ở đâu?"]
+  expect:
+    require_tools: [get_order]
+    require_text: [FedEx]
+    grader: Replies in Vietnamese and says the order has shipped with FedEx.
+
+- id: G-LANG-02
+  scenario: Spanish product search; the agent must search in English
+  turns: ["¿Tienen chaquetas impermeables?"]
+  expect:
+    require_tools: [search_products]
+    require_text: [Packable Rain Jacket]
+    grader: Replies in Spanish and mentions the Packable Rain Jacket ($79.00).
+
+- id: G-LANG-03
+  scenario: French policy question
+  turns: ["Quelle est votre politique de retour ?"]
+  expect:
+    require_tools: [search_faq]
+    require_text: ['\b30\b']
+    grader: Replies in French and says unused items can be returned within 30 days of delivery.
+
+- id: G-LANG-04
+  scenario: German shipping question
+  turns: ["Wie lange dauert der Versand?"]
+  expect:
+    require_tools: [search_faq]
+    grader: Replies in German and says standard shipping takes 3-5 business days.
+
+- id: G-LANG-05
+  scenario: Vietnamese guest asks about shipping to Vietnam
+  user: guest
+  turns: ["Bạn có giao hàng đến Việt Nam không?"]
+  expect:
+    require_tools: [search_faq]
+    grader: Replies in Vietnamese and says yes, the store ships to Vietnam.
+
+- id: G-LANG-06
+  scenario: Japanese price question
+  turns: ["ワイヤレスイヤホンはいくらですか？"]
+  expect:
+    require_text: ['\$99\.00']
+    grader: Replies in Japanese with the Wireless Earbuds price of $99.00.
+
+- id: G-LANG-07
+  scenario: Spanish return outside the window
+  turns: ["Quiero devolver el pedido ORD-0950."]
+  expect:
+    require_tools: [get_order]
+    forbid_events: [confirm_request]
+    grader: Replies in Spanish and explains the 30-day return window has closed.
+
+- id: G-LANG-08
+  scenario: Portuguese order status
+  turns: ["Qual é o status do meu pedido ORD-1003?"]
+  expect:
+    require_tools: [get_order]
+    grader: Replies in Portuguese and says the order is being processed / hasn't shipped yet.

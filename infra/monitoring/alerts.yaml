@@ -1,0 +1,68 @@
+# Alerts from ARCHITECTURE.md §8, as Prometheus rules over the metrics agent-service exports
+# (app/telemetry.py; OTLP names → Prometheus: agent.tool.calls → agent_tool_calls_total).
+# `job` is "<DEPLOY_ENV>/agent-service", so each environment alerts on its own.
+#
+# Load into: Grafana Cloud / Mimir (`mimirtool rules load alerts.yaml`), or Prometheus
+# (`rule_files:`). Check with `promtool check rules alerts.yaml`. Runbooks: README.md.
+groups:
+  - name: shopchat-agent
+    rules:
+      - alert: AgentToolErrorRateHigh
+        # Store failures only (5xx, 429, unreachable). "Order not found" or a login prompt is
+        # status="rejected" and doesn't count. Needs ≥ 20 calls in 5 min so one failure at night
+        # doesn't page anyone.
+        expr: |
+          (
+            sum by (job) (rate(agent_tool_calls_total{status="error"}[5m]))
+              / sum by (job) (rate(agent_tool_calls_total[5m]))
+          ) > 0.05
+          and sum by (job) (increase(agent_tool_calls_total[5m])) >= 20
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of tool calls fail"
+          description: commerce-api calls from the agent are failing. Check commerce-api health and logs.
+          runbook: infra/monitoring/README.md#tool-errors
+
+      - alert: AgentFirstTokenSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum by (job, le) (rate(agent_turn_first_token_seconds_bucket{route="chat"}[10m]))
+          ) > 4
+          and sum by (job) (increase(agent_turn_first_token_seconds_count{route="chat"}[10m])) >= 20
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }}: p95 first token {{ $value | humanizeDuration }} (target < 4 s)"
+          description: Shoppers wait too long for the first words of a reply.
+          runbook: infra/monitoring/README.md#slow-first-token
+
+      - alert: AgentModelErrorSpike
+        expr: |
+          (
+            sum by (job) (rate(agent_model_calls_total{status="error"}[5m]))
+              / sum by (job) (rate(agent_model_calls_total[5m]))
+          ) > 0.10
+          and sum by (job) (increase(agent_model_calls_total[5m])) >= 10
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of model calls fail"
+          description: >-
+            The model API is failing after retries; shoppers see the fallback card. Check the
+            provider's status page and the error_type label (status code or connection error).
+          runbook: infra/monitoring/README.md#model-errors
+
+      - alert: AgentTurnsFailing
+        # Timeouts and crashes (not model outages, which have their own alert).
+        expr: |
+          (
+            sum by (job) (rate(agent_turn_errors_total{error_type=~"internal|timeout"}[10m]))
+              / sum by (job) (rate(agent_turn_duration_seconds_count[10m]))
+          ) > 0.05
+          and sum by (job) (increase(agent_turn_duration_seconds_count[10m])) >= 20
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of turns time out or crash"
+          runbook: infra/monitoring/README.md#failing-turns

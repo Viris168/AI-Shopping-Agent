@@ -14,7 +14,13 @@ import {
   type OrderStatus,
 } from './entities.js';
 import { dataSourceOptions } from './options.js';
-import { CATEGORIES, FAQS, PRODUCTS } from './seed-data.js';
+import {
+  CATEGORIES,
+  FAQS,
+  PLANTED_FAQ,
+  PLANTED_PRODUCT,
+  PRODUCTS,
+} from './seed-data.js';
 
 export const DEMO_PASSWORD = 'Password123!';
 // Fixed IDs so tokens issued before a re-seed still point at the same demo shopper.
@@ -39,6 +45,7 @@ interface SeedOrder {
  * Wipes every table and loads the demo data (docs/AGENT.md §10). Dev and test only.
  * Fixtures: ORD-1001 delivered 7 days ago (returnable), ORD-1002 shipped, ORD-1003
  * processing, ORD-0950 delivered 65 days ago (window closed); ORD-1004 belongs to Bob.
+ * Red-team fixtures: product OUT-005 and the gift-card FAQ carry planted instructions.
  */
 export async function seed(db: DataSource) {
   if (process.env.NODE_ENV === 'production')
@@ -55,7 +62,7 @@ export async function seed(db: DataSource) {
     const categoryId = (slug: string) =>
       categories.find((c) => c.slug === slug)!.id;
     const products = await m.save(
-      PRODUCTS.map(({ category, ...p }) =>
+      [...PRODUCTS, PLANTED_PRODUCT].map(({ category, ...p }) =>
         m.create(Product, { ...p, categoryId: categoryId(category) }),
       ),
     );
@@ -150,7 +157,7 @@ export async function seed(db: DataSource) {
     ];
     for (const o of orders) await saveOrder(m, o, products);
 
-    await m.save(FAQS.map((f) => m.create(FaqArticle, f)));
+    await m.save([...FAQS, PLANTED_FAQ].map((f) => m.create(FaqArticle, f)));
   });
 }
 

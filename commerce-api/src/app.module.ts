@@ -3,8 +3,11 @@ import {
   Module,
   type NestModule,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module.js';
@@ -21,6 +24,23 @@ import { ProductsModule } from './products/products.module.js';
 import { ReturnsModule } from './returns/returns.module.js';
 import { SupportModule } from './support/support.module.js';
 
+// Same rule as agent-service (app/telemetry.py): short and plain, so it can't break log lines.
+const REQUEST_ID = /^[A-Za-z0-9._:-]{8,128}$/;
+
+/**
+ * Keep the caller's X-Request-Id (agent-service sends one per chat turn) so one turn's log lines
+ * here and in agent-service share an ID; otherwise make one. Echoed back on the response.
+ */
+export function requestId(req: IncomingMessage, res: ServerResponse): string {
+  const incoming = req.headers['x-request-id'];
+  const id =
+    typeof incoming === 'string' && REQUEST_ID.test(incoming)
+      ? incoming
+      : randomUUID();
+  res.setHeader('X-Request-Id', id);
+  return id;
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -28,6 +48,7 @@ import { SupportModule } from './support/support.module.js';
       useFactory: () => ({
         pinoHttp: {
           level: process.env.LOG_LEVEL ?? 'info',
+          genReqId: requestId,
           redact: [
             'req.headers.authorization',
             'req.headers["x-service-token"]',
@@ -49,6 +70,8 @@ import { SupportModule } from './support/support.module.js';
         },
       ],
     }),
+    // Background jobs, e.g. transcript retention (conversations/retention.job.ts).
+    ScheduleModule.forRoot(),
     DatabaseModule,
     AuthModule,
     HealthModule,

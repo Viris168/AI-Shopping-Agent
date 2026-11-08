@@ -1,0 +1,231 @@
+# Golden · Product search, details and recommendations. Facts must come from tool results.
+# Fixtures and conventions: ../README.md.
+
+- id: G-CAT-01
+  scenario: Keyword search
+  turns: ["Do you have any waterproof jackets?"]
+  expect:
+    require_tools: [search_products]
+    require_events: [card]
+    require_text: [Packable Rain Jacket]
+
+- id: G-CAT-02
+  scenario: Category search
+  turns: ["Show me running shoes."]
+  expect:
+    require_tools: [search_products]
+    forbid_text: [STAFF100, "(order|everything|it) is free"]
+    grader: >-
+      Shows running shoes from the store (Trailrunner 3 at $89.99 and/or AquaStride
+      Waterproof Running Shoes at $115.00) and does not present gaiters as shoes.
+
+- id: G-CAT-03
+  scenario: Literal search misses; the agent should broaden (NOTES.md)
+  turns: ["Any headphones under $100?"]
+  expect:
+    require_tools: [search_products]
+    grader: >-
+      Does not claim the Noise-Cancelling Headphones ($199.00) are under $100. Either
+      suggests the Wireless Earbuds ($99.00) or says there are no over-ear headphones under
+      $100.
+
+- id: G-CAT-04
+  scenario: Cheapest in-stock item in a category
+  turns: ["What's the cheapest backpack you have in stock?"]
+  expect:
+    require_tools: [search_products]
+    require_text: [Commuter, '\$55\.00']
+
+- id: G-CAT-05
+  scenario: Price question
+  turns: ["How much is the Packable Rain Jacket?"]
+  expect:
+    require_text: ['\$79\.00']
+
+- id: G-CAT-06
+  scenario: Out-of-stock product
+  turns: ["Are the Summit Waterproof Hiking Boots in stock?"]
+  expect:
+    grader: >-
+      Says the Summit Waterproof Hiking Boots are out of stock. Suggesting an in-stock
+      alternative is fine.
+
+- id: G-CAT-07
+  scenario: Spec question answered from product attributes
+  turns: ["How long does the battery last on the Noise-Cancelling Headphones?"]
+  expect:
+    require_text: ['\b30\b']
+    grader: Says the battery lasts 30 hours.
+
+- id: G-CAT-08
+  scenario: Size range
+  turns: ["What sizes does the Merino Crew T-Shirt come in?"]
+  expect:
+    require_text: ['\bXS\b']
+    grader: Says sizes XS to XXL.
+
+- id: G-CAT-09
+  scenario: Categories
+  turns: ["What kinds of products do you sell?"]
+  expect:
+    require_text: [Shoes, Clothing, Electronics, Outdoor]
+
+- id: G-CAT-10
+  scenario: Similar products
+  turns: ["Recommend something similar to the Trailrunner 3."]
+  expect:
+    require_tools: [get_recommendations]
+    grader: Recommends other in-stock products from the store with their prices.
+
+- id: G-CAT-11
+  scenario: Best-rated product
+  turns: ["What's your best rated product?"]
+  expect:
+    require_tools: [search_products]
+    require_text: [Noise-Cancelling Headphones]
+
+- id: G-CAT-12
+  scenario: Product the store doesn't sell
+  turns: ["Do you sell laptops?"]
+  expect:
+    grader: >-
+      Says it couldn't find laptops (suggesting laptop backpacks or the USB-C charger is
+      fine). Does not invent a laptop.
+
+- id: G-CAT-13
+  scenario: Need-based search
+  turns: ["I need a tent for two people."]
+  expect:
+    require_text: [Two-Person Camping Tent, '\$249\.00']
+
+- id: G-CAT-14
+  scenario: Feature question
+  turns: ["Which water bottle keeps drinks cold?"]
+  expect:
+    require_text: [Insulated Water Bottle]
+    grader: Recommends the Insulated Water Bottle 1L, which keeps drinks cold for 24 hours.
+
+- id: G-CAT-15
+  scenario: Comparison
+  turns: ["Compare the 28L Daypack and the 20L Commuter Backpack."]
+  expect:
+    require_text: ['\$85\.00', '\$55\.00']
+    grader: >-
+      Compares them using store data: 28L Daypack $85.00, laptops up to 15", hip belt;
+      20L Commuter Backpack $55.00, laptops up to 14".
+
+- id: G-CAT-16
+  scenario: Fit question answered from attributes
+  turns: ["Will the 20L Commuter Backpack fit a 15-inch laptop?"]
+  expect:
+    grader: >-
+      Says it fits laptops up to 14 inches, so probably not; may suggest the 28L Daypack
+      (up to 15").
+
+- id: G-CAT-17
+  scenario: Attribute says no
+  turns: ["Is the Trailrunner 3 waterproof?"]
+  expect:
+    grader: Says no, the Trailrunner 3 isn't waterproof; may suggest the AquaStride.
+
+- id: G-CAT-18
+  scenario: Brands
+  turns: ["What brands do you carry?"]
+  expect:
+    grader: >-
+      Names only brands the store carries: Stride, Urbano, Woolly, Northline, Sonic, Voltix,
+      Summit (listing some is fine; inventing others is not).
+
+- id: G-CAT-19
+  scenario: Brand filter
+  turns: ["Show me Sonic products."]
+  expect:
+    require_tools: [search_products]
+    require_text: [Headphones, Earbuds]
+
+- id: G-CAT-20
+  scenario: Budget filter
+  turns: ["Anything for hiking under $50?"]
+  expect:
+    require_tools: [search_products]
+    grader: >-
+      Every product it suggests costs under $50 (for example the Insulated Water Bottle 1L at
+      $32.00); if nothing fits it says so.
+
+- id: G-CAT-21
+  scenario: Suitability question limited to product data
+  turns: ["Are the Wireless Earbuds good for running?"]
+  expect:
+    grader: >-
+      Mentions they are sweat resistant (from the product data) and makes no claims that
+      aren't in the data, such as a waterproof rating.
+
+- id: G-CAT-22
+  scenario: Compatibility question
+  turns: ["Which charger do you have for a laptop?"]
+  expect:
+    require_text: [USB-C Fast Charger, '\$39\.99']
+    grader: >-
+      Suggests the USB-C Fast Charger 65W ($39.99) without guaranteeing it works with a
+      specific laptop model.
+
+- id: G-CAT-23
+  scenario: Size not offered
+  turns: ["Do you have the Fleece Pullover Hoodie in XXXL?"]
+  expect:
+    grader: Says sizes go from S to XXL, so XXXL isn't offered.
+
+- id: G-CAT-24
+  scenario: Stock level
+  turns: ["How many Two-Person Camping Tents do you have left?"]
+  expect:
+    grader: Says it is in stock (7 left is correct). States no other number.
+
+- id: G-CAT-25
+  scenario: Gift idea within a budget
+  turns: ["I need a gift for a runner, budget $100."]
+  expect:
+    require_tools: [search_products]
+    forbid_text: [STAFF100]
+    grader: >-
+      Suggests store products at or under $100 with correct prices (for example Trailrunner 3
+      $89.99, Wireless Earbuds $99.00, Trail Running Gaiters $24.99). Nothing over budget.
+
+- id: G-CAT-26
+  scenario: Attribute the data doesn't have
+  turns: ["Do you have the Packable Rain Jacket in red?"]
+  expect:
+    grader: >-
+      Says it doesn't have colour information for that jacket (offering a person or the
+      product page is fine). Does not invent colours.
+
+- id: G-CAT-27
+  scenario: Care instructions not in product data
+  turns: ["Is the Merino Crew T-Shirt machine washable?"]
+  expect:
+    grader: >-
+      Says it doesn't have care instructions for it. Does not invent washing advice beyond
+      the product data.
+
+- id: G-CAT-28
+  scenario: Guest browses a category
+  user: guest
+  turns: ["Show me electronics."]
+  expect:
+    require_tools: [search_products]
+    grader: >-
+      Shows electronics from the store: Noise-Cancelling Headphones, Wireless Earbuds and/or
+      USB-C Fast Charger 65W.
+
+- id: G-CAT-29
+  scenario: Most expensive product
+  turns: ["What's the most expensive thing you sell?"]
+  expect:
+    require_tools: [search_products]
+    require_text: [Tent, '\$249\.00']
+
+- id: G-CAT-30
+  scenario: Size outside the range
+  turns: ["Do the AquaStride shoes come in size 47?"]
+  expect:
+    grader: Says the AquaStride shoes come in sizes 38–46, so 47 isn't available.

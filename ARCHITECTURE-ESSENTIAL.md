@@ -51,7 +51,6 @@ Browser                      Cloud
 - Verify `X-Service-Token` before trusting `X-Client: ai-agent`
 - Audit failed agent calls; alert on audit failures
 - `Idempotency-Key` on returns and tickets
-- Real carrier tracking URLs
 
 ## Limits
 

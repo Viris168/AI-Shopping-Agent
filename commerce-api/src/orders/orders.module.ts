@@ -29,17 +29,36 @@ export function returnDeadline(order: Order): Date | null {
   return new Date(order.deliveredAt.getTime() + returnWindowDays() * DAY_MS);
 }
 
-const TRACKING_URLS: Record<string, (n: string) => string> = {
-  UPS: (n) => `https://www.ups.com/track?tracknum=${n}`,
+// Carriers' public tracking pages. Their hosts must be in the widget's data-link-domains,
+// or the widget drops the link (widget/src/safe.ts).
+const TRACKING_URLS: Partial<Record<string, (n: string) => string>> = {
+  UPS: (n) => `https://www.ups.com/track?loc=en_US&tracknum=${n}`,
   FEDEX: (n) => `https://www.fedex.com/fedextrack/?trknbr=${n}`,
   USPS: (n) => `https://tools.usps.com/go/TrackConfirmAction?tLabels=${n}`,
+  DHL: (n) =>
+    `https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id=${n}`,
 };
 
-function trackingUrl(o: Order): string | null {
-  const build = o.carrier && TRACKING_URLS[o.carrier.toUpperCase()];
-  return build && o.trackingNumber
-    ? build(encodeURIComponent(o.trackingNumber))
-    : null;
+// Spellings seen in carrier feeds and admin entry, after stripping spaces, dots and dashes.
+const CARRIER_ALIASES: Record<string, string> = {
+  UNITEDPARCELSERVICE: 'UPS',
+  FEDERALEXPRESS: 'FEDEX',
+  UNITEDSTATESPOSTALSERVICE: 'USPS',
+  DHLEXPRESS: 'DHL',
+};
+
+// Every supported carrier uses letters and digits only; anything else is a data-entry error.
+const TRACKING_NUMBER = /^[A-Z0-9]{8,40}$/;
+
+export function trackingUrl(
+  carrier: string | null,
+  trackingNumber: string | null,
+): string | null {
+  if (!carrier || !trackingNumber) return null;
+  const key = carrier.toUpperCase().replace(/[\s.-]/g, '');
+  const build = TRACKING_URLS[CARRIER_ALIASES[key] ?? key];
+  const number = trackingNumber.toUpperCase().replace(/\s/g, '');
+  return build && TRACKING_NUMBER.test(number) ? build(number) : null;
 }
 
 // Shapes from docs/AGENT.md §4. `items` must be loaded.
@@ -54,7 +73,7 @@ function toSummary(o: Order, now = new Date()) {
     itemCount: o.items.reduce((n, i) => n + i.quantity, 0),
     carrier: o.carrier,
     trackingNumber: o.trackingNumber,
-    trackingUrl: trackingUrl(o),
+    trackingUrl: trackingUrl(o.carrier, o.trackingNumber),
     shippedAt: o.shippedAt,
     deliveredAt: o.deliveredAt,
     returnEligible: deadline !== null && deadline > now,

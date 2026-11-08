@@ -5,11 +5,16 @@
 //
 // Optional data-* attributes: data-api (agent-service origin; default: the script's origin),
 // data-locale, data-link-domains (extra allowed link hosts, comma-separated, e.g. carriers),
-// data-help-url (fallback "track an order / contact us" page), data-max-chars.
+// data-help-url (fallback "track an order / contact us" page), data-privacy-url (linked from the
+// storage notice), data-max-chars.
+//
+// Before mounting it asks agent-service whether it's switched on and inside the rollout
+// (src/rollout.ts); otherwise nothing is added to the page.
 
 import { ChatApi } from './api';
 import { Controller } from './controller';
 import { createI18n, pickLocale } from './i18n';
+import { fetchConfig, shouldMount } from './rollout';
 import { LinkPolicy, el } from './safe';
 import { Store } from './state';
 import styles from './styles.css?inline';
@@ -39,11 +44,15 @@ function findScript(): HTMLScriptElement | null {
   );
 }
 
+function apiBaseOf(script: HTMLScriptElement | null): string {
+  const scriptOrigin = script?.src ? new URL(script.src, location.href).origin : location.origin;
+  return (script?.dataset.api ?? scriptOrigin).replace(/\/$/, '');
+}
+
 function mount(script: HTMLScriptElement | null): void {
   if (document.getElementById('shopchat-root')) return; // loaded twice
   const data = script?.dataset ?? {};
-  const scriptOrigin = script?.src ? new URL(script.src, location.href).origin : location.origin;
-  const apiBase = (data.api ?? scriptOrigin).replace(/\/$/, '');
+  const apiBase = apiBaseOf(script);
   const store = data.store ?? 'main';
   const maxChars = Number(data.maxChars) || 2000;
   const i18n = createI18n(pickLocale(data.locale, document.documentElement.lang, navigator.language));
@@ -100,7 +109,7 @@ function mount(script: HTMLScriptElement | null): void {
   panel = createPanel(i18n, { list: list.element, composer: composer.element }, {
     close: () => setOpen(false),
     reset: () => controller.reset(),
-  });
+  }, { links, url: data.privacyUrl ?? null });
 
   const render = () => {
     const s = state.state;
@@ -123,6 +132,9 @@ function mount(script: HTMLScriptElement | null): void {
   });
 }
 
-const script = findScript();
-if (document.body) mount(script);
-else document.addEventListener('DOMContentLoaded', () => mount(script), { once: true });
+const script = findScript(); // only readable synchronously, before the first await
+void fetchConfig(apiBaseOf(script)).then((config) => {
+  if (!shouldMount(config, location.search)) return;
+  if (document.body) mount(script);
+  else document.addEventListener('DOMContentLoaded', () => mount(script), { once: true });
+});

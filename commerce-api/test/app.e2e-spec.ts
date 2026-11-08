@@ -5,6 +5,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import type { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module.js';
+import { ConversationRetentionJob } from '../src/conversations/retention.job.js';
 import { DEMO_PASSWORD, seed } from '../src/database/seed.js';
 import { configureApp } from '../src/setup.js';
 
@@ -58,6 +59,17 @@ describe('commerce-api (e2e)', () => {
         .get('/health')
         .expect(200)
         .expect({ status: 'ok', database: 'up' }));
+
+    it("keeps the caller's X-Request-Id, and replaces an unsafe one", async () => {
+      await http()
+        .get('/api/v1/categories')
+        .set('X-Request-Id', 'turn-1234-abcd')
+        .expect('X-Request-Id', 'turn-1234-abcd');
+      const res = await http()
+        .get('/api/v1/categories')
+        .set('X-Request-Id', 'bad id with spaces');
+      expect(res.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
+    });
 
     it('searches with filters and returns the contract shape', async () => {
       const res = await http()
@@ -222,6 +234,12 @@ describe('commerce-api (e2e)', () => {
         .expect((r) =>
           expect(message(r.body)).toBe('Coupon is invalid or expired'),
         );
+
+      res = await alice.delete('/api/v1/cart/coupon').expect(200);
+      expect(res.body).toMatchObject({ couponCode: null, discountCents: 0 });
+      await alice
+        .post('/api/v1/cart/coupon', { code: 'WELCOME10' })
+        .expect(200);
 
       res = await alice
         .patch('/api/v1/cart/items/SHOE-001', { quantity: 1 })
@@ -455,6 +473,27 @@ describe('commerce-api (e2e)', () => {
           db.query(`SELECT action, conversation_id FROM agent_action_logs`),
         )
         .toEqual([{ action: 'POST /cart/items', conversation_id: 'conv-42' }]);
+    });
+  });
+
+  describe('conversation retention', () => {
+    const insert = (id: string, ageDays: number) =>
+      db.query(
+        `INSERT INTO conversations (id, created_at, updated_at)
+         VALUES ($1, now() - make_interval(days => $2), now() - make_interval(days => $2))`,
+        [id, ageDays],
+      );
+
+    it('deletes transcripts untouched for 90 days and keeps newer ones', async () => {
+      const stale = '00000000-0000-4000-8000-000000000001';
+      const fresh = '00000000-0000-4000-8000-000000000002';
+      await insert(stale, 91);
+      await insert(fresh, 89);
+
+      expect(await app.get(ConversationRetentionJob).run()).toBe(1);
+      expect(await db.query(`SELECT id FROM conversations`)).toEqual([
+        { id: fresh },
+      ]);
     });
   });
 });

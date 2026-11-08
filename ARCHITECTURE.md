@@ -171,6 +171,7 @@ agent-service/
 | POST | `/v1/actions/{actionId}/confirm` | — | SSE stream (result + follow-up) |
 | POST | `/v1/actions/{actionId}/cancel` | — | `204` |
 | POST | `/v1/feedback` | `{conversationId, messageId, rating: up\|down, comment?}` | `204` |
+| GET | `/v1/config` | — | `{enabled, rolloutPercent}` (widget kill switch and rollout, cached 60 s) |
 | GET | `/health` | — | `{status, redis, commerceApi}` |
 
 Auth: `Authorization: Bearer <shopper JWT>` optional (guest if absent/invalid).
@@ -262,16 +263,17 @@ agent-service appends each turn's new messages (masked) after the turn; a failed
 - Timeouts: 10 s per commerce-api call, 30 s per model call, 45 s per turn.
 - Retries: 2 with exponential backoff on 429/5xx; mutations only with idempotency key.
 - Limits: 6 tool rounds per turn.
-- Degradation: model failure → fallback card; commerce-api failure → tool error result, model apologises and offers handoff.
-- Kill switch: feature flag hides widget; agent-service also returns `503` when disabled.
+- Degradation: model failure → `error` event with code `model_unavailable` → fallback card; commerce-api failure → tool error result, model apologises and offers handoff.
+- Kill switch: `GET /v1/config` tells the widget whether to mount (`enabled`, `rolloutPercent`); chat and confirm return `503` when disabled. `AGENT_ENABLED` or, instantly, the Redis flag `flag:agent_enabled` ([runbook](./infra/monitoring/README.md#kill-switch)).
 - Stateless replicas (≥ 2); state in Redis/Postgres.
 
 ## 8. Observability
 
-- **Tracing:** OpenTelemetry; spans for turn, model call, each tool call; attributes: conversation ID, model, tokens, tool name, status.
-- **Logs:** JSON; request ID propagated to commerce-api via `X-Request-Id`.
+- **Tracing:** OpenTelemetry over OTLP/HTTP (`agent-service/app/telemetry.py`); spans for turn, model call, each tool call and commerce-api request; attributes: conversation ID, model, tokens, tool name, status.
+- **Logs:** JSON in production, with `request_id` and `trace_id`. One request ID per incoming request, sent to commerce-api as `X-Request-Id`; commerce-api logs it as `req.id` and echoes it back.
 - **Metrics:** first-token latency p50/p95, turn latency, tool error rate, handoff rate, confirm acceptance, thumbs ratio, tokens per conversation, active SSE streams.
 - **Alerts:** tool errors > 5% for 5 min; p95 first token > 4 s; audit insert failures; model API error spike.
+- Metric names, dashboard, alert rules and runbooks: [infra/monitoring/](./infra/monitoring/README.md).
 
 ## 9. Evals
 
@@ -295,9 +297,11 @@ Details in [AGENT.md §8](./AGENT.md#8-evals).
 
 Domains: `api.yourstore.com` → commerce-api; `chat.yourstore.com` → agent-service + widget CDN.
 
-Secrets (secret manager): `ANTHROPIC_API_KEY`, `JWT_SECRET`, `SERVICE_TOKEN`, `DATABASE_URL`, `REDIS_URL`.
+Secrets (GitHub Environment secrets, per environment): `ANTHROPIC_API_KEY`, `JWT_SECRET`, `SERVICE_TOKEN`, `DATABASE_URL`, `REDIS_URL`.
 
-CI/CD: lint/type/test → API integration tests on seeded Postgres → evals → deploy staging → smoke → manual promote.
+CI/CD: lint/type/test → API integration tests on seeded Postgres → evals (all on the PR) → merge → deploy staging → smoke → manual promote of the same image digests.
+
+Staging and production each run on one VM with Docker Compose behind Caddy (TLS, widget). Images live in GHCR. Setup and runbook: [infra/README.md](./infra/README.md).
 
 Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget dev server).
 
@@ -318,7 +322,11 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `MAX_MESSAGE_CHARS` | `2000` | Input cap |
 | `RATE_LIMIT_PER_MIN` | `20` | Messages per user/IP |
 | `CORS_ORIGINS` | `https://yourstore.com` | Widget host origins |
-| `AGENT_ENABLED` | `true` | Kill switch |
+| `AGENT_ENABLED` | `true` | Kill switch (Redis `flag:agent_enabled` can also turn it off) |
+| `ROLLOUT_PERCENT` | `100` | Share of browsers that see the widget (Redis `flag:rollout_percent` overrides) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` / `_HEADERS` | — | Traces and metrics over OTLP/HTTP; empty → off |
+| `DEPLOY_ENV` | `staging` | Environment name in traces and metrics |
+| `TRACE_SAMPLE_RATIO` | `1.0` | Share of turns traced |
 
 ## 12. Rollout plan
 

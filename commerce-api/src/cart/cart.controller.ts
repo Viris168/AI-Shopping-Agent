@@ -61,6 +61,11 @@ export class CartController {
   coupon(@CurrentUser() user: AuthUser, @Body() dto: ApplyCouponDto) {
     return this.cart.applyCoupon(user.id, dto.code);
   }
+
+  @Delete('coupon')
+  removeCoupon(@CurrentUser() user: AuthUser) {
+    return this.cart.removeCoupon(user.id);
+  }
 }
 
 /** Storefront only: the agent never calls this (docs/AGENT.md §3). */

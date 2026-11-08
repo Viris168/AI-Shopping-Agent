@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { mockFetch, sse, sseResponse } from './helpers';
+import { jsonResponse, mockFetch, sse, sseResponse } from './helpers';
 
 let root: ShadowRoot;
 const $ = <T extends Element>(sel: string) => root.querySelector<T>(sel)!;
@@ -11,8 +11,12 @@ beforeAll(async () => {
   script.dataset.shopchat = '';
   script.dataset.api = 'https://chat.shop.test';
   script.dataset.store = 'test';
+  script.dataset.privacyUrl = 'https://evil.example/privacy';
   document.body.append(script);
+  const fetch = mockFetch(jsonResponse(200, { enabled: true, rolloutPercent: 100 }));
   await import('../src/index');
+  await vi.waitFor(() => expect(document.getElementById('shopchat-root')).not.toBeNull());
+  expect(fetch).toHaveBeenCalledWith('https://chat.shop.test/v1/config', { credentials: 'omit' });
   root = document.getElementById('shopchat-root')!.shadowRoot!;
 });
 
@@ -21,6 +25,13 @@ describe('widget', () => {
     expect(root.querySelector('style')).not.toBeNull();
     expect(typeof window.ShopChat?.open).toBe('function');
     expect(window.ShopChat?.getToken?.()).toBe('host-token');
+  });
+
+  it('tells shoppers the chat is stored, and only links privacy pages on allowed hosts', () => {
+    const notice = $<HTMLElement>('#shopchat-notice');
+    expect(notice.textContent).toContain('90 days');
+    expect($('.panel').getAttribute('aria-describedby')).toBe('shopchat-notice');
+    expect(notice.querySelector('a')).toBeNull(); // evil.example isn't a store domain
   });
 
   it('opens and closes from the keyboard, returning focus to the bubble', async () => {
@@ -63,5 +74,19 @@ describe('widget', () => {
     expect(root.querySelector('.product a[href*="evil.com"]')).toBeNull(); // off-domain link dropped
     expect($('.badge').textContent).toBe('Only 3 left');
     expect(root.querySelector('.feedback')).not.toBeNull();
+  });
+
+  it('shows the fallback card with a retry when the model is down', async () => {
+    mockFetch(sseResponse(sse(['error', { code: 'model_unavailable', message: 'down', retryable: true }], ['done', {}])));
+    const input = $<HTMLTextAreaElement>('textarea');
+    input.value = 'hello?';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect($('.card-fallback')).not.toBeNull());
+
+    const card = $('.card-fallback');
+    expect(card.getAttribute('role')).toBe('alert');
+    expect(card.querySelector('.card-title')!.textContent).toBe("The assistant isn't available right now");
+    expect([...card.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Try again']);
+    expect(root.querySelector('.card-error')).toBeNull();
   });
 });

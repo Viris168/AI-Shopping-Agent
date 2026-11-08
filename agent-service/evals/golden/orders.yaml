@@ -1,0 +1,201 @@
+# Golden · Order status and tracking. Fixtures and conventions: ../README.md.
+
+- id: G-ORD-01
+  scenario: Shopper asks where a shipped order is
+  turns: ["Where's my order ORD-1002?"]
+  expect:
+    require_args: [{tool: get_order, args: {orderNumber: ORD-1002}}]
+    require_events: [card]
+    require_text: [FedEx]
+    grader: >-
+      Says ORD-1002 has shipped with FedEx (giving tracking number 612999AA10123456 or
+      pointing to the tracking card is fine) and does not invent a delivery date.
+
+- id: G-ORD-02
+  scenario: Shopper asks about "my order" without a number
+  turns: ["Where's my order?"]
+  expect:
+    grader: >-
+      Either looks up the shopper's orders and summarises their statuses, or asks which
+      order they mean. Does not state any status it didn't look up.
+
+- id: G-ORD-03
+  scenario: Order is still processing
+  turns: ["What's the status of ORD-1003?"]
+  expect:
+    require_args: [{tool: get_order, args: {orderNumber: ORD-1003}}]
+    require_text: ["process|prepar|(not|n't) (yet )?(been )?shipped"]
+    grader: >-
+      Says ORD-1003 is processing / not shipped yet and does not give a tracking number or
+      delivery date.
+
+- id: G-ORD-04
+  scenario: Delivered order
+  turns: ["Has ORD-1001 been delivered?"]
+  expect:
+    require_tools: [get_order]
+    require_text: [deliver]
+    grader: Says yes, ORD-1001 was delivered (about a week ago) via UPS.
+
+- id: G-ORD-05
+  scenario: Shopper lists all orders; only their own appear
+  turns: ["Show me all my orders."]
+  expect:
+    require_tools: [list_orders]
+    require_events: [card]
+    forbid_text: [ORD-1004]
+    grader: >-
+      Shows or summarises the shopper's orders (ORD-1001, ORD-1002, ORD-1003, ORD-0950 or
+      a card listing them) without inventing any.
+
+- id: G-ORD-06
+  scenario: Tracking number request
+  turns: ["What's the tracking number for ORD-1002?"]
+  expect:
+    require_tools: [get_order]
+    grader: >-
+      Gives FedEx tracking number 612999AA10123456, or points to the tracking card/link for
+      it. Gives no other tracking number.
+
+- id: G-ORD-07
+  scenario: Carrier question
+  turns: ["Which carrier is shipping ORD-1002?"]
+  expect:
+    require_tools: [get_order]
+    require_text: [FedEx]
+
+- id: G-ORD-08
+  scenario: Order contents
+  turns: ["What did I buy in ORD-1001?"]
+  expect:
+    require_tools: [get_order]
+    require_text: [Trailrunner, Merino]
+    grader: Lists one pair of Trailrunner 3 Running Shoes and two Merino Crew T-Shirts.
+
+- id: G-ORD-09
+  scenario: Order total
+  turns: ["How much did I pay for ORD-1002?"]
+  expect:
+    require_tools: [get_order]
+    require_text: ['\$199\.00']
+
+- id: G-ORD-10
+  scenario: Order total with two items
+  turns: ["What's the total for ORD-1003?"]
+  expect:
+    require_tools: [get_order]
+    require_text: ['\$131\.00']
+
+- id: G-ORD-11
+  scenario: Unknown order number
+  turns: ["Where's ORD-9999?"]
+  expect:
+    require_tools: [get_order]
+    forbid_events: [confirm_request]
+    grader: >-
+      Says it couldn't find that order and asks the shopper to check the number (or offers
+      to list their orders). Invents no status.
+
+- id: G-ORD-12
+  scenario: Order number without the ORD- prefix
+  turns: ["track order 1002"]
+  expect:
+    grader: >-
+      Either looks up ORD-1002 and says it has shipped with FedEx, or asks to confirm the
+      order number. Invents no status.
+
+- id: G-ORD-13
+  scenario: Delivery date question for a shipped order
+  turns: ["When will ORD-1002 arrive?"]
+  expect:
+    require_tools: [get_order]
+    grader: >-
+      Says it shipped with FedEx and points to tracking for the delivery estimate; it may
+      quote the FAQ's shipping times but does not invent a specific delivery date.
+
+- id: G-ORD-14
+  scenario: Shopper refers to an order by its contents
+  turns: ["Did my order with the headphones ship yet?"]
+  expect:
+    grader: >-
+      Identifies the headphones order as ORD-1002 and says it has shipped with FedEx (asking
+      which order is also acceptable). Invents no status.
+
+- id: G-ORD-15
+  scenario: Most recent order
+  turns: ["What was my most recent order?"]
+  expect:
+    require_tools: [list_orders]
+    require_text: [ORD-1003]
+    grader: Says the most recent order is ORD-1003 (processing).
+
+- id: G-ORD-16
+  scenario: Old delivered order
+  turns: ["When did ORD-0950 get delivered?"]
+  expect:
+    require_tools: [get_order]
+    grader: >-
+      Says ORD-0950 was delivered about two months ago (around 65 days ago, or a specific
+      date) via USPS.
+
+- id: G-ORD-17
+  scenario: Follow-up about a second order keeps context
+  turns:
+    - "Can you check ORD-1002?"
+    - "And what about ORD-1003?"
+  expect:
+    require_args: [{tool: get_order, args: {orderNumber: ORD-1003}}]
+    require_text: ["process|prepar|(not|n't) (yet )?(been )?shipped"]
+
+- id: G-ORD-18
+  scenario: Cancellation request after the 1-hour window
+  turns: ["Can I cancel ORD-1003?"]
+  expect:
+    require_tools: [search_faq]
+    forbid_text: ["(has been|is now|I'?ve) cancell?ed"]
+    grader: >-
+      Explains orders can be changed or cancelled within 1 hour of placing them and that
+      after that support will do their best; offers to connect the shopper with a person.
+      Does not claim the order is cancelled.
+
+- id: G-ORD-19
+  scenario: Address change request on a shipped order
+  turns: ["Please change the delivery address on ORD-1002 to 12 Oak St."]
+  expect:
+    forbid_text: ["address (has been|was|is now) (changed|updated)", "(I'?ve|I have) (changed|updated)"]
+    grader: >-
+      Does not claim to change the address. Explains it can't change it (the order has
+      shipped) and offers support or a person.
+
+- id: G-ORD-20
+  scenario: Bob asks about his order by product
+  user: bob
+  turns: ["Where's my rain jacket order?"]
+  expect:
+    forbid_text: [ORD-1001, ORD-1002, ORD-1003, ORD-0950]
+    grader: Says the rain jacket order (ORD-1004) was delivered, via UPS.
+
+- id: G-ORD-21
+  scenario: Informal phrasing
+  turns: ["yo where's my stuff, ORD-1002"]
+  expect:
+    require_tools: [get_order]
+    require_text: [FedEx]
+
+- id: G-ORD-22
+  scenario: Shopper asks whether an order is delayed
+  turns: ["Is ORD-1002 delayed?"]
+  expect:
+    require_tools: [get_order]
+    grader: >-
+      Says ORD-1002 has shipped with FedEx and is on its way, pointing to tracking for
+      details. Does not claim a delay or invent a date.
+
+- id: G-ORD-23
+  scenario: Shopper thinks a shipped order shows as delivered
+  turns: ["ORD-1002 says delivered but I never got it!"]
+  expect:
+    require_tools: [get_order]
+    grader: >-
+      Says ORD-1002 shows as shipped (not yet delivered) with FedEx, points to tracking, and
+      offers further help or a person.

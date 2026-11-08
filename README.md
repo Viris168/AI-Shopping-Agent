@@ -52,6 +52,8 @@ cd commerce-api && npm test && npm run test:e2e && npm run lint
 cd storefront && npm test && npm run build
 cd widget && npm test && npm run build      # build fails if the bundle exceeds 40 KB gzipped
 cd agent-service && python -m evals.run --suite golden    # needs the real, seeded commerce-api + API key
+cd agent-service && python -m evals.run --suite redteam   # same; see agent-service/evals/README.md
+k6 run -e AGENT_URL=https://staging-chat.example -e PEAK_VUS=50 loadtest/chat.js   # real model calls; staging only, see the file header
 ```
 
 ## Embedding the widget
@@ -66,10 +68,13 @@ cd agent-service && python -m evals.run --suite golden    # needs the real, seed
 Optional attributes:
 - `data-api`: agent-service URL. Defaults to the script's own origin.
 - `data-locale`: `en` or `vi`. Defaults to the page language.
-- `data-link-domains`: extra hosts links may point to, such as carrier tracking sites. Only the store's own domains are allowed by default.
+- `data-link-domains`: extra hosts links may point to, such as carrier tracking sites (`ups.com,fedex.com,usps.com,dhl.com`). Only the store's own domains are allowed by default, so without this the order card has no tracking link.
 - `data-help-url`: the page offered when chat fails.
+- `data-privacy-url`: linked from the storage notice under the message box ("kept in this tab, stored 90 days"). Must be on an allowed host.
 
 Theming uses CSS variables on `#shopchat-root`: `--shopchat-accent`, `--shopchat-bg`, `--shopchat-text`, `--shopchat-radius`, `--shopchat-font` and more.
+
+The widget mounts only if agent-service's `GET /v1/config` says the assistant is on and this browser is inside the rollout percentage; staff can preview with `?shopchat=on` ([infra/monitoring](./infra/monitoring/README.md#rollout)). When the model is down or the assistant is switched off mid-chat, it shows a fallback card pointing at `data-help-url`.
 
 The widget fires `shopchat:open`, `shopchat:close` and `shopchat:cart-updated` (with the cart as `detail`) on `window`. It also adds `ShopChat.open()`, `.close()`, `.toggle()` and `.reset()`.
 
@@ -83,4 +88,4 @@ The widget fires `shopchat:open`, `shopchat:close` and `shopchat:cart-updated` (
 | `{auth_state}` and `{today}` sit mid-prompt | Login and Context sections go last | Keeps the fixed part cacheable (AGENT.md §2) |
 | ~150 golden and ~40 red-team cases | The 13 + 6 examples from AGENT.md §8; 2 red-team cases skipped | The skipped two need poisoned seed data |
 | Token budget per conversation | `TOKEN_BUDGET` = 300,000 | No number given; tune after beta |
-| OpenTelemetry, metrics, alerts (ARCHITECTURE §8) | Not built | Phase 3 |
+| Audit insert failure alert (ARCHITECTURE §8) | Rule written (`infra/monitoring/alerts-logs.yaml`), can't fire yet | Needs commerce-api logs shipped to Loki |

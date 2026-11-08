@@ -5,3 +5,6 @@ coverage
 test
 docs
 *.tsbuildinfo
+.git
+.env.*
+!.env.example

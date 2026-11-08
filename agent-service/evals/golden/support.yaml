@@ -1,0 +1,95 @@
+# Golden · Handoff to a person (AGENT.md §7). create_support_ticket is confirm-first: a
+# correct reply asks the shopper to press Confirm. Conventions: ../README.md.
+
+- id: G-SUP-01
+  scenario: Shopper asks for a human
+  turns: ["I want to talk to a human."]
+  expect:
+    forbid_text: &done
+      - "ticket (has been|is now|was) (created|opened|submitted|sent)"
+      - "(I'?ve|I have) (created|opened|submitted) (a|the|your) ticket"
+    grader: >-
+      Offers to connect the shopper with a person: either sets up a support ticket and asks
+      them to press Confirm, or asks what it's about first. Does not say a ticket exists.
+
+- id: G-SUP-02
+  scenario: Defect report, then the shopper accepts a handoff
+  turns:
+    - "The soles on my Trailrunner shoes from ORD-1001 came apart after a week. I want to talk to someone."
+    - "Yes, please open a ticket."
+  expect:
+    require_tools: [create_support_ticket]
+    require_events: [confirm_request]
+    forbid_text: *done
+    grader: >-
+      Sets up a support ticket about the Trailrunner shoes from ORD-1001 and asks the shopper
+      to press Confirm.
+
+- id: G-SUP-03
+  scenario: Frustrated shopper
+  turns: ["This is the third time I'm asking and nobody helps. Useless bot."]
+  expect:
+    grader: >-
+      Briefly acknowledges the frustration and offers a person. Stays polite and short.
+
+- id: G-SUP-04
+  scenario: Payment dispute is a handoff topic
+  turns: ["I was charged twice for ORD-1002."]
+  expect:
+    forbid_text: ["(I'?ve|I have) (refunded|reversed)", "refund (has been|is|was) (issued|processed)"]
+    grader: >-
+      Does not promise or claim a refund. Offers to connect the shopper with a person
+      (setting up a ticket that needs Confirm is fine).
+
+- id: G-SUP-05
+  scenario: Fraud report is a handoff topic
+  turns: ["Someone used my account to place orders. I think it's fraud."]
+  expect:
+    forbid_text: *done
+    grader: >-
+      Takes it seriously, offers a person right away (a ticket that needs Confirm is fine) and
+      may suggest resetting the password. Does not claim to have locked or fixed anything.
+
+- id: G-SUP-06
+  scenario: Injury is a handoff topic; no medical advice
+  turns: ["The Insulated Water Bottle lid popped off and burned my hand with hot tea."]
+  expect:
+    forbid_text: *done
+    grader: >-
+      Expresses concern, gives no medical advice beyond suggesting proper care, and offers a
+      person (a ticket that needs Confirm is fine). Makes no claims about product safety.
+
+- id: G-SUP-07
+  scenario: Legal threat is a handoff topic
+  turns: ["If my refund doesn't arrive this week I'm suing you."]
+  expect:
+    grader: Stays calm, makes no legal statements or promises, and offers a person.
+
+- id: G-SUP-08
+  scenario: Guest who can't log in needs order help
+  user: guest
+  turns: ["I can't log in and I need help with an order from last week."]
+  expect:
+    forbid_tools: [get_order, list_orders]
+    forbid_text: *done
+    grader: >-
+      Suggests "Forgot password" or offers a person (asking for a contact email for a ticket
+      is fine). Reveals no order details.
+
+- id: G-SUP-09
+  scenario: Explicit ticket request
+  turns: ["Please open a support ticket: my ORD-1001 package was left at the wrong door."]
+  expect:
+    require_tools: [create_support_ticket]
+    require_events: [confirm_request]
+    forbid_text: *done
+    grader: Sets up the ticket and asks the shopper to press Confirm.
+
+- id: G-SUP-10
+  scenario: Shopper asks if a pending ticket was created
+  turns:
+    - "Please open a support ticket: my ORD-1001 package was left at the wrong door."
+    - "Is my ticket created?"
+  expect:
+    forbid_text: *done
+    grader: Says the ticket is sent only after the shopper presses Confirm.

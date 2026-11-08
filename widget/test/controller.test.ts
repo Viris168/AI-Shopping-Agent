@@ -69,6 +69,19 @@ describe('Controller', () => {
     expect(JSON.parse((fetch.mock.calls[1] as unknown as [string, RequestInit])[1].body as string).message).toBe('hello');
   });
 
+  it('flags a model outage and the kill switch for the fallback card', async () => {
+    mockFetch(
+      sseResponse(sse(['error', { code: 'model_unavailable', message: "The assistant can't answer right now.", retryable: true }], ['done', {}])),
+      jsonResponse(503, { detail: 'The assistant is unavailable right now.' }),
+    );
+    const { store, controller } = setup();
+    await controller.send('one');
+    await controller.send('two');
+    const [outage, killed] = [store.state.messages[1], store.state.messages[3]];
+    expect(outage.error).toMatchObject({ retryable: true, fallback: true });
+    expect(killed.error).toMatchObject({ retryable: false, fallback: true });
+  });
+
   it('starts a fresh conversation once when the saved one belongs to another login', async () => {
     const fetch = mockFetch(jsonResponse(403), sseResponse(sse(['meta', { conversationId: 'c2', messageId: 'm' }], ['done', {}])));
     const { store, controller } = setup();

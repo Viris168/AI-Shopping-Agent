@@ -1,0 +1,130 @@
+name: deploy (reusable)
+
+# Deploys the images built for one commit to one GitHub Environment's VM, then smoke-tests it.
+# Called by deploy-staging.yml and deploy-production.yml; see infra/README.md for the
+# environment's secrets and variables.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: staging | production
+        type: string
+        required: true
+      sha:
+        description: Commit whose images to deploy (tagged :<sha> in GHCR)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: ${{ inputs.environment }}
+      url: https://${{ vars.API_DOMAIN }}/health
+    defaults:
+      run:
+        shell: bash
+    env:
+      SHA: ${{ inputs.sha }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      DEPLOY_TARGET: ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sha }}
+          sparse-checkout: infra
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pin images by digest
+        run: |
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          for name in commerce-api agent-service edge; do
+            digest=$(docker buildx imagetools inspect "$repo/$name:$SHA" --format '{{json .Manifest}}' | jq -r .digest)
+            [[ $digest == sha256:* ]] || { echo "::error::No image $repo/$name:$SHA (did deploy-staging build it?)"; exit 1; }
+            var=$(tr a-z- A-Z_ <<<"$name")_IMAGE
+            echo "$var=$repo/$name@$digest" | tee -a "$GITHUB_ENV"
+            echo "- \`$name\` $digest" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Write the VM's .env from the environment's secrets
+        env:
+          # Secrets manager: GitHub Environment secrets (infra/README.md).
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SERVICE_TOKEN: ${{ secrets.SERVICE_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          API_DOMAIN: ${{ vars.API_DOMAIN }}
+          CHAT_DOMAIN: ${{ vars.CHAT_DOMAIN }}
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          STOREFRONT_URL: ${{ vars.STOREFRONT_URL }}
+          API_CORS_ORIGINS: ${{ vars.API_CORS_ORIGINS }}
+          CHAT_CORS_ORIGINS: ${{ vars.CHAT_CORS_ORIGINS }}
+          BUNDLED_DATASTORES: ${{ vars.BUNDLED_DATASTORES || 'false' }}
+          AGENT_ENABLED: ${{ vars.AGENT_ENABLED || 'true' }}
+          # Unset → production starts at 0% (staff opt in with ?shopchat=on), staging at 100%.
+          ROLLOUT_PERCENT: ${{ vars.ROLLOUT_PERCENT || (inputs.environment == 'production' && '0' || '100') }}
+          DEPLOY_ENV: ${{ inputs.environment }}
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          keys=(COMMERCE_API_IMAGE AGENT_SERVICE_IMAGE EDGE_IMAGE
+                ANTHROPIC_API_KEY JWT_SECRET SERVICE_TOKEN DATABASE_URL REDIS_URL POSTGRES_PASSWORD
+                API_DOMAIN CHAT_DOMAIN ACME_EMAIL STOREFRONT_URL API_CORS_ORIGINS CHAT_CORS_ORIGINS
+                BUNDLED_DATASTORES AGENT_ENABLED ROLLOUT_PERCENT DEPLOY_ENV
+                OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER_OTLP_HEADERS)
+          optional=" POSTGRES_PASSWORD OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER_OTLP_HEADERS "
+          bad=0
+          for k in "${keys[@]}"; do
+            v=${!k}
+            if [ -z "$v" ] && [[ $optional != *" $k "* ]]; then
+              echo "::error::$k is not set for the '$ENVIRONMENT' environment (infra/README.md)"; bad=1
+            fi
+            # Values are written single-quoted, so they can't contain ' or a newline.
+            if [[ $v == *"'"* || $v == *$'\n'* ]]; then echo "::error::$k contains a quote or newline"; bad=1; fi
+          done
+          for k in JWT_SECRET SERVICE_TOKEN; do
+            v=${!k}; [ "${#v}" -ge 32 ] || { echo "::error::$k must be 32+ characters"; bad=1; }
+          done
+          [ "$bad" = 0 ]
+
+          install -m 700 -d ~/.ssh
+          (umask 077 && printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key)
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host *\n  IdentityFile ~/.ssh/deploy_key\n  StrictHostKeyChecking yes\n  BatchMode yes\n' > ~/.ssh/config
+
+          ssh "$DEPLOY_TARGET" 'mkdir -p shop'
+          # The secrets go to the VM over stdin: never on the runner's disk or in a process list.
+          for k in "${keys[@]}"; do printf "%s='%s'\n" "$k" "${!k}"; done \
+            | ssh "$DEPLOY_TARGET" 'umask 077 && cat > shop/.env.new && mv shop/.env.new shop/.env'
+
+      - name: Deploy
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scp infra/compose.yml infra/deploy.sh "$DEPLOY_TARGET:shop/"
+          ssh "$DEPLOY_TARGET" "bash shop/deploy.sh '$GITHUB_ACTOR'" <<<"$GHCR_TOKEN"
+
+      - name: Smoke test
+        env:
+          API_DOMAIN: ${{ vars.API_DOMAIN }}
+          CHAT_DOMAIN: ${{ vars.CHAT_DOMAIN }}
+        run: bash infra/smoke.sh "$API_DOMAIN" "$CHAT_DOMAIN" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
