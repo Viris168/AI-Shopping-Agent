@@ -16,6 +16,7 @@ import {
 } from '../database/entities.js';
 import { OrdersService } from '../orders/orders.module.js';
 import { ProductsService } from '../products/products.service.js';
+import { MAX_QTY_PER_ITEM } from './cart.dto.js';
 import { couponProblem, priceCart } from './pricing.js';
 
 const outOfStock = (p: Product) =>
@@ -49,6 +50,11 @@ export class CartService {
       productId: product.id,
     });
     const total = (existing?.quantity ?? 0) + quantity;
+    if (total > MAX_QTY_PER_ITEM) {
+      throw new BadRequestException(
+        `You can have up to ${MAX_QTY_PER_ITEM} of one item in your cart`,
+      );
+    }
     this.checkStock(product, total);
     await this.cartItems.upsert(
       { cartId: cart.id, productId: product.id, quantity: total },

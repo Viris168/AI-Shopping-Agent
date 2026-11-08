@@ -43,6 +43,8 @@ Base URL: `{COMMERCE_API_URL}` = `http://commerce-api:3000/api/v1`.
 | `create_support_ticket` | `POST /support/tickets` `{conversationId, subject, summary, priority?, contactEmail?}` | optional | **yes** |
 | `checkout_link` | none — agent links to the storefront checkout page | ✓ | – |
 
+**Transcripts (agent-service internals, not model tools):** `POST /conversations/{id}/turns` `{messages[≤100], summary?, outcome?, tokensIn?, tokensOut?}` appends a turn, creating the row on first use; `POST /conversations/{id}/feedback` `{messageId, rating: up|down, comment?}`. Both: `{id}` is a UUID, optional JWT, `X-Service-Token` required (else 403 `Only the shopping assistant can do this`), `204` on success, `404 Conversation not found` if the row belongs to someone else. Messages must already be masked.
+
 **Off-limits to the agent:** `POST /checkout`, `POST /auth/register`, `POST /auth/login`. Payment and credentials stay in the storefront.
 
 ## 4. Response shapes
@@ -157,7 +159,7 @@ Table `agent_action_logs`:
 | user_id | `b1…` (null for guest tickets) |
 | conversation_id | `5d…` |
 | action | `POST /returns` · `PATCH /cart/items/:productId` |
-| payload | `{ "params": {…}, "body": {…} }` |
+| payload | `{ "params": {…}, "body": {…} }` (body omitted for `/conversations/*`, marked `@AuditWithoutBody()`) |
 | status | `201` · `400` |
 | error | `The 30-day return window has closed` (null on success) |
 | created_at | timestamp |

@@ -87,7 +87,6 @@ src/
 
 ## Known gaps (current work)
 
-- No `conversations` table (§11.6)
 - Demo checkout: no payment provider, `POST /checkout` marks the order PAID immediately (§11.7)
 - No Dockerfile or CI yet
 

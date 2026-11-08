@@ -5,7 +5,9 @@ import {
   Injectable,
   Logger,
   NestInterceptor,
+  SetMetadata,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Response } from 'express';
 import { Observable, tap } from 'rxjs';
@@ -15,6 +17,13 @@ import { AgentActionLog } from '../database/entities.js';
 import type { AgentRequest } from './service-token.middleware.js';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const OMIT_BODY = 'agentAudit:omitBody';
+
+/**
+ * Still audited, but the row keeps only the route params, not the body. For bulky
+ * non-commerce writes (transcripts) that would otherwise copy into every audit row.
+ */
+export const AuditWithoutBody = () => SetMetadata(OMIT_BODY, true);
 const SECRET_KEYS = /password|token|secret/i;
 
 function redact(value: unknown): unknown {
@@ -59,20 +68,30 @@ export class AgentAuditInterceptor implements NestInterceptor {
   constructor(
     @InjectRepository(AgentActionLog)
     private readonly logs: Repository<AgentActionLog>,
+    private readonly reflector: Reflector,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const http = context.switchToHttp();
     const req = http.getRequest<AgentRequest & { user?: AuthUser }>();
     if (!req.isTrustedAgent || !MUTATING.has(req.method)) return next.handle();
+    const omitBody = this.reflector.getAllAndOverride<boolean>(OMIT_BODY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
     return next.handle().pipe(
       tap({
         next: () =>
-          this.record(req, http.getResponse<Response>().statusCode, null),
+          this.record(
+            req,
+            http.getResponse<Response>().statusCode,
+            null,
+            omitBody,
+          ),
         error: (err: unknown) => {
           const { status, error } = errorDetails(err);
-          this.record(req, status, error);
+          this.record(req, status, error, omitBody);
         },
       }),
     );
@@ -82,6 +101,7 @@ export class AgentAuditInterceptor implements NestInterceptor {
     req: AgentRequest & { user?: AuthUser },
     status: number,
     error: string | null,
+    omitBody = false,
   ) {
     const route = String(req.route?.path ?? req.path).replace(/^\/api\/v1/, '');
     const conversationId = req.headers['x-conversation-id'];
@@ -90,10 +110,11 @@ export class AgentAuditInterceptor implements NestInterceptor {
       conversationId:
         typeof conversationId === 'string' ? conversationId.slice(0, 64) : null,
       action: `${req.method} ${route}`.slice(0, 120),
-      payload: redact({ params: req.params, body: req.body }) as Record<
-        string,
-        unknown
-      >,
+      payload: redact(
+        omitBody
+          ? { params: req.params }
+          : { params: req.params, body: req.body },
+      ) as Record<string, unknown>,
       status,
       error,
     });

@@ -232,7 +232,7 @@ Done: startup fails when `NODE_ENV=production` and `JWT_SECRET` is missing or sh
 
 ### 11.6 Conversations
 
-Entity `Conversation` (id, user_id, messages jsonb, summary, outcome, tokens_in, tokens_out, timestamps) + migration. Write access only for trusted agent traffic. Retention job deletes rows older than 90 days.
+Done: entity `Conversation` (id, user_id, messages jsonb, summary, outcome, tokens_in, tokens_out, feedback jsonb, timestamps) + migration `Conversations1794140351353`. `POST /conversations/:id/turns` appends (upsert) and `POST /conversations/:id/feedback` records ratings; both need `X-Service-Token` (`TrustedAgentGuard`) and filter by owner in the query. No read route. Still to do: retention job deleting rows with `updated_at` older than 90 days (indexed).
 
 ### 11.7 Payments and stock release
 

@@ -13,6 +13,8 @@ from app.config import Settings
 log = logging.getLogger(__name__)
 
 _TAG = re.compile(r"<[^>]*>")
+# Tags only the service writes: button presses, tool output, the rolling summary.
+_CONTROL_TAG = re.compile(r"<(\s*/?\s*)(event|tool_result|conversation_summary)\b", re.IGNORECASE)
 _MONEY_OR_PERCENT = re.compile(r"[$€£]\s?\d[\d,]*(?:\.\d+)?|\d+(?:\.\d+)?\s?%")
 
 
@@ -73,6 +75,11 @@ def wrap_tool_result(data: Any) -> str:
     """Tool output is data. Tags are stripped first, so nothing inside can close the wrapper."""
     body = json.dumps(strip_html(data), ensure_ascii=False, separators=(",", ":"))
     return f"<tool_result>\n{body}\n</tool_result>"
+
+
+def defang_control_tags(text: str) -> str:
+    """Shopper text can't open or close service tags: a typed <event> is not a button press."""
+    return _CONTROL_TAG.sub(r"&lt;\1\2", text)
 
 
 def suspect_facts(reply: str, tool_texts: list[str]) -> list[str]:

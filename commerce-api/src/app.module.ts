@@ -9,6 +9,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module.js';
 import { CartModule } from './cart/cart.module.js';
+import { ConversationsModule } from './conversations/conversations.module.js';
 import { AgentAuditInterceptor } from './common/agent-audit.interceptor.js';
 import { ServiceTokenMiddleware } from './common/service-token.middleware.js';
 import { UserThrottlerGuard } from './common/user-throttler.guard.js';
@@ -57,6 +58,7 @@ import { SupportModule } from './support/support.module.js';
     ReturnsModule,
     FaqModule,
     SupportModule,
+    ConversationsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: UserThrottlerGuard },

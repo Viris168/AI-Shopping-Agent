@@ -127,7 +127,6 @@ npm run build                     # dist/widget.js
 
 ## Known gaps (Phase 1 work)
 
-- No `conversations` table yet.
 - No payment provider: `POST /checkout` marks the order PAID straight away (demo).
 - No CI yet.
 

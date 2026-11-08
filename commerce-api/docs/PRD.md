@@ -68,7 +68,7 @@ The AI assistant needs to read and change store data for shoppers. If it does th
 | F8 | Audit log of every agent mutation, including failures | Done |
 | F9 | `Idempotency-Key` on `POST /returns`, `POST /support/tickets`, `POST /checkout` | Done |
 | F10 | Service-token verification for agent traffic | Done |
-| F11 | `conversations` table and endpoints for transcript storage | To do |
+| F11 | `conversations` table and endpoints for transcript storage | Done |
 | F12 | Payment provider session on checkout (e.g. Stripe Checkout) + webhook to mark PAID | To do |
 | F13 | Job to release stock for orders PENDING > 30 min | To do |
 | F14 | Real carrier tracking URLs (UPS, FedEx, USPS) | To do |

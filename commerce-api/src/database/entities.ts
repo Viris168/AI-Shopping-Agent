@@ -7,6 +7,7 @@ import {
   JoinColumn,
   ManyToOne,
   OneToMany,
+  PrimaryColumn,
   PrimaryGeneratedColumn,
   Unique,
   UpdateDateColumn,
@@ -466,6 +467,65 @@ export class IdempotencyKey {
   createdAt: Date;
 }
 
+export const CONVERSATION_OUTCOMES = [
+  'resolved',
+  'handoff',
+  'abandoned',
+] as const;
+export type ConversationOutcome = (typeof CONVERSATION_OUTCOMES)[number];
+
+export interface ConversationFeedback {
+  messageId: string;
+  rating: 'up' | 'down';
+  comment: string | null;
+  at: string;
+}
+
+/** Masked chat transcripts written by agent-service (docs/ARCHITECTURE.md §5.2). Kept 90 days. */
+@Entity('conversations')
+export class Conversation {
+  // Chosen by agent-service (the conversation ID it hands the widget).
+  @PrimaryColumn('uuid')
+  id: string;
+
+  // Null while the shopper is a guest; set when a logged-in turn is recorded.
+  @Index()
+  @Column({ name: 'user_id', type: 'uuid', nullable: true })
+  userId: string | null;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User | null;
+
+  // Anthropic message format, masked by agent-service before sending.
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  messages: Record<string, unknown>[];
+
+  @Column({ type: 'text', nullable: true })
+  summary: string | null;
+
+  // Null until known; agent-service sets `handoff` when a support ticket is created.
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  outcome: ConversationOutcome | null;
+
+  @Column({ name: 'tokens_in', type: 'integer', default: 0 })
+  tokensIn: number;
+
+  @Column({ name: 'tokens_out', type: 'integer', default: 0 })
+  tokensOut: number;
+
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  feedback: ConversationFeedback[];
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
+
+  // The retention job deletes by this.
+  @Index()
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
+}
+
 export const ENTITIES = [
   User,
   Category,
@@ -480,4 +540,5 @@ export const ENTITIES = [
   SupportTicket,
   AgentActionLog,
   IdempotencyKey,
+  Conversation,
 ];

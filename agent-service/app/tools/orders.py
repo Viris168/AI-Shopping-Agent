@@ -81,7 +81,8 @@ TOOLS = [
          GetOrder, get_order, requires_auth=True),
     Tool("create_return",
          "Request a return. Requires shopper confirmation. Call get_order first to get "
-         "orderItemIds and check returnEligible.",
+         "orderItemIds and check returnEligible. An item named without a count (\"the "
+         "T-shirt\") is quantity 1; don't ask how many, the Confirm card shows it.",
          CreateReturn, create_return, requires_auth=True, confirm=True,
          summarize=_describe_return),
 ]
