@@ -136,6 +136,24 @@ card. `error_type` tells you which: `401`/`403` → key revoked or wrong (`ANTHR
 The log line names the action. Check the database (disk, connections), then record the missed
 actions by hand from commerce-api's request logs.
 
+### Helpdesk forwarding
+
+`HelpdeskForwardFailing` / `HelpdeskForwardAbandoned`: support tickets are saved in
+commerce-api but aren't reaching the helpdesk webhook (`HELPDESK_URL`). Shoppers still get a
+ticket ID; nothing is lost while retries continue (every minute, backoff up to 1 h, 30 attempts
+≈ a day). The log line has the ticket ID and the status or timeout, never the body. `responded
+401`/`403` → `HELPDESK_TOKEN` wrong or rotated; `5xx`/timeout → the helpdesk or its webhook is
+down. Pending and abandoned tickets:
+
+```sql
+SELECT id, created_at, forward_attempts, forward_error, next_forward_at
+FROM support_tickets WHERE forwarded_at IS NULL AND created_at > now() - interval '7 days';
+```
+
+After fixing the cause, requeue abandoned ones with
+`UPDATE support_tickets SET next_forward_at = now(), forward_attempts = 0 WHERE forwarded_at IS NULL AND next_forward_at IS NULL AND forward_attempts > 0;`
+(the next run within a minute pushes them; the helpdesk gets the same `Idempotency-Key`).
+
 ## Logs
 
 commerce-api's audit failures are only in its logs, so that alert needs the containers' logs in

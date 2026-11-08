@@ -72,6 +72,9 @@ services:
       TRUST_PROXY: "1" # Caddy
       CORS_ORIGINS: ${API_CORS_ORIGINS:?}
       STOREFRONT_URL: ${STOREFRONT_URL:?}
+      # Optional; empty → tickets stay in the database (src/support/helpdesk.client.ts).
+      HELPDESK_URL: ${HELPDESK_URL:-}
+      HELPDESK_TOKEN: ${HELPDESK_TOKEN:-}
     depends_on:
       postgres: { condition: service_healthy, required: false }
 

@@ -391,6 +391,43 @@ export class SupportTicket {
   @Column({ type: 'varchar', length: 20, default: 'OPEN' })
   status: TicketStatus;
 
+  // Helpdesk forwarding (support/helpdesk.client.ts). next_forward_at is when the next push is
+  // due; null once forwarded or given up. Rows from before forwarding existed stay null.
+  @Index('IDX_support_tickets_next_forward_at', {
+    where: '"next_forward_at" IS NOT NULL',
+  })
+  @Column({
+    name: 'next_forward_at',
+    type: 'timestamptz',
+    nullable: true,
+    default: () => 'now()',
+  })
+  nextForwardAt: Date | null;
+
+  @Column({ name: 'forward_attempts', type: 'int', default: 0 })
+  forwardAttempts: number;
+
+  @Column({ name: 'forwarded_at', type: 'timestamptz', nullable: true })
+  forwardedAt: Date | null;
+
+  // The helpdesk's own ticket ID, if its response gave one.
+  @Column({
+    name: 'helpdesk_ref',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  helpdeskRef: string | null;
+
+  // Last failure (status or timeout only, never the response body).
+  @Column({
+    name: 'forward_error',
+    type: 'varchar',
+    length: 300,
+    nullable: true,
+  })
+  forwardError: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }

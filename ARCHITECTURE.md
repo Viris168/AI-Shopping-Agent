@@ -101,7 +101,7 @@ Rules:
 2. Haiku writes a ticket summary from the transcript.
 3. Widget shows a confirm card with the summary; on confirm, `POST /api/v1/support/tickets`.
 4. SSE `handoff` event with ticket ID and expected response time.
-5. `SupportService` forwards to the helpdesk (integration point already marked in code).
+5. `SupportService` pushes the ticket to the helpdesk webhook (`HELPDESK_URL`, `commerce-api/src/support/helpdesk.client.ts`). A failed push doesn't fail the request; a job retries every minute with backoff for about a day, sending the ticket ID as `Idempotency-Key`.
 
 ## 4. Components
 

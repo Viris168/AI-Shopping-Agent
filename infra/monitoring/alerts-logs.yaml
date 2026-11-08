@@ -20,3 +20,26 @@ groups:
             The shopper's change went through, but its audit row is missing. Find the action in the
             log line and check the database.
           runbook: infra/monitoring/README.md#audit-insert-failures
+
+      # src/support/support.module.ts logs these; a ticket is retried for about a day first.
+      - alert: HelpdeskForwardAbandoned
+        expr: |
+          sum by (service_name) (
+            count_over_time({service_name="commerce-api"} |= "helpdesk_forward_abandoned" [5m])
+          ) > 0
+        labels: { severity: page }
+        annotations:
+          summary: A support ticket never reached the helpdesk
+          description: >-
+            30 pushes failed. The shopper was told support will reply; open the ticket by hand
+            from support_tickets.
+          runbook: infra/monitoring/README.md#helpdesk-forwarding
+      - alert: HelpdeskForwardFailing
+        expr: |
+          sum by (service_name) (
+            count_over_time({service_name="commerce-api"} |= "helpdesk_forward_failed" [30m])
+          ) > 5
+        labels: { severity: ticket }
+        annotations:
+          summary: Support tickets are failing to reach the helpdesk (retrying)
+          runbook: infra/monitoring/README.md#helpdesk-forwarding

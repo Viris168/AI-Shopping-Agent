@@ -147,7 +147,7 @@ Exit gates per phase are listed in [ARCHITECTURE.md §12](./ARCHITECTURE.md#12-r
 
 ## 12. Open questions
 
-- [ ] Which helpdesk receives handoff tickets (Zendesk, Freshdesk, Intercom, email)?
+- [x] Which helpdesk receives handoff tickets? A generic JSON webhook (`HELPDESK_URL`); any helpdesk plugs in through Zapier/Make or a small adapter.
 - [ ] Which languages and markets at launch?
 - [ ] Live human chat in v2, or ticket-only long term?
 - [ ] Data-retention requirements beyond 90 days (legal/regional)?
