@@ -14,7 +14,7 @@ Design docs: [PRD.md](PRD.md) · [ARCHITECTURE-ESSENTIAL.md](ARCHITECTURE-ESSENT
 You need Redis (agent-service won't start without it) and Postgres for commerce-api.
 
 ```bash
-docker run -d --name shop-db -p 127.0.0.1:5433:5432 -e POSTGRES_USER=shop -e POSTGRES_PASSWORD=shop -e POSTGRES_DB=shop -v shop-db-data:/var/lib/postgresql/data postgres:16
+docker run -d --name shop-db -p 127.0.0.1:5433:5432 -e POSTGRES_USER=shop -e POSTGRES_PASSWORD=shop -e POSTGRES_DB=shop -v shop-db-data:/var/lib/postgresql/data pgvector/pgvector:pg16
 cd commerce-api
 cp .env.example .env          # set JWT_SECRET (same value in agent-service/.env)
 npm install && npm run migration:run && npm run seed

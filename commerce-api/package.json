@@ -25,9 +25,11 @@
     "migration:run:prod": "npm run typeorm -- migration:run",
     "migration:revert": "npm run build && npm run typeorm -- migration:revert",
     "migration:generate": "npm run build && npm run typeorm -- migration:generate src/database/migrations/Change",
-    "seed": "npm run build && node dist/database/seed.js"
+    "seed": "npm run build && node dist/database/seed.js",
+    "embed": "npm run build && node dist/database/embed.js"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.2",
     "@nestjs/common": "^12.0.1",
     "@nestjs/config": "^12.1.1",
     "@nestjs/core": "^12.0.1",

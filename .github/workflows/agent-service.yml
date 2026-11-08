@@ -73,7 +73,7 @@ jobs:
     timeout-minutes: 120
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: shop
           POSTGRES_PASSWORD: shop
@@ -88,6 +88,7 @@ jobs:
       DATABASE_URL: postgresql://shop:shop@localhost:5432/shop
       RATE_LIMIT_PER_MIN: "10000"
       LOG_LEVEL: warn
+      ONNXRUNTIME_NODE_INSTALL: skip # CPU only: no CUDA download for the embedding model
       # agent-service
       APP_ENV: test
       COMMERCE_API_URL: http://localhost:3000/api/v1
