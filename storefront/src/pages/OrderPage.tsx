@@ -1,17 +1,47 @@
-import { useState, type FormEvent } from 'react';
-import { Link, useLocation, useParams } from 'react-router';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router';
 import { api, ApiError } from '../api';
+import { useCart } from '../cart';
 import { ErrorBox, Loading, Notice, StatusBadge } from '../components/ui';
 import { formatDate } from '../format';
 import type { OrderDetail, ReturnCreated } from '../types';
 import { useAsync } from '../useAsync';
 
+// Stripe sends the shopper back before its webhook marks the order PAID; poll until it does.
+export const PAYMENT_POLL_MS = 2000;
+const PAYMENT_POLL_TRIES = 15;
+
 export function OrderPage() {
   const { orderNumber = '' } = useParams();
   const location = useLocation();
   const justPlaced = (location.state as { justPlaced?: boolean } | null)?.justPlaced;
+  // Set by Stripe's return URLs (?payment=success|cancelled). Only picks the message;
+  // whether the order is paid always comes from its status.
+  const [params] = useSearchParams();
+  const { refresh: refreshCart } = useCart();
+  const payment = params.get('payment');
   const order = useAsync(() => api.order(orderNumber), [orderNumber]);
   const [returned, setReturned] = useState<ReturnCreated>();
+  const [stillConfirming, setStillConfirming] = useState(false);
+  // Why the order stopped being PENDING when the shopper tried to resume payment.
+  const [settledMessage, setSettledMessage] = useState<string>();
+
+  const status = order.data?.status;
+  const { setData } = order;
+  useEffect(() => {
+    if (payment !== 'success' || status !== 'PENDING') return;
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries++;
+      // Quiet refresh: keep showing the order while checking.
+      api.order(orderNumber).then(setData, () => undefined);
+      if (tries >= PAYMENT_POLL_TRIES) {
+        clearInterval(timer);
+        setStillConfirming(true);
+      }
+    }, PAYMENT_POLL_MS);
+    return () => clearInterval(timer);
+  }, [payment, status, orderNumber, setData]);
 
   if (order.error)
     return order.error instanceof ApiError && order.error.status === 404 ? (
@@ -31,10 +61,26 @@ export function OrderPage() {
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <Link to="/orders">Orders</Link> <span aria-hidden="true">/</span> {o.orderNumber}
       </nav>
-      {justPlaced && (
+      {(justPlaced || payment === 'success') && o.status === 'PAID' && (
         <Notice>
           <strong>Thank you! Your order is placed and paid.</strong> We’ll let you know when it ships.
         </Notice>
+      )}
+      {o.status === 'PENDING' && (
+        <PendingNotice
+          orderNumber={o.orderNumber}
+          payment={payment}
+          stillConfirming={stillConfirming}
+          onSettled={(message) => {
+            setSettledMessage(message);
+            order.reload();
+            void refreshCart(); // a cancelled order puts its items back in the cart
+          }}
+        />
+      )}
+      {settledMessage && <Notice tone="info">{settledMessage}</Notice>}
+      {payment === 'cancelled' && o.status === 'CANCELLED' && (
+        <Notice tone="info">This order was cancelled because it wasn’t paid. You haven’t been charged.</Notice>
       )}
       <div className="order-header">
         <h1>Order {o.orderNumber}</h1>
@@ -137,6 +183,75 @@ export function OrderPage() {
         </aside>
       </div>
     </>
+  );
+}
+
+function PendingNotice({
+  orderNumber,
+  payment,
+  stillConfirming,
+  onSettled,
+}: {
+  orderNumber: string;
+  payment: string | null;
+  stillConfirming: boolean;
+  onSettled: (message: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  if (payment === 'success')
+    return (
+      <Notice tone="info">
+        {stillConfirming ? (
+          <>
+            <strong>We’re still confirming your payment.</strong> This can take a few minutes. Refresh this
+            page or check <Link to="/orders">your orders</Link> later.
+          </>
+        ) : (
+          <>
+            <strong>Payment received.</strong> Confirming it with the payment provider…
+          </>
+        )}
+      </Notice>
+    );
+
+  const resume = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const { checkoutUrl } = await api.resumePayment(orderNumber);
+      // Busy stays set so the button can't be clicked again while Stripe loads.
+      window.location.assign(checkoutUrl);
+    } catch (err) {
+      setBusy(false);
+      // 409: the order was settled instead (paid or cancelled); show why and reload it.
+      if (err instanceof ApiError && err.status === 409) onSettled(err.message);
+      else setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  return (
+    <Notice tone="info">
+      {payment === 'cancelled' ? (
+        <>
+          <strong>Payment wasn’t completed</strong>, so you haven’t been charged.
+        </>
+      ) : (
+        'This order is waiting for payment.'
+      )}{' '}
+      Your items are held for 30 minutes after placing the order; after that it’s cancelled automatically.
+      <div className="notice-actions">
+        <button type="button" className="btn btn-small btn-primary" onClick={resume} disabled={busy}>
+          {busy ? 'Going to payment…' : 'Complete payment'}
+        </button>
+      </div>
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+    </Notice>
   );
 }
 

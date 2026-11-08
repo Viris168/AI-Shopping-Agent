@@ -72,7 +72,7 @@ The AI assistant needs to read and change store data for shoppers. If it does th
 | F12 | Payment provider session on checkout (e.g. Stripe Checkout) + webhook to mark PAID | To do |
 | F13 | Job to release stock for orders PENDING > 30 min | To do |
 | F14 | Real carrier tracking URLs (UPS, FedEx, USPS, DHL) | Done |
-| F15 | Ticket forwarding to helpdesk | To do |
+| F15 | Ticket forwarding to helpdesk | Done (webhook, `HELPDESK_URL`) |
 
 ### Non-functional
 
@@ -109,6 +109,6 @@ The AI assistant needs to read and change store data for shoppers. If it does th
 ## 9. Open questions
 
 - [ ] Payment provider (Stripe assumed)?
-- [ ] Helpdesk for ticket forwarding?
+- [x] Helpdesk for ticket forwarding? Generic JSON webhook (`HELPDESK_URL`).
 - [ ] Refresh tokens, or keep 1 h access tokens with storefront re-issue?
 - [ ] Multi-currency needed at launch? (Currency column exists; formatting assumes `en-US`.)

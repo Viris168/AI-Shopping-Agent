@@ -20,6 +20,7 @@ import { DatabaseModule } from './database/database.module.js';
 import { FaqModule } from './faq/faq.module.js';
 import { HealthModule } from './health/health.module.js';
 import { OrdersModule } from './orders/orders.module.js';
+import { PaymentsModule } from './payments/payments.module.js';
 import { ProductsModule } from './products/products.module.js';
 import { ReturnsModule } from './returns/returns.module.js';
 import { SupportModule } from './support/support.module.js';
@@ -53,6 +54,7 @@ export function requestId(req: IncomingMessage, res: ServerResponse): string {
             'req.headers.authorization',
             'req.headers["x-service-token"]',
             'req.headers.cookie',
+            'req.headers["stripe-signature"]',
           ],
           transport:
             process.env.NODE_ENV === 'production'
@@ -70,7 +72,8 @@ export function requestId(req: IncomingMessage, res: ServerResponse): string {
         },
       ],
     }),
-    // Background jobs, e.g. transcript retention (conversations/retention.job.ts).
+    // Background jobs: transcript retention (conversations/retention.job.ts),
+    // unpaid-order stock release (orders/stock-release.job.ts).
     ScheduleModule.forRoot(),
     DatabaseModule,
     AuthModule,
@@ -78,6 +81,7 @@ export function requestId(req: IncomingMessage, res: ServerResponse): string {
     ProductsModule,
     CartModule,
     OrdersModule,
+    PaymentsModule,
     ReturnsModule,
     FaqModule,
     SupportModule,

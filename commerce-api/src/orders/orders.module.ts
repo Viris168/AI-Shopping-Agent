@@ -1,10 +1,14 @@
 import {
   Controller,
+  ForbiddenException,
   Get,
+  HttpCode,
   Injectable,
   Module,
   NotFoundException,
   Param,
+  Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -16,7 +20,13 @@ import {
   type AuthUser,
 } from '../auth/auth.guards.js';
 import { formatMoney } from '../common/money.js';
+import type { AgentRequest } from '../common/service-token.middleware.js';
 import { Order } from '../database/entities.js';
+import {
+  PaymentsModule,
+  PaymentsService,
+} from '../payments/payments.module.js';
+import { StockReleaseJob } from './stock-release.job.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -137,7 +147,10 @@ export class OrdersService {
 @UseGuards(JwtAuthGuard)
 @Controller('orders')
 export class OrdersController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly payments: PaymentsService,
+  ) {}
 
   @Get()
   list(@CurrentUser() user: AuthUser) {
@@ -151,11 +164,25 @@ export class OrdersController {
   ) {
     return this.orders.get(user.id, orderNumber);
   }
+
+  /** Storefront only, like POST /checkout: the agent never handles payment (docs/AGENT.md §3). */
+  @Post(':orderNumber/payment')
+  @HttpCode(200)
+  resumePayment(
+    @CurrentUser() user: AuthUser,
+    @Param('orderNumber') orderNumber: string,
+    @Req() req: AgentRequest,
+  ) {
+    if (req.isTrustedAgent)
+      throw new ForbiddenException('Payment happens on the checkout page');
+    return this.payments.resumeSession(user.id, orderNumber);
+  }
 }
 
 @Module({
+  imports: [PaymentsModule],
   controllers: [OrdersController],
-  providers: [OrdersService],
+  providers: [OrdersService, StockReleaseJob],
   exports: [OrdersService],
 })
 export class OrdersModule {}

@@ -127,7 +127,7 @@ npm run build                     # dist/widget.js
 
 ## Known gaps (Phase 1 work)
 
-- No payment provider: `POST /checkout` marks the order PAID straight away (demo).
+- Payments: Stripe Checkout when `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` are set; otherwise `POST /checkout` marks the order PAID straight away (demo).
 - CI (`.github/workflows/`) runs per component on changed paths. Evals need the `ANTHROPIC_API_KEY` repository secret.
 
 ## When unsure

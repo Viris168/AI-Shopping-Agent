@@ -209,6 +209,8 @@ export class Coupon {
 
 @Entity('orders')
 @Index(['userId', 'createdAt'])
+// The stock-release job looks up stale PENDING orders by this.
+@Index(['status', 'createdAt'])
 export class Order {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -255,6 +257,19 @@ export class Order {
     nullable: true,
   })
   trackingNumber: string | null;
+
+  // Stripe Checkout Session (cs_...); null for demo orders paid without a provider.
+  @Index({ unique: true })
+  @Column({
+    name: 'payment_session_id',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  paymentSessionId: string | null;
+
+  @Column({ name: 'paid_at', type: 'timestamptz', nullable: true })
+  paidAt: Date | null;
 
   @Column({ name: 'shipped_at', type: 'timestamptz', nullable: true })
   shippedAt: Date | null;
@@ -391,6 +406,43 @@ export class SupportTicket {
   @Column({ type: 'varchar', length: 20, default: 'OPEN' })
   status: TicketStatus;
 
+  // Helpdesk forwarding (support/helpdesk.client.ts). next_forward_at is when the next push is
+  // due; null once forwarded or given up. Rows from before forwarding existed stay null.
+  @Index('IDX_support_tickets_next_forward_at', {
+    where: '"next_forward_at" IS NOT NULL',
+  })
+  @Column({
+    name: 'next_forward_at',
+    type: 'timestamptz',
+    nullable: true,
+    default: () => 'now()',
+  })
+  nextForwardAt: Date | null;
+
+  @Column({ name: 'forward_attempts', type: 'int', default: 0 })
+  forwardAttempts: number;
+
+  @Column({ name: 'forwarded_at', type: 'timestamptz', nullable: true })
+  forwardedAt: Date | null;
+
+  // The helpdesk's own ticket ID, if its response gave one.
+  @Column({
+    name: 'helpdesk_ref',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  helpdeskRef: string | null;
+
+  // Last failure (status or timeout only, never the response body).
+  @Column({
+    name: 'forward_error',
+    type: 'varchar',
+    length: 300,
+    nullable: true,
+  })
+  forwardError: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }
@@ -463,6 +515,20 @@ export class IdempotencyKey {
   statusCode: number | null;
 
   @Index()
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
+}
+
+/** Stripe webhook events already applied; the primary key makes redeliveries no-ops. */
+@Entity('payment_events')
+export class PaymentEvent {
+  // Stripe event ID (evt_...).
+  @PrimaryColumn({ type: 'varchar', length: 255 })
+  id: string;
+
+  @Column({ type: 'varchar', length: 100 })
+  type: string;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }
@@ -541,4 +607,5 @@ export const ENTITIES = [
   AgentActionLog,
   IdempotencyKey,
   Conversation,
+  PaymentEvent,
 ];

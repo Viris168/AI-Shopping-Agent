@@ -101,7 +101,7 @@ Rules:
 2. Haiku writes a ticket summary from the transcript.
 3. Widget shows a confirm card with the summary; on confirm, `POST /api/v1/support/tickets`.
 4. SSE `handoff` event with ticket ID and expected response time.
-5. `SupportService` forwards to the helpdesk (integration point already marked in code).
+5. `SupportService` pushes the ticket to the helpdesk webhook (`HELPDESK_URL`, `commerce-api/src/support/helpdesk.client.ts`). A failed push doesn't fail the request; a job retries every minute with backoff for about a day, sending the ticket ID as `Idempotency-Key`.
 
 ## 4. Components
 
@@ -119,6 +119,7 @@ Global prefix `api/v1` (except `/health`). Swagger at `/docs`.
 | support | `POST /support/tickets` | optional JWT |
 | conversations | `POST /conversations/:id/turns`, `POST /conversations/:id/feedback` (transcripts, not a tool) | optional JWT + service token |
 | cart | `POST /checkout` | **never called by the agent** |
+| orders | `POST /orders/{n}/payment` | **never called by the agent** (403) |
 
 Cross-cutting: `helmet`, CORS allowlist, global `ValidationPipe` (whitelist + forbid unknown), `ThrottlerGuard`, `pino` logging with auth header redaction, `AgentAuditInterceptor`.
 

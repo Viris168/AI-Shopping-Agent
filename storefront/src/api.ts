@@ -1,6 +1,7 @@
 import type {
   Cart,
   Category,
+  CheckoutResult,
   FaqResult,
   FaqTopic,
   OrderDetail,
@@ -123,11 +124,14 @@ export const api = {
   removeCartItem: (productId: string) =>
     request<Cart>('DELETE', `/cart/items/${seg(productId)}`),
   applyCoupon: (code: string) => request<Cart>('POST', '/cart/coupon', { code }),
-  checkout: () => request<OrderDetail>('POST', '/checkout'),
+  checkout: () => request<CheckoutResult>('POST', '/checkout'),
 
   orders: () => request<OrderSummary[]>('GET', '/orders'),
   order: (orderNumber: string) =>
     request<OrderDetail>('GET', `/orders/${seg(orderNumber)}`),
+  /** Back to Stripe's page for a PENDING order; 409 with a shopper message if it's settled instead. */
+  resumePayment: (orderNumber: string) =>
+    request<{ checkoutUrl: string }>('POST', `/orders/${seg(orderNumber)}/payment`),
   createReturn: (
     orderNumber: string,
     reason: string,

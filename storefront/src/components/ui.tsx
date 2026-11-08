@@ -32,6 +32,7 @@ export function Notice({ children, tone = 'success' }: { children: ReactNode; to
 }
 
 const STATUS_TONE: Record<string, string> = {
+  PENDING: 'amber',
   PAID: 'blue',
   PROCESSING: 'blue',
   SHIPPED: 'amber',

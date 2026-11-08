@@ -1,7 +1,9 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
@@ -15,6 +17,7 @@ import {
   Product,
 } from '../database/entities.js';
 import { OrdersService } from '../orders/orders.module.js';
+import { PaymentsService, releaseOrder } from '../payments/payments.module.js';
 import { ProductsService } from '../products/products.service.js';
 import { MAX_QTY_PER_ITEM } from './cart.dto.js';
 import { couponProblem, priceCart } from './pricing.js';
@@ -26,6 +29,8 @@ const notEnough = (p: Product) =>
 
 @Injectable()
 export class CartService {
+  private readonly log = new Logger(CartService.name);
+
   constructor(
     @InjectDataSource() private readonly db: DataSource,
     @InjectRepository(Cart) private readonly carts: Repository<Cart>,
@@ -34,6 +39,7 @@ export class CartService {
     @InjectRepository(Coupon) private readonly coupons: Repository<Coupon>,
     private readonly products: ProductsService,
     private readonly orders: OrdersService,
+    private readonly payments: PaymentsService,
   ) {}
 
   async view(userId: string) {
@@ -112,13 +118,17 @@ export class CartService {
   }
 
   /**
-   * Demo checkout: there is no payment step, so the order is saved as PAID straight away.
    * One transaction: lock the cart (a double-click waits, then finds it empty), take stock
    * with conditional updates so it can never go negative, snapshot names and prices,
    * then empty the cart. Totals use the same pricing the shopper saw in the cart.
+   *
+   * With Stripe configured the order is PENDING and `checkoutUrl` is the hosted payment
+   * page; the webhook marks it PAID and the stock-release job cancels it after 30 minutes
+   * unpaid. Without Stripe (demo) the order is PAID straight away and `checkoutUrl` is null.
    */
   async checkout(userId: string) {
-    const orderNumber = await this.db.transaction(async (m) => {
+    const payNow = this.payments.enabled;
+    const placed = await this.db.transaction(async (m) => {
       await this.ensureCart(m, userId);
       const cart = await m.findOneOrFail(Cart, {
         where: { userId },
@@ -155,11 +165,14 @@ export class CartService {
       const [{ next }] = await m.query(
         `SELECT 'ORD-' || nextval('order_number_seq') AS next`,
       );
+      // Nothing to charge (coupon covers it all) → no payment page.
+      const pending = payNow && price.totalCents > 0;
       const order = await m.save(
         m.create(Order, {
           orderNumber: next,
           userId,
-          status: 'PAID',
+          status: pending ? 'PENDING' : 'PAID',
+          paidAt: pending ? null : new Date(),
           subtotalCents: price.subtotalCents,
           discountCents: price.discountCents,
           shippingCents: price.shippingCents,
@@ -180,9 +193,40 @@ export class CartService {
       );
       await m.delete(CartItem, { cartId: cart.id });
       await m.update(Cart, { id: cart.id }, { couponCode: null });
-      return order.orderNumber;
+      return { order, itemNames: items.map((i) => i.product.name) };
     });
-    return this.orders.get(userId, orderNumber);
+
+    const { order } = placed;
+    let checkoutUrl: string | null = null;
+    if (order.status === 'PENDING') {
+      try {
+        const session = await this.payments.createSession({
+          id: order.id,
+          orderNumber: order.orderNumber,
+          totalCents: order.totalCents,
+          itemNames: placed.itemNames,
+        });
+        await this.db
+          .getRepository(Order)
+          .update({ id: order.id, userId }, { paymentSessionId: session.id });
+        checkoutUrl = session.url;
+      } catch (err) {
+        this.log.error(
+          `payment_session_failed order=${order.orderNumber}: ${(err as Error).message}`,
+        );
+        // Undo the order so the shopper can simply try again.
+        await this.db.transaction((m) =>
+          releaseOrder(m, order.id, { restoreCart: true }),
+        );
+        throw new ServiceUnavailableException(
+          'Payment is unavailable right now. Your cart is unchanged; please try again in a few minutes.',
+        );
+      }
+    }
+    return {
+      ...(await this.orders.get(userId, order.orderNumber)),
+      checkoutUrl,
+    };
   }
 
   private checkStock(product: Product, quantity: number) {

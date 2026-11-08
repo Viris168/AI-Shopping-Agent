@@ -96,6 +96,13 @@ The `ROLLOUT_PERCENT` variable sets the value after a deploy (unset: production 
 The Redis flag wins while it exists; `DEL flag:rollout_percent` goes back to the variable. Before
 each step, check the dashboard: tool errors < 5%, handoff and thumbs-up rates steady.
 
+At the end of a step's watch window, `infra/rollout-check.sh <user@vm> [days]` checks the gate:
+tool error rate (with `PROM_URL`/`PROM_AUTH`, else read the dashboard), no return filed against
+another shopper's order, no agent action logged for a different shopper than the conversation's,
+no duplicate returns. It also downloads a sample of masked transcripts (thumbs-down and handoffs
+first) to a private temp dir; add the failures to `agent-service/evals/golden/`. Exit 0 = passed,
+1 = failed (roll back), 2 = error rate not checked. It never changes the flag.
+
 ## Runbooks
 
 ### Tool errors
@@ -128,6 +135,24 @@ card. `error_type` tells you which: `401`/`403` → key revoked or wrong (`ANTHR
 `CommerceAuditInsertFailed`: an agent change happened, but its `agent_action_logs` row didn't save.
 The log line names the action. Check the database (disk, connections), then record the missed
 actions by hand from commerce-api's request logs.
+
+### Helpdesk forwarding
+
+`HelpdeskForwardFailing` / `HelpdeskForwardAbandoned`: support tickets are saved in
+commerce-api but aren't reaching the helpdesk webhook (`HELPDESK_URL`). Shoppers still get a
+ticket ID; nothing is lost while retries continue (every minute, backoff up to 1 h, 30 attempts
+≈ a day). The log line has the ticket ID and the status or timeout, never the body. `responded
+401`/`403` → `HELPDESK_TOKEN` wrong or rotated; `5xx`/timeout → the helpdesk or its webhook is
+down. Pending and abandoned tickets:
+
+```sql
+SELECT id, created_at, forward_attempts, forward_error, next_forward_at
+FROM support_tickets WHERE forwarded_at IS NULL AND created_at > now() - interval '7 days';
+```
+
+After fixing the cause, requeue abandoned ones with
+`UPDATE support_tickets SET next_forward_at = now(), forward_attempts = 0 WHERE forwarded_at IS NULL AND next_forward_at IS NULL AND forward_attempts > 0;`
+(the next run within a minute pushes them; the helpdesk gets the same `Idempotency-Key`).
 
 ## Logs
 

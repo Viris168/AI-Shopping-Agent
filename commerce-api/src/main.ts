@@ -6,11 +6,14 @@ import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module.js';
 import { jwtSecret } from './auth/jwt.config.js';
 import { serviceToken } from './common/service-token.middleware.js';
+import { stripeConfig } from './payments/payments.module.js';
 import { configureApp } from './setup.js';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
+    // Keeps req.rawBody next to the parsed JSON: Stripe signs the exact bytes it sent.
+    rawBody: true,
   });
   const logger = app.get(Logger);
   app.useLogger(logger);
@@ -20,6 +23,9 @@ async function bootstrap() {
   if (!serviceToken())
     // also fails fast in production
     logger.warn('SERVICE_TOKEN is not set; agent requests will be rejected');
+  if (!stripeConfig())
+    // throws if only one of the two Stripe keys is set
+    logger.warn('Stripe is not configured; checkout marks orders PAID (demo)');
   // Behind a load balancer, set to the hop count so req.ip (throttling) is the client's.
   if (process.env.TRUST_PROXY)
     app.set('trust proxy', Number(process.env.TRUST_PROXY));

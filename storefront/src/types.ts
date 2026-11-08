@@ -122,6 +122,11 @@ export interface OrderDetail extends OrderSummary {
   returns: OrderReturn[];
 }
 
+/** `POST /checkout`: with payments on, the order is PENDING until paid on `checkoutUrl` (Stripe). */
+export interface CheckoutResult extends OrderDetail {
+  checkoutUrl: string | null;
+}
+
 export interface ReturnCreated {
   returnId: string;
   status: string;
