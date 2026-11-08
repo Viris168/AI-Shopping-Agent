@@ -96,6 +96,13 @@ The `ROLLOUT_PERCENT` variable sets the value after a deploy (unset: production 
 The Redis flag wins while it exists; `DEL flag:rollout_percent` goes back to the variable. Before
 each step, check the dashboard: tool errors < 5%, handoff and thumbs-up rates steady.
 
+At the end of a step's watch window, `infra/rollout-check.sh <user@vm> [days]` checks the gate:
+tool error rate (with `PROM_URL`/`PROM_AUTH`, else read the dashboard), no return filed against
+another shopper's order, no agent action logged for a different shopper than the conversation's,
+no duplicate returns. It also downloads a sample of masked transcripts (thumbs-down and handoffs
+first) to a private temp dir; add the failures to `agent-service/evals/golden/`. Exit 0 = passed,
+1 = failed (roll back), 2 = error rate not checked. It never changes the flag.
+
 ## Runbooks
 
 ### Tool errors
