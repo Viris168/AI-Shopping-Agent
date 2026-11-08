@@ -69,12 +69,14 @@ Convention: small features keep controller + service + DTOs + module in one `*.m
 1. **helmet** — security headers.
 2. **CORS** — origins from `CORS_ORIGINS` (comma-separated), credentials allowed.
 3. **Global prefix** — `api/v1` for everything except `/health`.
-4. **ThrottlerGuard** (global) — default `RATE_LIMIT_PER_MIN` (120) per 60 s; stricter on register (5) and login (10); `/health` skipped.
-5. **Route guards** — `JwtAuthGuard` (401 if missing/invalid) or `OptionalJwtAuthGuard` (guest allowed). Both verify issuer `commerce-api` and set `req.user`.
-6. **ValidationPipe** — `whitelist`, `forbidNonWhitelisted`, `transform`. Unknown fields → 400.
-7. **Controller → service** — business rules; ownership in queries.
-8. **AgentAuditInterceptor** (global) — if `X-Client: ai-agent` and method is POST/PATCH/PUT/DELETE, inserts into `agent_action_logs` after success.
-9. **pino-http** — request logs, `authorization` and `x-service-token` headers redacted.
+4. **ServiceTokenMiddleware** — sets `req.isTrustedAgent` when `X-Service-Token` matches `SERVICE_TOKEN`; `X-Client: ai-agent` without it → 403.
+5. **UserThrottlerGuard** (global) — keyed by verified JWT `sub`, else trusted-agent conversation, else IP; default `RATE_LIMIT_PER_MIN` (120) per 60 s; stricter on register (5) and login (10); `/health` skipped.
+6. **Route guards** — `JwtAuthGuard` (401 if missing/invalid) or `OptionalJwtAuthGuard` (guest allowed). Both verify issuer `commerce-api` and set `req.user`.
+7. **ValidationPipe** — `whitelist`, `forbidNonWhitelisted`, `transform`. Unknown fields → 400.
+8. **IdempotencyInterceptor** (returns, tickets, checkout) — replays stored responses for a repeated `Idempotency-Key`.
+9. **Controller → service** — business rules; ownership in queries.
+10. **AgentAuditInterceptor** (global) — for trusted agent POST/PATCH/PUT/DELETE, inserts into `agent_action_logs` with `status` and `error`, successes and failures.
+11. **pino-http** — request logs, `authorization` and `x-service-token` headers redacted.
 
 ## 5. Authentication and authorization
 
@@ -114,7 +116,8 @@ erDiagram
 | return_requests | order_id, user_id, reason, items jsonb, status | |
 | faq_articles | topic, question, answer | GIN full-text index |
 | support_tickets | user_id null, conversation_id, subject, summary, priority, status | |
-| agent_action_logs | user_id, conversation_id (idx), action, payload jsonb | |
+| agent_action_logs | user_id, conversation_id (idx), action, payload jsonb, status, error | |
+| idempotency_keys | key, user_id, route, request_hash, response jsonb, status_code | unique (user_id, key) NULLS NOT DISTINCT; 24 h TTL |
 
 Status enums:
 - Order: `PENDING → PAID → PROCESSING → SHIPPED → DELIVERED`, or `CANCELLED` / `REFUNDED`
@@ -162,6 +165,8 @@ Nest exceptions with human-readable messages (shown to shoppers by the agent):
 | `RUN_MIGRATIONS_ON_BOOT` | `false` | keep false in production; use pre-deploy job |
 | `JWT_SECRET` | dev fallback | **must be set in production** (see §11) |
 | `JWT_EXPIRES_IN` | `1h` | |
+| `SERVICE_TOKEN` | — | shared with agent-service; **must be set (32+ chars) in production**; unset → agent requests 403 |
+| `TRUST_PROXY` | — | proxy hop count behind a load balancer, so `req.ip` is the client |
 | `CORS_ORIGINS` | `http://localhost:8080` | add widget/agent origins as needed |
 | `STOREFRONT_URL` | `http://localhost:8080` | product and checkout links |
 | `RATE_LIMIT_PER_MIN` | `120` | default throttle |
@@ -179,6 +184,8 @@ Nest exceptions with human-readable messages (shown to shoppers by the agent):
 ## 11. Planned changes (agent readiness)
 
 ### 11.1 Per-user throttling
+
+Done (`src/common/user-throttler.guard.ts`). The JWT is verified in the guard rather than decoded, so a forged `sub` can't get a fresh bucket. Set `TRUST_PROXY` behind a load balancer.
 
 Problem: throttling keys on IP; every agent request comes from the agent-service IPs, so all shoppers share one bucket.
 
@@ -200,15 +207,21 @@ Replace `ThrottlerGuard` with `UserThrottlerGuard` in `APP_GUARD`. Set `app.set(
 
 ### 11.2 Service token
 
+Done (`src/common/service-token.middleware.ts`). Production refuses to start without a 32+ character `SERVICE_TOKEN`.
+
 - New env `SERVICE_TOKEN`. Middleware compares `X-Service-Token` with `crypto.timingSafeEqual`; on success sets `req.isTrustedAgent = true`.
 - `AgentAuditInterceptor` records only when `req.isTrustedAgent` (header alone is ignored).
 - Requests with `X-Client: ai-agent` but no valid token → 403.
 
 ### 11.3 Audit failures
 
+Done. Insert failures are logged as `audit_insert_failed` (no metrics pipeline yet).
+
 Add an `error` handler in the interceptor `tap` that logs the attempt with `status` and `message`; add `status` and `error` columns to `agent_action_logs` (migration). Replace `.catch(() => undefined)` with a logged error and a metric.
 
 ### 11.4 Idempotency
+
+Done (`src/common/idempotency.interceptor.ts`). Same key while the first request runs → 409; failed requests release their key. Expired keys are removed lazily on reuse (no purge job yet).
 
 - Table `idempotency_keys (key, user_id, route, request_hash, response jsonb, status_code, created_at)`, unique (user_id, key).
 - `IdempotencyInterceptor` on `POST /returns`, `POST /support/tickets`, `POST /checkout`: same key + same body → stored response; same key + different body → 422; keys expire after 24 h.
@@ -237,8 +250,8 @@ Map `carrier` → URL template (UPS, FedEx, USPS) in `orders`; unknown carriers 
 
 | Level | Tool | Scope |
 |---|---|---|
-| Unit | Jest + `@nestjs/testing` | services with repository mocks: return rules, coupon rules, shipping math |
-| Integration | Jest + supertest + real Postgres (CI service) | full HTTP flows on seeded data; ownership (user B can't read user A's order) |
+| Unit | Vitest + `@nestjs/testing` | services with repository mocks: return rules, coupon rules, shipping math |
+| Integration | Vitest + supertest + real Postgres (CI service) | full HTTP flows on seeded data; ownership (user B can't read user A's order) |
 | Contract | Snapshot of Swagger JSON | catch breaking changes to agent-facing DTOs |
 
 ## 13. Observability

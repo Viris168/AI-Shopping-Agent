@@ -7,6 +7,7 @@ import {
   NotFoundException,
   Post,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { InjectDataSource } from '@nestjs/typeorm';
@@ -30,6 +31,7 @@ import {
   JwtAuthGuard,
   type AuthUser,
 } from '../auth/auth.guards.js';
+import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
 import { Order, OrderItem, ReturnRequest } from '../database/entities.js';
 import { returnDeadline, returnWindowDays } from '../orders/orders.module.js';
 
@@ -146,6 +148,7 @@ export class ReturnsController {
   constructor(private readonly returns: ReturnsService) {}
 
   @Post()
+  @UseInterceptors(IdempotencyInterceptor)
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateReturnDto) {
     return this.returns.create(user.id, dto);
   }

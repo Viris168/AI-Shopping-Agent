@@ -15,11 +15,11 @@ How the AI shopping agent (`agent-service`) talks to this backend: headers, auth
 | Header | Required | Value | Effect |
 |---|---|---|---|
 | `Authorization` | for login-only routes | `Bearer <shopper JWT>` | Identifies the shopper |
-| `X-Client` | yes | `ai-agent` | Marks agent traffic for audit |
+| `X-Client` | yes | `ai-agent` | Marks agent traffic; 403 without a valid `X-Service-Token` |
 | `X-Conversation-Id` | yes | conversation UUID | Stored in audit log and tickets |
-| `X-Service-Token` | yes (after hardening) | shared secret | Proves the call comes from agent-service; enables agent rate-limit bucket |
+| `X-Service-Token` | yes | `SERVICE_TOKEN` | Proves the call comes from agent-service; enables audit and the agent-guest rate-limit bucket |
 | `X-Request-Id` | recommended | UUID | Correlates logs across services |
-| `Idempotency-Key` | on `POST /returns`, `POST /support/tickets` (after hardening) | UUID per pending action | Safe retries |
+| `Idempotency-Key` | on `POST /returns`, `POST /support/tickets` | UUID per pending action (1–100 chars `A-Za-z0-9_.:-`) | Safe retries: same key + body → stored response with `Idempotent-Replayed: true`; kept 24 h |
 
 Base URL: `{COMMERCE_API_URL}` = `http://commerce-api:3000/api/v1`.
 
@@ -126,9 +126,12 @@ Empty `results` means no grounded answer — the agent must say it isn't sure.
 | 400 | `Only delivered orders can be returned` · `The 30-day return window has closed` · `A return is already open for this order` | Relay; offer handoff if shopper disputes |
 | 400 | `Item … is not part of this order` · `Quantity exceeds purchased amount` | Re-fetch order, correct, re-propose |
 | 400 | validation errors (array of messages) | Fix arguments once, else apologise |
+| 400 | `Idempotency-Key must be 1–100 letters, digits or "-_.:" characters` | Bug in agent-service; don't retry |
 | 401 | `Missing bearer token` · `Invalid or expired token` | Ask shopper to log in (widget refreshes token) |
+| 403 | `Agent requests need a valid service token` | Config error (`SERVICE_TOKEN` mismatch); apologise and alert |
 | 404 | `Order not found` · `Product not found` · `Item not in cart` | Ask to double-check; never imply the order exists for someone else |
-| 409 | (idempotency conflict) | Treat as already done; fetch current state |
+| 409 | `This request is already being processed; please retry shortly` | Same key still running: wait, retry with the same key |
+| 422 | `This Idempotency-Key was already used for a different request` | Bug in agent-service (key reused); don't retry |
 | 429 | rate limited | Back off; tell shopper to try again shortly |
 | 5xx | — | Retry ≤ 2 (GET always; POST only with idempotency key), then apologise and offer handoff |
 
@@ -139,11 +142,11 @@ Empty `results` means no grounded answer — the agent must say it isn't sure.
 | Shopper only sees own data | `userId` in every user-scoped query | Done |
 | Stock never oversold at checkout | Conditional `UPDATE … WHERE stock >= qty` in a transaction | Done |
 | One open return per order | Check in `ReturnsService.create` | Done |
-| Agent mutations logged | `AgentAuditInterceptor` | Done (successes) |
-| Failed agent mutations logged | interceptor error path | To do |
-| Retries don't duplicate | `Idempotency-Key` | To do |
-| Spoofed agent traffic rejected | `X-Service-Token` | To do |
-| Fair per-shopper limits | user-keyed throttler | To do |
+| Agent mutations logged | `AgentAuditInterceptor` | Done |
+| Failed agent mutations logged | interceptor error path (`status`, `error`) | Done |
+| Retries don't duplicate | `Idempotency-Key` | Done |
+| Spoofed agent traffic rejected | `X-Service-Token` | Done |
+| Fair per-shopper limits | `UserThrottlerGuard` | Done |
 
 ## 7. Audit log
 
@@ -155,9 +158,11 @@ Table `agent_action_logs`:
 | conversation_id | `5d…` |
 | action | `POST /returns` · `PATCH /cart/items/:productId` |
 | payload | `{ "params": {…}, "body": {…} }` |
+| status | `201` · `400` |
+| error | `The 30-day return window has closed` (null on success) |
 | created_at | timestamp |
 
-Support staff answer "why is this in my cart?" by filtering on `user_id` or `conversation_id`. Planned: `status` and `error` columns for failed attempts.
+Support staff answer "why is this in my cart?" by filtering on `user_id` or `conversation_id`.. Failed attempts are logged too (rejected before the route — 401, 403, 429 — are not).
 
 ## 8. Rate limits
 
@@ -165,7 +170,7 @@ Support staff answer "why is this in my cart?" by filtering on `user_id` or `con
 |---|---|
 | Default | `RATE_LIMIT_PER_MIN` = 120 |
 | Register / login | 5 / 10 |
-| Agent (after hardening) | per shopper `sub`; separate bucket for trusted agent guests |
+| Keyed by | verified JWT `sub`; trusted agent guests by `X-Conversation-Id`; everyone else by IP |
 
 ## 9. Adding an agent-facing endpoint
 

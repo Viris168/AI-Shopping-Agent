@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
@@ -15,6 +16,7 @@ import {
   JwtAuthGuard,
   type AuthUser,
 } from '../auth/auth.guards.js';
+import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
 import {
   AddCartItemDto,
   ApplyCouponDto,
@@ -70,6 +72,7 @@ export class CheckoutController {
   constructor(private readonly cart: CartService) {}
 
   @Post()
+  @UseInterceptors(IdempotencyInterceptor)
   checkout(@CurrentUser() user: AuthUser) {
     return this.cart.checkout(user.id);
   }

@@ -7,6 +7,7 @@ import {
   Module,
   Post,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -25,6 +26,7 @@ import {
   OptionalJwtAuthGuard,
   type AuthUser,
 } from '../auth/auth.guards.js';
+import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
 import { SupportTicket, type TicketPriority } from '../database/entities.js';
 
 const trim = ({ value }: { value: unknown }) =>
@@ -110,6 +112,7 @@ export class SupportController {
   constructor(private readonly support: SupportService) {}
 
   @Post('tickets')
+  @UseInterceptors(IdempotencyInterceptor)
   create(
     @CurrentUser() user: AuthUser | undefined,
     @Body() dto: CreateTicketDto,

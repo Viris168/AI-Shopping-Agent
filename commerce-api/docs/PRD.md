@@ -65,9 +65,9 @@ The AI assistant needs to read and change store data for shoppers. If it does th
 | F5 | Return creation with policy checks and clear errors | Done |
 | F6 | FAQ full-text search with topic filter | Done |
 | F7 | Support ticket creation for guests and users | Done |
-| F8 | Audit log of every agent mutation, including failures | Partial (successes only) |
-| F9 | `Idempotency-Key` on `POST /returns`, `POST /support/tickets`, `POST /checkout` | To do |
-| F10 | Service-token verification for agent traffic | To do |
+| F8 | Audit log of every agent mutation, including failures | Done |
+| F9 | `Idempotency-Key` on `POST /returns`, `POST /support/tickets`, `POST /checkout` | Done |
+| F10 | Service-token verification for agent traffic | Done |
 | F11 | `conversations` table and endpoints for transcript storage | To do |
 | F12 | Payment provider session on checkout (e.g. Stripe Checkout) + webhook to mark PAID | To do |
 | F13 | Job to release stock for orders PENDING > 30 min | To do |

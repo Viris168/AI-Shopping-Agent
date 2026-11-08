@@ -40,11 +40,11 @@ Always run `npm run build` after changes; it is the type check.
 ```
 src/
 ├── main.ts            helmet, CORS, prefix api/v1, ValidationPipe, Swagger
-├── app.module.ts      modules + global ThrottlerGuard + AgentAuditInterceptor
+├── app.module.ts      modules + ServiceTokenMiddleware + global UserThrottlerGuard + AgentAuditInterceptor
 ├── auth/              JWT guards, @CurrentUser, register/login/me
 ├── products/  cart/   split files (controller, service, dto, module)
 ├── orders/ returns/ faq/ support/ health/   single *.module.ts files
-├── common/            agent-audit.interceptor.ts, money.ts
+├── common/            audit + idempotency interceptors, service-token middleware, user throttler, money.ts
 └── database/          entities.ts, data-source.ts, migrations/, seed.ts
 ```
 
@@ -87,10 +87,6 @@ src/
 
 ## Known gaps (current work)
 
-- Throttler keys by IP → implement `UserThrottlerGuard` (docs/ARCHITECTURE.md §11.1)
-- `X-Service-Token` not verified (§11.2)
-- Audit logs successes only and swallows errors (§11.3)
-- No idempotency keys (§11.4)
 - No `conversations` table (§11.6)
 - Demo checkout: no payment provider, `POST /checkout` marks the order PAID immediately (§11.7)
 - No Dockerfile or CI yet

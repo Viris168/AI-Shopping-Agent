@@ -41,11 +41,11 @@ JWT 1 h · rate limit 120/min (register 5, login 10) · return window 30 days ·
 
 ## Must-fix before the agent goes live
 
-- [ ] Throttle per user, not per IP
-- [ ] Verify `X-Service-Token` for agent traffic
-- [ ] Audit failed agent calls; stop swallowing audit errors
-- [ ] `Idempotency-Key` on returns, tickets, checkout
-- [ ] Refuse to start in production without a strong `JWT_SECRET`
+- [x] Throttle per user, not per IP
+- [x] Verify `X-Service-Token` for agent traffic
+- [x] Audit failed agent calls; stop swallowing audit errors
+- [x] `Idempotency-Key` on returns, tickets, checkout
+- [x] Refuse to start in production without a strong `JWT_SECRET`
 - [ ] Real carrier tracking URLs
 - [ ] `conversations` table
 
