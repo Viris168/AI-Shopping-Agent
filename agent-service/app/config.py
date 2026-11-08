@@ -7,7 +7,7 @@ from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Same fallback commerce-api uses outside production (commerce-api/src/auth/jwt.config.ts).
-DEV_JWT_SECRET = "dev-only-change-me"
+DEV_JWT_SECRET = "dev-only-change-me"  # noqa: S105 - public dev fallback, rejected in production
 
 
 class Settings(BaseSettings):

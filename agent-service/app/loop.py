@@ -93,7 +93,9 @@ class Agent:
     def _ctx(self, auth: Auth, conversation_id: str, idem_key: str | None = None) -> ToolContext:
         return ToolContext(auth, conversation_id, self.client, self.settings, idem_key)
 
-    async def run_turn(self, session: Session, user_msg: str | None, auth: Auth, emit: Emit) -> None:
+    async def run_turn(
+        self, session: Session, user_msg: str | None, auth: Auth, emit: Emit
+    ) -> None:
         if user_msg is not None:
             session.append_user(user_msg)
         tools = self.registry.schemas(auth)

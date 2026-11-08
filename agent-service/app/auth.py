@@ -42,7 +42,9 @@ def verify_bearer(authorization: str | None, settings: Settings) -> Auth:
     except jwt.PyJWTError:
         return GUEST
     name = claims.get("name")
-    return Auth(user_id=str(claims["sub"]), name=name if isinstance(name, str) else None, token=token)
+    return Auth(
+        user_id=str(claims["sub"]), name=name if isinstance(name, str) else None, token=token
+    )
 
 
 def get_auth(

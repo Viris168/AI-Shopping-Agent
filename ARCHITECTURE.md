@@ -283,7 +283,7 @@ Details in [AGENT.md §8](./AGENT.md#8-evals).
 
 | Component | Runtime | Scaling | Notes |
 |---|---|---|---|
-| commerce-api | Node 22 container | CPU | `migration:run:prod` as pre-deploy job |
+| commerce-api | Node 24 container | CPU | `migration:run:prod` as pre-deploy job |
 | agent-service | Python container, uvicorn | concurrent streams | LB idle timeout ≥ 120 s |
 | widget | CDN static | — | `/v1/widget.js` immutable + short-cache loader |
 | PostgreSQL | managed | — | pgvector later |

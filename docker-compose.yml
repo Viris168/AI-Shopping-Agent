@@ -1,0 +1,78 @@
+# Local stack: postgres, redis, commerce-api, agent-service. Containers run in production
+# mode (JSON logs, secrets required); only the seed command opts into development.
+#   cp .env.example .env              # set JWT_SECRET, SERVICE_TOKEN, ANTHROPIC_API_KEY
+#   docker compose up --build
+#   docker compose run --rm -e NODE_ENV=development migrate node dist/database/seed.js
+#                                     # demo data, wipes the db (alice@example.com)
+# The storefront and widget dev servers run on the host and talk to :3000 and :8000.
+
+x-secrets: &secrets
+  JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+  SERVICE_TOKEN: ${SERVICE_TOKEN:?set SERVICE_TOKEN in .env}
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: shop
+      POSTGRES_DB: shop
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop -d shop"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build: ./commerce-api
+    command: ["npm", "run", "migration:run:prod"]
+    environment:
+      <<: *secrets
+      DATABASE_URL: postgresql://shop:shop@postgres:5432/shop
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  commerce-api:
+    build: ./commerce-api
+    environment:
+      <<: *secrets
+      DATABASE_URL: postgresql://shop:shop@postgres:5432/shop
+      CORS_ORIGINS: http://localhost:8080,http://localhost:5173
+      STOREFRONT_URL: http://localhost:8080
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  agent-service:
+    build: ./agent-service
+    environment:
+      <<: *secrets
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+      APP_ENV: production
+      COMMERCE_API_URL: http://commerce-api:3000/api/v1
+      REDIS_URL: redis://redis:6379/0
+      STOREFRONT_URL: http://localhost:8080
+      CORS_ORIGINS: http://localhost:5173
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      commerce-api:
+        condition: service_healthy
+
+volumes:
+  pgdata:

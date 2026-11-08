@@ -23,8 +23,12 @@ def trim_product(p: dict[str, Any]) -> dict[str, Any]:
 
 
 class SearchProducts(_Input):
-    q: str | None = Field(None, max_length=200, description="Keywords, e.g. 'waterproof running shoes'")
-    category: str | None = Field(None, max_length=60, description="Category slug from list_categories")
+    q: str | None = Field(
+        None, max_length=200, description="Keywords, e.g. 'waterproof running shoes'"
+    )
+    category: str | None = Field(
+        None, max_length=60, description="Category slug from list_categories"
+    )
     brand: str | None = Field(None, max_length=60)
     minPriceCents: int | None = Field(None, ge=0)
     maxPriceCents: int | None = Field(None, ge=0)
@@ -85,7 +89,8 @@ async def list_categories(_: NoInput, ctx: ToolContext) -> ToolOutput:
 TOOLS = [
     Tool(
         "search_products",
-        "Search the catalog. Use for any product discovery request. Prices are in cents in filters.",
+        "Search the catalog. Use for any product discovery request. "
+        "Prices are in cents in filters.",
         SearchProducts, search_products,
     ),
     Tool(

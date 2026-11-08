@@ -123,7 +123,8 @@ async def chat(
     session = await agent.sessions.load(body.conversationId, auth)
 
     async def run(emit: Emit) -> None:
-        emit("meta", {"conversationId": session.id, "messageId": f"{session.id}:{len(session.messages)}"})
+        message_id = f"{session.id}:{len(session.messages)}"
+        emit("meta", {"conversationId": session.id, "messageId": message_id})
         await agent.run_turn(session, message, auth, emit)
 
     return sse_response(run, timeout_s=settings.turn_timeout_s)

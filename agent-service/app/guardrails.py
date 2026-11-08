@@ -77,10 +77,8 @@ def wrap_tool_result(data: Any) -> str:
 
 def suspect_facts(reply: str, tool_texts: list[str]) -> list[str]:
     """Prices or percentages in the reply that no tool returned this turn."""
-    seen = " ".join(tool_texts)
-    suspects = [
-        m for m in _MONEY_OR_PERCENT.findall(reply) if m.replace(" ", "") not in seen.replace(" ", "")
-    ]
+    seen = " ".join(tool_texts).replace(" ", "")
+    suspects = [m for m in _MONEY_OR_PERCENT.findall(reply) if m.replace(" ", "") not in seen]
     if suspects:
         log.warning("suspect_fact: %s", suspects)
     return suspects

@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -43,7 +43,7 @@ class Session:
     def append_user(self, text: str) -> None:
         self._append_user_blocks([{"type": "text", "text": text}])
 
-    def append_assistant(self, content: list[ContentBlock]) -> None:
+    def append_assistant(self, content: Sequence[ContentBlock]) -> None:
         self.messages.append({
             "role": "assistant",
             "content": [b.model_dump(mode="json", exclude_none=True) for b in content],
