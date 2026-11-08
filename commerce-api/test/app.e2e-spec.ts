@@ -431,6 +431,7 @@ describe('commerce-api (e2e)', () => {
         .post('/api/v1/cart/items')
         .auth(token, { type: 'bearer' })
         .set('X-Client', 'ai-agent')
+        .set('X-Service-Token', process.env.SERVICE_TOKEN!)
         .set('X-Conversation-Id', 'conv-42')
         .send({ productId: 'SHOE-002' })
         .expect(200);

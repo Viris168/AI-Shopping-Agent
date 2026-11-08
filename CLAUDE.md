@@ -127,10 +127,6 @@ npm run build                     # dist/widget.js
 
 ## Known gaps (Phase 1 work)
 
-- `ThrottlerGuard` limits by IP — must key by user, or all agent traffic shares one bucket.
-- `X-Client: ai-agent` is trusted without a service token.
-- `AgentAuditInterceptor` logs only successes and swallows insert errors.
-- No `Idempotency-Key` support on `POST /returns` / `POST /support/tickets`.
 - No `conversations` table yet.
 - No payment provider: `POST /checkout` marks the order PAID straight away (demo).
 - No CI yet.

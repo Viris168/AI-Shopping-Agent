@@ -418,6 +418,50 @@ export class AgentActionLog {
   @Column({ type: 'jsonb', default: () => "'{}'" })
   payload: Record<string, unknown>;
 
+  // HTTP status of the attempt; null only for rows written before it was recorded.
+  @Column({ type: 'integer', nullable: true })
+  status: number | null;
+
+  // Error message shown to the shopper when the attempt failed.
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  error: string | null;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
+}
+
+/** Stored responses for `Idempotency-Key` retries (docs/ARCHITECTURE.md §11.4). */
+@Entity('idempotency_keys')
+// Unique per (user_id, key) with NULLS NOT DISTINCT, so guest keys are unique too.
+@Index('UQ_idempotency_keys_user_key', { synchronize: false })
+export class IdempotencyKey {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'varchar', length: 100 })
+  key: string;
+
+  @Column({ name: 'user_id', type: 'uuid', nullable: true })
+  userId: string | null;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User | null;
+
+  @Column({ type: 'varchar', length: 120 })
+  route: string;
+
+  @Column({ name: 'request_hash', type: 'char', length: 64 })
+  requestHash: string;
+
+  // Null while the first request is still running.
+  @Column({ type: 'jsonb', nullable: true })
+  response: Record<string, unknown> | null;
+
+  @Column({ name: 'status_code', type: 'integer', nullable: true })
+  statusCode: number | null;
+
+  @Index()
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }
@@ -435,4 +479,5 @@ export const ENTITIES = [
   FaqArticle,
   SupportTicket,
   AgentActionLog,
+  IdempotencyKey,
 ];

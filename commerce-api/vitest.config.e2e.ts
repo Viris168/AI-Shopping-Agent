@@ -17,6 +17,7 @@ export default defineConfig({
       NODE_ENV: 'test',
       DATABASE_URL: TEST_DATABASE_URL,
       JWT_SECRET: 'test-secret-that-is-at-least-32-characters',
+      SERVICE_TOKEN: 'test-service-token-at-least-32-characters',
       LOG_LEVEL: 'silent',
       RATE_LIMIT_PER_MIN: '10000',
     },

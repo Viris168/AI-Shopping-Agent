@@ -1,16 +1,18 @@
 import {
   CallHandler,
   ExecutionContext,
+  HttpException,
   Injectable,
   Logger,
   NestInterceptor,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { Request } from 'express';
+import type { Response } from 'express';
 import { Observable, tap } from 'rxjs';
 import { Repository } from 'typeorm';
 import type { AuthUser } from '../auth/auth.guards.js';
 import { AgentActionLog } from '../database/entities.js';
+import type { AgentRequest } from './service-token.middleware.js';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const SECRET_KEYS = /password|token|secret/i;
@@ -27,9 +29,28 @@ function redact(value: unknown): unknown {
   return value;
 }
 
+function errorDetails(err: unknown): { status: number; error: string } {
+  if (err instanceof HttpException) {
+    const body = err.getResponse();
+    const message =
+      typeof body === 'object' && body !== null && 'message' in body
+        ? body.message
+        : err.message;
+    return {
+      status: err.getStatus(),
+      error: (Array.isArray(message)
+        ? message.join('; ')
+        : String(message)
+      ).slice(0, 500),
+    };
+  }
+  return { status: 500, error: 'Internal server error' };
+}
+
 /**
- * Logs every successful agent mutation (`X-Client: ai-agent`) to agent_action_logs.
- * Known gap (ARCHITECTURE.md §11.2–11.3): the header isn't verified yet and failures aren't logged.
+ * Logs every agent mutation, successful or not, to agent_action_logs (docs/ARCHITECTURE.md §11.3).
+ * Only trusted agent traffic counts: ServiceTokenMiddleware sets `isTrustedAgent` after
+ * checking `X-Service-Token`, and rejects `X-Client: ai-agent` without it.
  */
 @Injectable()
 export class AgentAuditInterceptor implements NestInterceptor {
@@ -41,37 +62,48 @@ export class AgentAuditInterceptor implements NestInterceptor {
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const req = context
-      .switchToHttp()
-      .getRequest<Request & { user?: AuthUser }>();
-    if (req.headers['x-client'] !== 'ai-agent' || !MUTATING.has(req.method))
-      return next.handle();
+    const http = context.switchToHttp();
+    const req = http.getRequest<AgentRequest & { user?: AuthUser }>();
+    if (!req.isTrustedAgent || !MUTATING.has(req.method)) return next.handle();
 
     return next.handle().pipe(
-      tap(() => {
-        const route = String(req.route?.path ?? req.path).replace(
-          /^\/api\/v1/,
-          '',
-        );
-        const conversationId = req.headers['x-conversation-id'];
-        const entry = this.logs.create({
-          userId: req.user?.id ?? null,
-          conversationId:
-            typeof conversationId === 'string'
-              ? conversationId.slice(0, 64)
-              : null,
-          action: `${req.method} ${route}`.slice(0, 120),
-          payload: redact({ params: req.params, body: req.body }) as Record<
-            string,
-            unknown
-          >,
-        });
-        void this.logs
-          .save(entry)
-          .catch((err: unknown) =>
-            this.logger.error(`Audit insert failed: ${String(err)}`),
-          );
+      tap({
+        next: () =>
+          this.record(req, http.getResponse<Response>().statusCode, null),
+        error: (err: unknown) => {
+          const { status, error } = errorDetails(err);
+          this.record(req, status, error);
+        },
       }),
     );
+  }
+
+  private record(
+    req: AgentRequest & { user?: AuthUser },
+    status: number,
+    error: string | null,
+  ) {
+    const route = String(req.route?.path ?? req.path).replace(/^\/api\/v1/, '');
+    const conversationId = req.headers['x-conversation-id'];
+    const entry = this.logs.create({
+      userId: req.user?.id ?? null,
+      conversationId:
+        typeof conversationId === 'string' ? conversationId.slice(0, 64) : null,
+      action: `${req.method} ${route}`.slice(0, 120),
+      payload: redact({ params: req.params, body: req.body }) as Record<
+        string,
+        unknown
+      >,
+      status,
+      error,
+    });
+    // The response is already decided; a lost audit row must be loud (alert: audit insert failures > 0).
+    this.logs
+      .save(entry)
+      .catch((err: unknown) =>
+        this.logger.error(
+          `audit_insert_failed ${entry.action}: ${String(err)}`,
+        ),
+      );
   }
 }
