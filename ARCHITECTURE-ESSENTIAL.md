@@ -30,7 +30,7 @@ Browser                      Cloud
 1. **The agent has no special access.** It calls `commerce-api` with the shopper's own JWT. The API's ownership checks protect data even if the model is tricked.
 2. **Facts come from tools.** Prices, stock, order status, policies and dates are never generated from memory.
 3. **Risky actions need a human click.** `create_return` and `create_support_ticket` become pending actions; only `POST /v1/actions/{id}/confirm` runs them.
-4. **The agent never takes payment.** It links to the storefront checkout; it never calls `POST /checkout`.
+4. **The agent never takes payment.** It links to the storefront checkout; it never calls `POST /checkout` or `POST /orders/{n}/payment`.
 5. **Everything is traceable.** Every agent mutation is in `agent_action_logs`; every turn is traced with its conversation ID.
 
 ## Tools → API

@@ -119,6 +119,7 @@ Global prefix `api/v1` (except `/health`). Swagger at `/docs`.
 | support | `POST /support/tickets` | optional JWT |
 | conversations | `POST /conversations/:id/turns`, `POST /conversations/:id/feedback` (transcripts, not a tool) | optional JWT + service token |
 | cart | `POST /checkout` | **never called by the agent** |
+| orders | `POST /orders/{n}/payment` | **never called by the agent** (403) |
 
 Cross-cutting: `helmet`, CORS allowlist, global `ValidationPipe` (whitelist + forbid unknown), `ThrottlerGuard`, `pino` logging with auth header redaction, `AgentAuditInterceptor`.
 

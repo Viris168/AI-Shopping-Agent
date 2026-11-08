@@ -87,7 +87,7 @@ src/
 
 ## Known gaps (current work)
 
-- Demo checkout: no payment provider, `POST /checkout` marks the order PAID immediately (§11.7)
+- Stripe Checkout is optional: without the Stripe keys `POST /checkout` marks the order PAID immediately (demo, §11.7)
 - No Dockerfile or CI yet
 
 ## When unsure

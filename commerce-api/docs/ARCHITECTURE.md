@@ -236,11 +236,12 @@ Done: entity `Conversation` (id, user_id, messages jsonb, summary, outcome, toke
 
 ### 11.7 Payments and stock release
 
-Today checkout is a demo: there is no payment step and orders are saved as `PAID`. To add real payments:
+Done (`src/payments/payments.module.ts`, `src/orders/stock-release.job.ts`, migration `Payments1794163827211`). Without `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` checkout stays the demo (orders saved as `PAID`, `checkoutUrl: null`); setting only one fails startup.
 
-
-- Checkout creates a payment-provider session and returns its URL; webhook marks the order `PAID` (verify signature, idempotent on event ID).
-- Scheduled job cancels `PENDING` orders older than 30 min and restores stock in a transaction.
+- `POST /checkout` takes stock and saves the order as `PENDING`, then creates a Stripe Checkout Session (one line for the order total, idempotent per order, expires after 31 min) and returns `checkoutUrl`. If Stripe fails, the order is cancelled, stock and cart are restored, and the shopper gets a 503.
+- `POST /payments/webhook` (no JWT, signature checked against the raw body, not throttled): `checkout.session.completed` / `async_payment_succeeded` → `PAID` only if the session ID and amount match; `expired` / `async_payment_failed` → cancel and restore stock. Each event ID is stored in `payment_events` in the same transaction, so redeliveries do nothing.
+- `POST /orders/:orderNumber/payment` (storefront only; 403 for the agent) returns `{checkoutUrl}` for the shopper's own `PENDING` order while its session is open and within 30 min. Otherwise it settles the order instead: `PAID` if Stripe says it was paid, or cancelled with stock and cart restored (409 with a message). It never opens a second session, so it can't race the job.
+- `StockReleaseJob` runs every minute (advisory lock, one replica): `PENDING` orders older than 30 min have their session expired first, then are cancelled and their stock restored in a transaction. A session that turns out to be paid marks the order `PAID` instead. Payments for an order that is no longer `PENDING` are logged as `payment_not_applied` for staff to refund.
 
 ### 11.8 Tracking URLs
 

@@ -209,6 +209,8 @@ export class Coupon {
 
 @Entity('orders')
 @Index(['userId', 'createdAt'])
+// The stock-release job looks up stale PENDING orders by this.
+@Index(['status', 'createdAt'])
 export class Order {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -255,6 +257,19 @@ export class Order {
     nullable: true,
   })
   trackingNumber: string | null;
+
+  // Stripe Checkout Session (cs_...); null for demo orders paid without a provider.
+  @Index({ unique: true })
+  @Column({
+    name: 'payment_session_id',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  paymentSessionId: string | null;
+
+  @Column({ name: 'paid_at', type: 'timestamptz', nullable: true })
+  paidAt: Date | null;
 
   @Column({ name: 'shipped_at', type: 'timestamptz', nullable: true })
   shippedAt: Date | null;
@@ -504,6 +519,20 @@ export class IdempotencyKey {
   createdAt: Date;
 }
 
+/** Stripe webhook events already applied; the primary key makes redeliveries no-ops. */
+@Entity('payment_events')
+export class PaymentEvent {
+  // Stripe event ID (evt_...).
+  @PrimaryColumn({ type: 'varchar', length: 255 })
+  id: string;
+
+  @Column({ type: 'varchar', length: 100 })
+  type: string;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
+}
+
 export const CONVERSATION_OUTCOMES = [
   'resolved',
   'handoff',
@@ -578,4 +607,5 @@ export const ENTITIES = [
   AgentActionLog,
   IdempotencyKey,
   Conversation,
+  PaymentEvent,
 ];

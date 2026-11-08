@@ -102,6 +102,35 @@ describe('cart and Pay', () => {
     await waitFor(() => expect(calls.filter((c) => c.path === '/checkout')).toHaveLength(1));
   });
 
+  it('sends the shopper to the payment page when checkout returns one', async () => {
+    localStorage.setItem('storefront.token', 'tok');
+    const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined);
+    mockApi({
+      'GET /cart': cartWithJacket,
+      'POST /checkout': () => ({
+        status: 201,
+        body: {
+          orderNumber: 'ORD-2001',
+          status: 'PENDING',
+          checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_1',
+        },
+      }),
+    });
+    renderApp(
+      <Routes>
+        <Route path="/cart" element={<CartPage />} />
+        <Route path="/orders/:orderNumber" element={<p>Order page</p>} />
+      </Routes>,
+      { path: '/cart' },
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Pay $79.00' }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('https://checkout.stripe.com/c/pay/cs_test_1'));
+    expect(screen.getByRole('button', { name: 'Going to payment…' })).toHaveProperty('disabled', true);
+    expect(screen.queryByText('Order page')).toBeNull();
+    assign.mockRestore();
+  });
+
   it('keeps the shopper on the cart when Pay fails', async () => {
     localStorage.setItem('storefront.token', 'tok');
     mockApi({

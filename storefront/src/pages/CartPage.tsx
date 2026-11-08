@@ -46,6 +46,13 @@ export function CartPage() {
     setError(undefined);
     try {
       const order = await api.checkout();
+      if (order.checkoutUrl) {
+        // Payments on: the order is PENDING until paid on Stripe's page, which sends the
+        // shopper back to the order page. Busy stays set so Pay can't be clicked again.
+        setBusy('redirect');
+        window.location.assign(order.checkoutUrl);
+        return;
+      }
       await refresh();
       navigate(`/orders/${order.orderNumber}`, { state: { justPlaced: true } });
     } catch (e) {
@@ -169,7 +176,7 @@ export function CartPage() {
           </form>
 
           <button type="button" className="btn btn-primary btn-block" onClick={pay} disabled={busy !== null || unavailable}>
-            {busy === 'pay' ? 'Placing order…' : `Pay ${cart.total}`}
+            {busy === 'pay' ? 'Placing order…' : busy === 'redirect' ? 'Going to payment…' : `Pay ${cart.total}`}
           </button>
           <p className="hint">Demo store: no card needed. Your order is marked paid right away.</p>
         </aside>
