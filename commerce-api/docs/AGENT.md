@@ -113,7 +113,7 @@ All cart mutations return this same shape.
 { "results": [{ "topic": "returns", "question": "How long do refunds take?", "answer": "…", "score": "0.412" }] }
 ```
 
-Empty `results` means no grounded answer — the agent must say it isn't sure.
+Empty `results` means no grounded answer — the agent must say it isn't sure. Search is hybrid (full-text + vector, fused by rank); `score` is the fused rank score, not a confidence.
 
 ### Ticket created
 

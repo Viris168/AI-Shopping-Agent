@@ -107,14 +107,14 @@ erDiagram
 |---|---|---|
 | users | email (unique), password_hash, role | |
 | categories | name, slug (unique) | |
-| products | sku, slug (unique), price_cents, stock, tags[], attributes jsonb, rating, is_active | idx (is_active, price_cents); trigram on name/description; GIN on tags |
+| products | sku, slug (unique), price_cents, stock, tags[], attributes jsonb, rating, is_active, embedding vector(384), embedding_hash | idx (is_active, price_cents); trigram on name/description; GIN on tags |
 | carts | user_id (unique), coupon_code | created with `ON CONFLICT DO NOTHING` |
 | cart_items | (cart_id, product_id) unique, quantity | |
 | coupons | code, percent_off / amount_off_cents, min_subtotal_cents, expires_at, is_active | |
 | orders | order_number (unique), status, *_cents, shipping_address jsonb, carrier, tracking_number, shipped_at, delivered_at | idx (user_id, created_at) |
 | order_items | name_snapshot, unit_price_cents, quantity | price/name frozen at purchase |
 | return_requests | order_id, user_id, reason, items jsonb, status | |
-| faq_articles | topic, question, answer | GIN full-text index |
+| faq_articles | topic, question, answer, embedding vector(384), embedding_hash | GIN full-text index |
 | support_tickets | user_id null, conversation_id, subject, summary, priority, status | |
 | agent_action_logs | user_id, conversation_id (idx), action, payload jsonb, status, error | |
 | idempotency_keys | key, user_id, route, request_hash, response jsonb, status_code | unique (user_id, key) NULLS NOT DISTINCT; 24 h TTL |
@@ -130,7 +130,7 @@ Money is always integer cents; `formatMoney(cents, currency)` formats at the edg
 
 | Rule | Where |
 |---|---|
-| Product search: terms (stopwords removed, max 8, naive singular) must each match name/description/brand/category/tags | `ProductsService.search` |
+| Product search: keyword terms (stopwords removed, max 8, naive singular) must each match name/description/brand/category/tags; with the model, fused (RRF) with vector matches ≥ 0.58 cosine and within 0.08 of the best; filters apply to both | `ProductsService.search` |
 | Recommendations: same category or shared tag, in stock, price 0.5×–1.8×, top rated, 4 items | `ProductsService.recommendations` |
 | Add to cart: total quantity ≤ stock; quantity 1–20 per call | `CartService.addItem` |
 | Coupon: active, not expired, subtotal ≥ minimum | `CartService.applyCoupon` |
@@ -138,7 +138,8 @@ Money is always integer cents; `formatMoney(cents, currency)` formats at the edg
 | Checkout (demo, no payment): cart row locked, conditional stock decrement per item in one transaction; order saved as PAID; cart and coupon cleared | `CartService.checkout` |
 | Return eligibility: DELIVERED, within `RETURN_WINDOW_DAYS` (30) of `delivered_at` | `OrdersService.toDto`, `ReturnsService.create` |
 | Return creation: items belong to order, qty ≤ purchased, no open (REQUESTED/APPROVED) return | `ReturnsService.create` |
-| FAQ: words ≥ 3 chars OR-ed into `to_tsquery`; question weighted A, answer C; top 3 | `FaqService.search` |
+| FAQ: words ≥ 3 chars OR-ed into `to_tsquery` (question weighted A, answer C), fused (RRF) with vector matches ≥ 0.64 cosine; top 3 | `FaqService.search` |
+| Embeddings: bge-small-en-v1.5 (384 dims, local); `npm run embed` re-embeds rows whose text changed; `SEARCH_HYBRID=false` → keyword only | `src/search/`, `database/embed.ts` |
 | Ticket response time: high/urgent "within 2 hours", else "within 24 hours" | `SupportService.create` |
 
 ## 8. Errors

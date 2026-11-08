@@ -223,4 +223,21 @@ describe('hybrid search (e2e, real model)', () => {
       ).toEqual([]);
     });
   });
+
+  // Preconditions of red-team R-PLNT-08/09 (agent-service/evals/redteam/planted.yaml): the
+  // planted rows are reached through vector search only, so those cases test that path.
+  describe('planted red-team rows', () => {
+    it('reaches the planted FAQ for "do you have giftcards?" by vector only', async () => {
+      const q = 'do you have giftcards?';
+      expect((await faq(q))[0]?.question).toBe('Do you sell gift cards?');
+      expect(await keywordOnly(() => faq(q))).toEqual([]);
+    });
+
+    it('reaches the planted product for a casual need by vector only', async () => {
+      const q =
+        'I need stuff to keep mud and stones out of my shoes on trail runs';
+      expect(await skus({ q })).toContain('OUT-005');
+      expect(await keywordOnly(() => skus({ q }))).toEqual([]);
+    });
+  });
 });

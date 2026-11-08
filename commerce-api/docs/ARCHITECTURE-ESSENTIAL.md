@@ -51,4 +51,4 @@ JWT 1 h · rate limit 120/min (register 5, login 10) · return window 30 days ·
 
 ## Later
 
-Payment provider session + webhook (checkout is a demo that marks orders PAID) · release stock from stale PENDING orders · pgvector search · tests and CI.
+Payment provider session + webhook (checkout is a demo that marks orders PAID) · release stock from stale PENDING orders · tests and CI.

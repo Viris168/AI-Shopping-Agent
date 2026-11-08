@@ -118,6 +118,13 @@ Global prefix `api/v1` (except `/health`). Swagger at `/docs`.
 | returns | `POST /returns`, `GET /returns` | JWT |
 | support | `POST /support/tickets` | optional JWT |
 | conversations | `POST /conversations/:id/turns`, `POST /conversations/:id/feedback` (transcripts, not a tool) | optional JWT + service token |
+
+Search (`GET /products?q=`, `GET /faq/search`) is hybrid: the keyword query and a pgvector query
+(bge-small-en-v1.5, run inside commerce-api; `src/search/`) are fused with Reciprocal Rank Fusion.
+Vector matches need a minimum cosine similarity (FAQ 0.64; products 0.58 and within 0.08 of the best
+match), so questions the store doesn't cover still return nothing. Filters stay hard filters. With
+`SEARCH_HYBRID=false`, or while the model loads, search is keyword-only. Vectors are filled by
+`npm run embed` (deploy runs it after migrations).
 | cart | `POST /checkout` | **never called by the agent** |
 | orders | `POST /orders/{n}/payment` | **never called by the agent** (403) |
 
@@ -290,10 +297,10 @@ Details in [AGENT.md §8](./AGENT.md#8-evals).
 
 | Component | Runtime | Scaling | Notes |
 |---|---|---|---|
-| commerce-api | Node 24 container | CPU | `migration:run:prod` as pre-deploy job |
+| commerce-api | Node 24 container | CPU | `migration:run:prod`, then `embed`, as pre-deploy jobs; ~200 MB RAM with the embedding model |
 | agent-service | Python container, uvicorn | concurrent streams | LB idle timeout ≥ 120 s |
 | widget | CDN static | — | `/v1/widget.js` immutable + short-cache loader |
-| PostgreSQL | managed | — | pgvector later |
+| PostgreSQL | managed | — | needs the `vector` extension (hybrid search) |
 | Redis | managed | — | — |
 
 Domains: `api.yourstore.com` → commerce-api; `chat.yourstore.com` → agent-service + widget CDN.
@@ -341,7 +348,6 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 
 ## 13. Future
 
-- pgvector hybrid search for products and FAQ
 - Live human takeover inside the widget
 - Order-change tools (cancel before shipping, address change) once the API supports them
 - Proactive help (e.g. on checkout errors)
