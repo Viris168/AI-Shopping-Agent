@@ -129,6 +129,8 @@ button, textarea, a { font: inherit; color: inherit; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .space { justify-content: space-between; }
 .muted { color: var(--sc-muted); font-size: 13px; }
+.memory-note { margin: 0; }
+.memory-note a { color: inherit; }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center;

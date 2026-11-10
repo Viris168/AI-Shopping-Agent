@@ -89,4 +89,29 @@ describe('widget', () => {
     expect([...card.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Try again']);
     expect(root.querySelector('.card-error')).toBeNull();
   });
+  it('says when it uses remembered preferences, linking only to the store', async () => {
+    const ask = async (manageUrl: string) => {
+      mockFetch(sseResponse(sse(
+        ['meta', { conversationId: 'c1', messageId: 'm9' }],
+        ['memory', { facts: 1, episodes: 0, manageUrl }],
+        ['text_delta', { text: 'Size M again?' }],
+        ['done', {}],
+      )));
+      const input = $<HTMLTextAreaElement>('textarea');
+      input.value = 'shoes';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await vi.waitFor(() => expect(root.querySelectorAll('.memory-note').length).toBeGreaterThan(0));
+      await flush();
+      const notes = root.querySelectorAll<HTMLElement>('.memory-note');
+      return notes[notes.length - 1];
+    };
+
+    const note = await ask('https://chat.shop.test/account');
+    expect(note.getAttribute('role')).toBe('note');
+    expect(note.textContent).toContain('I remember what you asked me to keep');
+    expect(note.querySelector('a')!.getAttribute('href')).toBe('https://chat.shop.test/account');
+
+    const offDomain = await ask('https://evil.example/account');
+    expect(offDomain.querySelector('a')).toBeNull();
+  });
 });

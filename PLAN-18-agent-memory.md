@@ -218,10 +218,14 @@ New files are marked **(new)**; everything else is an edit.
   `app/guardrails.py` (`memory` as a service tag), `tests/test_memory.py`
 - Fact ids are checked against a UUID pattern, not masked (the card masker mangles UUIDs)
 
-**M6 · Account UI + widget chip** (step 7, phase C)
+**M6 · Account UI + widget chip** (step 7, phase C) — done, branch `agent-memory-m6-ui`
 - `storefront/src/pages/AccountPage.tsx` **(new)**, `src/App.tsx`, `src/api.ts`, `src/types.ts`,
-  `src/components/Layout.tsx`
-- `widget/src/cards/`, `widget/src/i18n/`
+  `src/components/Layout.tsx`, `src/styles.css`, `test/account.test.tsx` **(new)**
+- `widget/src/cards/memory.ts` **(new)**, `src/cards/index.ts`, `src/controller.ts`, `src/i18n/`,
+  `src/styles.css`, `test/widget.test.ts`
+- agent-service: new SSE event `memory` (`app/sse.py`, `app/loop.py`, `Memory.notice`)
+- Not "a fact was used" (the service can't tell): the note shows once per conversation when memory
+  has content. Privacy notice wording still needs PRD sign-off before phase C rollout
 
 **M7 · Playbooks** (step 6, phase D)
 - `agent-service/app/prompts/playbooks/*.md` **(new)**, `app/loop.py`, `app/sessions.py`,

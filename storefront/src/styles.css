@@ -1018,3 +1018,43 @@ textarea {
     padding: 20px;
   }
 }
+
+/* Account page: assistant memory (PLAN-18) */
+.account-section {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+  max-width: 720px;
+}
+.account-section h3 {
+  margin: 20px 0 8px;
+  font-size: 1rem;
+}
+.switch {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-weight: 550;
+  cursor: pointer;
+}
+.switch input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+.memory-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+.memory-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}

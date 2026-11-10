@@ -156,8 +156,10 @@ class Agent:
         if user_msg is not None:
             session.append_user(user_msg)
             session.state.note_topic(user_msg)
-        if self.memory is not None:
+        if self.memory is not None and session.memory_enabled is None:
             await self.memory.load(session, auth, user_msg)
+            if notice := self.memory.notice(session):
+                emit("memory", notice)
         telemetry.annotate(**{"conversation.id": session.id, "user.guest": auth.is_guest})
         tools = self.registry.schemas(auth)
         usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0}

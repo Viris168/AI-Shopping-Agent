@@ -196,6 +196,7 @@ Auth: `Authorization: Bearer <chat token>` optional (guest if absent, invalid, n
 | `card` | `{type: product_list\|product\|cart\|order\|order_list\|return_created\|ticket_created\|checkout_link, data}` |
 | `confirm_request` | `{actionId, kind, summary, expiresAt}` |
 | `handoff` | `{ticketId, expectedResponse}` |
+| `memory` | `{facts, episodes, manageUrl}` — once per conversation when long-term memory (PLAN-18) has content; the widget shows a note linking to the storefront's `/account` |
 | `error` | `{code, message, retryable}` |
 | `done` | `{usage?}` |
 

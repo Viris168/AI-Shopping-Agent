@@ -1,6 +1,7 @@
 import { Link, Route, Routes } from 'react-router';
 import { Layout } from './components/Layout';
 import { RequireAuth } from './components/RequireAuth';
+import { AccountPage } from './pages/AccountPage';
 import { LoginPage, RegisterPage } from './pages/AuthPages';
 import { CartPage } from './pages/CartPage';
 import { HelpPage } from './pages/HelpPage';
@@ -21,6 +22,7 @@ export function App() {
         <Route path="cart" element={<RequireAuth><CartPage /></RequireAuth>} />
         <Route path="orders" element={<RequireAuth><OrdersPage /></RequireAuth>} />
         <Route path="orders/:orderNumber" element={<RequireAuth><OrderPage /></RequireAuth>} />
+        <Route path="account" element={<RequireAuth><AccountPage /></RequireAuth>} />
         <Route
           path="*"
           element={

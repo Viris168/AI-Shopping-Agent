@@ -2,6 +2,7 @@ import type { Card } from '../state';
 import { cart, checkoutLink } from './cart';
 import { confirm } from './confirm';
 import type { CardContext } from './context';
+import { memory } from './memory';
 import { order, orderList, returnCreated } from './order';
 import { product, productList } from './product';
 import { ticket } from './ticket';
@@ -19,6 +20,7 @@ const RENDERERS: Record<string, (data: any, ctx: CardContext) => HTMLElement | n
   ticket_created: ticket,
   handoff: ticket,
   confirm,
+  memory,
 };
 
 export function renderCard(card: Card, ctx: CardContext): HTMLElement | null {

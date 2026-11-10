@@ -59,6 +59,8 @@
   "trackingNumber": "Tracking: {carrier} {number}",
   "returnBy": "Returnable until {date}",
   "returnCreated": "Return requested",
+  "memoryNote": "I remember what you asked me to keep from earlier chats.",
+  "memoryManage": "Manage",
   "ticketCreated": "Message sent to our support team",
   "ticketRef": "Reference {id}",
   "ticketEta": "We'll reply {eta}.",

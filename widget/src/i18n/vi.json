@@ -59,6 +59,8 @@
   "trackingNumber": "Mã vận đơn: {carrier} {number}",
   "returnBy": "Có thể đổi trả đến {date}",
   "returnCreated": "Đã gửi yêu cầu đổi trả",
+  "memoryNote": "Tôi nhớ những gì bạn nhờ tôi ghi nhớ từ các cuộc trò chuyện trước.",
+  "memoryManage": "Quản lý",
   "ticketCreated": "Đã gửi tới bộ phận hỗ trợ",
   "ticketRef": "Mã tham chiếu {id}",
   "ticketEta": "Chúng tôi sẽ phản hồi {eta}.",

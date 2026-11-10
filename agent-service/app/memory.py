@@ -226,6 +226,18 @@ class Memory:
         session.memory_enabled = bool(view.get("enabled"))
         session.memory = view if session.memory_enabled else None
 
+    def notice(self, session: Session) -> dict[str, Any] | None:
+        """The widget's "I remember…" note, once per conversation, when memory has content."""
+        view = session.memory or {}
+        facts, episodes = len(view.get("facts") or []), len(view.get("episodes") or [])
+        if not session.memory_enabled or not (facts or episodes):
+            return None
+        return {
+            "facts": facts,
+            "episodes": episodes,
+            "manageUrl": f"{self._settings.storefront_url.rstrip('/')}/account",
+        }
+
     def pending_episode(self, session: Session) -> dict[str, Any] | None:
         """The episode to write, if it changed since the last write. Call before saving the
         session, so the marker is saved with it."""
