@@ -197,11 +197,14 @@ New files are marked **(new)**; everything else is an edit.
 - `agent-service/tests/test_sessions.py` **(new)**
 - `AGENT.md` §5, `ARCHITECTURE.md` Redis keys
 
-**M3 · Long-term store in commerce-api** (step 3, phase B)
-- `commerce-api/src/database/entities.ts`, `src/database/migrations/<ts>-AgentMemory.ts` **(new)**
+**M3 · Long-term store in commerce-api** (step 3, phase B) — done, branch `agent-memory-m3-store`
+- `commerce-api/src/database/entities.ts`, `src/database/migrations/1794200000000-AgentMemory.ts` **(new)**
 - `commerce-api/src/memory/memory.module.ts` **(new)**, `src/app.module.ts`
+- `commerce-api/src/search/search.module.ts` (`embedDocument`)
 - `commerce-api/src/conversations/retention.job.ts` (90-day episode cleanup)
-- `commerce-api/src/database/seed-data.ts` (memory for alice, none for bob)
+- `commerce-api/test/memory.e2e-spec.ts` **(new)**
+- `commerce-api/docs/AGENT.md`, `ARCHITECTURE.md`
+- No seed rows: memory is off by default, so existing evals see no change. Eval cases switch it on (M8)
 
 **M4 · Write path** (step 4, phase B)
 - `agent-service/app/memory.py` **(new)**, `app/tools/memory.py` **(new, `forget_memory`)**,
@@ -233,8 +236,8 @@ AGENT.md §5 (Memory) and §6 (guardrails), ARCHITECTURE.md §5.2–5.3 (tables,
 
 ## Open questions
 
-- [ ] Opt-in (planned) or opt-out with a clear notice?
-- [ ] Facts retention: keep until deleted, or expire after 180 days unused?
+- [x] Opt-in (decided 2026-11-10). Turning it off deletes everything remembered
+- [x] Facts are kept until the shopper deletes them (decided 2026-11-10)
 - [ ] PRD lists "personalised marketing" as a non-goal. Confirm memory is used only to answer the
       shopper's own requests, never for proactive suggestions.
 - [ ] Does the eval budget allow extra `MODEL_FAST` calls for extraction (DeepSeek balance)?

@@ -45,6 +45,13 @@ Base URL: `{COMMERCE_API_URL}` = `http://commerce-api:3000/api/v1`.
 
 **Transcripts (agent-service internals, not model tools):** `POST /conversations/{id}/turns` `{messages[≤100], summary?, outcome?, tokensIn?, tokensOut?}` appends a turn, creating the row on first use; `POST /conversations/{id}/feedback` `{messageId, rating: up|down, comment?}`. Both: `{id}` is a UUID, optional JWT, `X-Service-Token` required (else 403 `Only the shopping assistant can do this`), `204` on success, `404 Conversation not found` if the row belongs to someone else. Messages must already be masked.
 
+**Memory (agent-service internals, PLAN-18):** all need the chat token and `X-Service-Token` (else 403 `Only the shopping assistant can do this`); guests get 401.
+- `GET /memory?q=` → `{enabled, facts: [{id, kind, value, updatedAt}], episodes: [{id, conversationId, summary, outcome, entities: {orders, products}, createdAt}]}`: facts, the 3 latest episodes, and up to 3 earlier ones similar to `q`. With memory off: `{enabled: false, facts: [], episodes: []}`.
+- `POST /memory/episodes` `{conversationId, summary ≤ 500, outcome?, entities?: {orders ≤ 10, products ≤ 10}}` → `204`; a second call for the same conversation replaces it.
+- `POST /memory/facts` `{kind: size|style|diet|brand_like|brand_dislike|other, value ≤ 200, confidence? 0–1, sourceConversationId?}` → `201 {id}`; same kind + value (ignoring case and spaces) updates the existing fact. `400 The assistant can remember up to 50 things. Forget some first.`
+- `DELETE /memory/facts/{id}` → `204`, `404 That memory was not found` (also when it's someone else's).
+- Writes with memory off: `403 The shopper has not turned on assistant memory`. The agent can't turn memory on: `/account/memory` is storefront-only (403 `This can only be done on the store website, not in chat`). Summaries and values must already be masked.
+
 **Off-limits to the agent:** every route without `@AgentAllowed()`, including `POST /checkout`, `POST /orders/{orderNumber}/payment`, and all of `/auth/*` (403 `This can only be done on the store website, not in chat` with a service token). Payment and credentials stay in the storefront.
 
 **Not a tool:** `DELETE /cart/coupon` (JWT) removes the cart's coupon. The storefront and the eval harness use it (evals reset the cart before each case).
@@ -163,7 +170,7 @@ Table `agent_action_logs`:
 | user_id | `b1…` (null for guest tickets) |
 | conversation_id | `5d…` |
 | action | `POST /returns` · `PATCH /cart/items/:productId` |
-| payload | `{ "params": {…}, "body": {…} }` (body omitted for `/conversations/*`, marked `@AuditWithoutBody()`) |
+| payload | `{ "params": {…}, "body": {…} }` (body omitted for `/conversations/*` and `/memory/*`, marked `@AuditWithoutBody()`) |
 | status | `201` · `400` |
 | error | `The 30-day return window has closed` (null on success) |
 | created_at | timestamp |
