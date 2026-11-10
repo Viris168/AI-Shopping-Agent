@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     jwt_issuer: str = "commerce-api"
 
     redis_url: str = "redis://localhost:6379/0"
+    # Public tool results in Redis (app/cache.py). Redis flag:cache_enabled can also turn it off.
+    cache_enabled: bool = True
 
     store_name: str = "our store"
     storefront_url: str = "http://localhost:8080"

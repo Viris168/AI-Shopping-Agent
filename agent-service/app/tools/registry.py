@@ -11,6 +11,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from app.auth import Auth
+from app.cache import ToolCache
 from app.commerce_client import ApiError, CommerceClient
 from app.config import Settings
 
@@ -24,6 +25,7 @@ class ToolContext:
     client: CommerceClient
     settings: Settings
     idempotency_key: str | None = None
+    cache: ToolCache | None = None
 
 
 @dataclass
@@ -55,6 +57,12 @@ class Tool:
     # /v1/actions/{id}/confirm after the shopper presses Confirm.
     confirm: bool = False
     summarize: Callable[[Any], str] | None = field(default=None, compare=False)
+    # Seconds to keep a successful result in Redis (app/cache.py). Public, read-only tools only.
+    cache_ttl_s: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.cache_ttl_s is not None and (self.requires_auth or self.confirm):
+            raise ValueError(f"{self.name}: only public read-only tools can be cached")
 
     def schema(self) -> dict[str, Any]:
         input_schema = self.input_model.model_json_schema()
@@ -84,8 +92,21 @@ class Tool:
         prepared = self.prepare(raw, ctx.auth)
         if isinstance(prepared, ToolOutput):
             return prepared
+        if ctx.cache is None or self.cache_ttl_s is None:
+            return await self._execute(prepared, ctx)
+
+        async def fetch() -> tuple[dict[str, Any], dict[str, Any] | None, bool]:
+            out = await self._execute(prepared, ctx)
+            return out.for_model, out.card, out.is_error
+
+        for_model, card_, is_error = await ctx.cache.get_or_fetch(
+            self.name, prepared, self.cache_ttl_s, fetch
+        )
+        return ToolOutput(for_model, card_, is_error)
+
+    async def _execute(self, args: BaseModel, ctx: ToolContext) -> ToolOutput:
         try:
-            return await self.handler(prepared, ctx)
+            return await self.handler(args, ctx)
         except ApiError as exc:
             if exc.status == 401:
                 return ToolOutput(LOGIN_REQUIRED, is_error=True)

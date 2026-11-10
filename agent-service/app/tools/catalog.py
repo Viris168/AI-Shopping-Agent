@@ -7,6 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.commerce_client import seg
 from app.tools.registry import Tool, ToolContext, ToolOutput, card
 
+# Price and stock must still be a recent tool result (rule 5), so product data is kept briefly.
+PRODUCT_CACHE_S = 60
+CATEGORY_CACHE_S = 600
+
 PRODUCT_FIELDS = ("id", "slug", "name", "brand", "category", "price", "inStock", "stock", "rating")
 
 
@@ -91,17 +95,20 @@ TOOLS = [
         "search_products",
         "Search the catalog. Use for any product discovery request. "
         "Prices are in cents in filters.",
-        SearchProducts, search_products,
+        SearchProducts, search_products, cache_ttl_s=PRODUCT_CACHE_S,
     ),
     Tool(
         "get_product",
         "Full details for one product: description, attributes, stock, rating.",
-        ProductRef, get_product,
+        ProductRef, get_product, cache_ttl_s=PRODUCT_CACHE_S,
     ),
     Tool(
         "get_recommendations",
         "Similar or complementary products for a given product.",
-        ProductRef, get_recommendations,
+        ProductRef, get_recommendations, cache_ttl_s=PRODUCT_CACHE_S,
     ),
-    Tool("list_categories", "All product categories with slugs.", NoInput, list_categories),
+    Tool(
+        "list_categories", "All product categories with slugs.", NoInput, list_categories,
+        cache_ttl_s=CATEGORY_CACHE_S,
+    ),
 ]

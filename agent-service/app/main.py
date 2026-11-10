@@ -14,6 +14,7 @@ from redis.asyncio import Redis
 from app import telemetry
 from app.actions import ActionStore
 from app.auth import Auth, get_auth
+from app.cache import ToolCache
 from app.commerce_client import ApiError, CommerceClient
 from app.config import Settings, get_settings
 from app.guardrails import RateLimiter, TokenBudget, check_message
@@ -49,6 +50,7 @@ async def services(settings: Settings, redis: Redis) -> AsyncIterator[Agent]:
             budget=TokenBudget(redis, settings.token_budget, settings.session_ttl_s),
             client=client,
             transcripts=TranscriptStore(client),
+            cache=ToolCache(redis, settings.cache_enabled),
         )
     finally:
         await client.aclose()

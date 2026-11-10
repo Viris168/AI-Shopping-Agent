@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.tools.registry import Tool, ToolContext, ToolOutput
 
+FAQ_CACHE_S = 600
+
 
 class SearchFaq(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -36,6 +38,6 @@ TOOLS = [
     Tool(
         "search_faq",
         "Search store policies and FAQ. Call before answering any policy question.",
-        SearchFaq, search_faq,
+        SearchFaq, search_faq, cache_ttl_s=FAQ_CACHE_S,
     ),
 ]
