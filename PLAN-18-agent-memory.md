@@ -235,10 +235,26 @@ New files are marked **(new)**; everything else is an edit.
 - The step is derived from session state on each call (`playbooks.step`), not stored; only the
   active playbook names are stored
 
-**M8 · Evals + docs** (step 8, runs alongside M1–M7)
-- `agent-service/evals/golden/memory.yaml` **(new)**, `evals/redteam/memory.yaml` **(new)**,
-  `evals/harness.py` (two-conversation and two-user cases)
-- `AGENT.md`, `ARCHITECTURE.md`, `ARCHITECTURE-ESSENTIAL.md`, `PRD.md`
+**M8 · Evals + docs** (step 8) — done, branch `agent-memory-m8-evals`
+- `agent-service/evals/golden/memory.yaml` **(new, G-MEM-01..08)**, `evals/redteam/memory.yaml`
+  **(new, R-MEM-01..07)**
+- `evals/cases.py` (`setup.memory`, `earlier`, `require_memory`/`forbid_memory`), `evals/harness.py`
+  (memory reset per case, seeding, earlier conversation, drain, saved-facts readback),
+  `evals/checks.py`, `tests/test_evals.py`, `evals/README.md`
+- `AGENT.md` §8, `PRD.md` privacy row
+- Cross-user isolation is covered by commerce-api's `test/memory.e2e-spec.ts` (an eval case can
+  only seed its own shopper)
+- **Not run yet:** CI evals fail with `402` until the DeepSeek balance is topped up
+
+### Rollout checklist
+
+1. Top up DeepSeek (or switch the secret to an Anthropic key); re-run CI evals on the memory PRs (#18 onward).
+2. Golden ≥ 90% and red team 100% with defaults (memory and playbooks off): nothing regressed.
+3. Same with `MEMORY_ENABLED=true`, then with `PLAYBOOKS_ENABLED=true`. Tune
+   `EPISODE_MIN_SIMILARITY` (0.6) and the fact filters if memory cases fail.
+4. PRD sign-off on the privacy-notice wording; then set `MEMORY_ENABLED=true` for internal
+   accounts (phase B), everyone (phase C), and `PLAYBOOKS_ENABLED=true` (phase D).
+5. Measure p50 turn latency on catalog questions with and without `CACHE_ENABLED` (target −30%).
 
 ## Docs to update
 

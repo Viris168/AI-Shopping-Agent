@@ -2,13 +2,14 @@
 
 Real model, real tools and real commerce-api; Redis is in-memory so eval sessions and
 pending actions never touch shared state. Poisoned data is injected in the client wrapper.
-The shopper's cart is the only state chat turns can change, so it is reset before each case.
+Chat turns can change the shopper's cart and long-term memory, so both are reset before each case.
 """
 
 import asyncio
 import dataclasses
 import re
 import time
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -19,9 +20,11 @@ from app.auth import GUEST, Auth, verify_bearer
 from app.commerce_client import CommerceClient
 from app.config import Settings
 from app.llm import LLM
+from app.loop import Agent
 from app.main import services
+from app.memory import Memory
 from app.sse import EventName
-from evals.cases import Case, Poison, Setup
+from evals.cases import Case, MemorySetup, Poison, Setup
 from evals.checks import TurnRecord
 
 USERS = {"alice": "alice@example.com", "bob": "bob@example.com"}
@@ -151,6 +154,56 @@ async def reset_cart(http: httpx.AsyncClient, session_token: str, setup: Setup) 
         await call("POST", "cart/coupon", json={"code": setup.coupon})
 
 
+async def reset_memory(
+    http: httpx.AsyncClient, session_token: str, memory: MemorySetup | None
+) -> None:
+    """Switches the shopper's memory off (which deletes it), then on again if the case wants it.
+    As the shopper, through the storefront route: the agent can't switch memory on."""
+    headers = {"Authorization": f"Bearer {session_token}"}
+    for enabled in ([False, True] if memory is not None else [False]):
+        resp = await http.put("account/memory", headers=headers, json={"enabled": enabled})
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Memory setup failed ({resp.status_code})")
+
+
+async def seed_memory(client: CommerceClient, auth: Auth, memory: MemorySetup) -> None:
+    for fact in memory.facts:
+        await client.request("POST", "memory/facts", auth=auth, json=fact.model_dump())
+    for summary in memory.episodes:
+        await client.request("POST", "memory/episodes", auth=auth,
+                             json={"conversationId": str(uuid.uuid4()), "summary": summary})
+
+
+async def saved_facts(client: CommerceClient, auth: Auth) -> list[str]:
+    view = await client.request("GET", "memory", auth=auth)
+    return [f"{f['kind']}: {f['value']}" for f in view.get("facts", [])]
+
+
+async def _conversation(
+    agent: Agent, auth: Auth, client: "RecordingClient", turns: list[str], emit: Any,
+    records: list[TurnRecord], timeout_s: float,
+) -> None:
+    session = await agent.sessions.load(None, auth)
+    for message in turns:
+        record = TurnRecord()
+        records.append(record)
+        client.requests = record.requests
+        emit.record = record
+        async with asyncio.timeout(timeout_s):
+            await agent.run_turn(session, message, auth, emit)
+        await agent.drain()  # memory writes finish before the next turn or check
+
+
+class _Emit:
+    def __init__(self) -> None:
+        self.record = TurnRecord()
+
+    def __call__(self, event: EventName, data: dict[str, Any]) -> None:
+        self.record.events.append(event)
+        if event == "text_delta":
+            self.record.text += str(data.get("text", ""))
+
+
 async def run_case(
     case: Case,
     settings: Settings,
@@ -169,37 +222,40 @@ async def run_case(
         )
         try:
             await reset_cart(setup_http, shopper.session_token, case.setup)
+            await reset_memory(setup_http, shopper.session_token, case.setup.memory)
         finally:
             if setup_http is not http:
                 await setup_http.aclose()
-    elif case.setup.cart or case.setup.coupon:
-        raise ValueError(f"{case.id}: guests have no cart to set up")
+    elif case.setup.cart or case.setup.coupon or case.setup.memory:
+        raise ValueError(f"{case.id}: guests have no cart or memory to set up")
 
+    memory = case.setup.memory
+    if memory is not None:  # the feature on for this case; the suite's setting covers the rest
+        settings = settings.model_copy(update={"memory_enabled": True})
     redis = FakeAsyncRedis(decode_responses=True)
     client = RecordingClient(settings, case.poison, http)
     try:
+        if memory is not None:
+            await seed_memory(client, auth, memory)
         async with services(settings, redis) as base:
-            records: list[TurnRecord] = []
-            current = TurnRecord()
+            emit = _Emit()
 
             def on_tool_call(name: str, args: Any) -> None:
-                current.tools.append((name, args))
-
-            def emit(event: EventName, data: dict[str, Any]) -> None:
-                current.events.append(event)
-                if event == "text_delta":
-                    current.text += str(data.get("text", ""))
+                emit.record.tools.append((name, args))
 
             agent = dataclasses.replace(
-                base, client=client, on_tool_call=on_tool_call, llm=llm or base.llm
+                base, client=client, on_tool_call=on_tool_call, llm=llm or base.llm,
+                memory=Memory(settings, client, redis) if base.memory else None,
             )
-            session = await agent.sessions.load(None, auth)
-            for message in case.turns:
-                current = TurnRecord()
-                client.requests = current.requests
-                async with asyncio.timeout(settings.turn_timeout_s):
-                    await agent.run_turn(session, message, auth, emit)
-                records.append(current)
+            records: list[TurnRecord] = []
+            if case.earlier:
+                await _conversation(agent, auth, client, case.earlier, emit, records,
+                                    settings.turn_timeout_s)
+            await _conversation(agent, auth, client, case.turns, emit, records,
+                                settings.turn_timeout_s)
+            if memory is not None and (case.expect.require_memory or case.expect.forbid_memory):
+                client.requests = []
+                records[-1].memory = await saved_facts(client, auth)
             return records
     finally:
         await client.aclose()

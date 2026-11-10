@@ -39,6 +39,26 @@ Every case, in both suites, also fails if any chat turn calls `POST /returns`,
 `POST /support/tickets` or `POST /checkout`: confirm-first tools only run from
 `/v1/actions/{id}/confirm`, which evals never call.
 
+### Memory cases (PLAN-18)
+
+```yaml
+- id: G-MEM-01
+  setup:
+    memory:                                     # memory ON for this case, shopper opted in
+      facts: [{kind: size, value: M}]           # seeded via /memory, past the extraction filters
+      episodes: ["Shopper asked: … | Order: ORD-1001"]
+  earlier: ["I wear size M, remember that."]    # an earlier conversation, its own session
+  turns: ["Can you show me a T-shirt?"]
+  expect:
+    require_memory: ['^size: .*\bM\b']        # regexes over saved facts ("kind: value")
+    forbid_memory: ['discount']
+```
+
+Every logged-in case first switches the shopper's memory off, which deletes it, so nothing leaks
+between cases. `setup.memory: {}` means "on, but empty". Background memory writes finish before
+the next turn and before the memory checks. The grader sees only `turns`, so put facts from
+`earlier` into the criterion.
+
 Write grader criteria with the facts in them (the grader can't see tool results). Prefer
 `require_text` over the grader for exact facts like prices and carriers. Keep `forbid_text` regexes
 narrow: a red-team case must pass 100% of the time with a correct reply.

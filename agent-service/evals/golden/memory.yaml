@@ -1,0 +1,93 @@
+# Golden · Long-term memory (PLAN-18): recalling preferences and earlier chats, forgetting, and
+# still taking facts from tools. Cases with setup.memory turn MEMORY_ENABLED on for that case and
+# opt the shopper in; `earlier` runs a previous conversation first. Conventions: ../README.md.
+
+- id: G-MEM-01
+  scenario: A size the shopper asked to remember is used in a later conversation
+  setup: {memory: {}}
+  earlier: ["I wear size M in tops, please remember that."]
+  turns: ["Can you show me a T-shirt?"]
+  expect:
+    require_memory: ['^size: .*\bM\b']
+    require_text: ['Merino Crew T-Shirt']
+    grader: >-
+      Shows the Merino Crew T-Shirt and uses or mentions size M (the size the shopper gave in an
+      earlier chat) instead of asking for their size.
+
+- id: G-MEM-02
+  scenario: Earlier chat about a return; the status still comes from the store
+  setup:
+    memory:
+      episodes:
+        - "Shopper asked: return the Trailrunner 3, too small | Order: ORD-1001 | Outcome: resolved"
+  turns: ["What happened with the return I asked about last time?"]
+  expect:
+    require_tools: [get_order]
+    require_args: [{tool: get_order, args: {orderNumber: ORD-1001}}]
+    require_text: ['ORD-1001']
+    grader: >-
+      Refers to order ORD-1001 from the earlier chat and reports what the store shows for it now.
+      Does not claim a return status, refund or date without checking.
+
+- id: G-MEM-03
+  scenario: Memory off; nothing carries over from an earlier chat
+  earlier: ["Remember that I'm a size M."]
+  turns: ["What size do I usually wear?"]
+  expect:
+    grader: >-
+      Does not state the shopper's size as known. Says it doesn't know or can't recall and may
+      ask. Must not say "M" as their size.
+
+- id: G-MEM-04
+  scenario: Shopper asks to forget a saved preference
+  setup:
+    memory:
+      facts: [{kind: size, value: M}]
+  turns: ["Please forget my size."]
+  expect:
+    require_tools: [forget_memory]
+    forbid_memory: ['^size:']
+    grader: Confirms the saved size was forgotten. Short.
+
+- id: G-MEM-05
+  scenario: A disliked brand is respected
+  setup:
+    memory:
+      facts: [{kind: brand_dislike, value: Stride}]
+  turns: ["Recommend some running shoes for me."]
+  expect:
+    require_tools: [search_products]
+    grader: >-
+      Takes into account that the shopper avoids the Stride brand: the store's running shoes are
+      all Stride (Trailrunner 3, AquaStride), so it says so or asks before recommending them.
+      Does not recommend a Stride shoe without mentioning the preference.
+
+- id: G-MEM-06
+  scenario: Shopper asks what the assistant remembers
+  setup:
+    memory:
+      facts: [{kind: size, value: M}, {kind: brand_like, value: Northline}]
+  turns: ["What do you remember about me?"]
+  expect:
+    require_text: ['\bM\b', 'Northline']
+    grader: >-
+      Lists the two saved preferences (size M, likes Northline) and nothing else. May mention
+      the account page for managing them.
+
+- id: G-MEM-07
+  scenario: A product from an earlier chat; the price still comes from a tool
+  setup:
+    memory:
+      episodes: ["Shopper asked: a light jacket for rain | Products: Packable Rain Jacket"]
+  turns: ["How much was that jacket I looked at last time?"]
+  expect:
+    require_text: ['\$79\.00']
+    grader: Names the Packable Rain Jacket and gives its price, $79.00.
+
+- id: G-MEM-08
+  scenario: A preference stated in passing is saved
+  setup: {memory: {}}
+  turns: ["I'm vegetarian and I love the Northline brand. Show me hoodies."]
+  expect:
+    require_memory: ['^brand_like: northline']
+    require_text: ['Fleece Pullover Hoodie']
