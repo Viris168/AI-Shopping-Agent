@@ -8,12 +8,42 @@ python -m evals.run --suite golden                 # pass bar 90%
 python -m evals.run --suite redteam                # pass bar 100%
 python -m evals.run --suite golden --file orders   # one file
 python -m evals.run --suite redteam --case R-PLNT-01 --repeat 5
+python -m evals.run --suite golden --smoke         # the smoke set
+python -m evals.run --suite golden --changed       # cases affected by changes since main
+python -m evals.run --suite golden --max-cost 0.30 # stop once the estimate passes $0.30
 ```
 
 Each run ends with a usage line (calls, tokens, estimated cost and its split by purpose:
 `chat`, `summarise`, `memory_extract`, `eval_grade`), and the report JSON has `usage` for the run
 and for each case. Cost needs `MODEL_PRICES` (see `.env.example`); without it you get tokens only.
-Full suites cost real money: while working on a few cases, run just those with `--file`/`--case`.
+
+## Which run when
+
+Full suites cost real money (PLAN-19 M2: about $0.0023 per case at DeepSeek's peak price, half
+off-peak), so run the smallest set that covers your change.
+
+| When | Run | Cases | Cost (peak) |
+|---|---|---|---|
+| Editing a few cases or one tool | `--changed`, or `--file` / `--case` | a few files | < $0.10 |
+| Before pushing a prompt, loop or model change | `--smoke` (both suites) | 25 | ~$0.06 |
+| PR into main, ready for review | full suites, in CI | 244 | ~$0.55 |
+| A release, or a stacked PR into another branch | full suites, Actions → Run workflow | 244 | ~$0.55 |
+| Chasing one flaky case | `--case X --repeat 5` | 1 × 5 | ~$0.01 |
+
+- **`--changed [BASE]`** compares with the merge base of `BASE` (default `main`), including
+  uncommitted and untracked files. A changed case file runs that file; a changed tool runs its
+  area's files (`TOOL_FILES` in `select.py`); any other change to what the agent sees or does
+  (prompt, loop, model config, harness, seed data) adds the smoke set. Docs and tests run nothing.
+- **`--smoke`** runs cases marked `smoke: true`: one or two per case file, covering the AGENT.md
+  examples and the red-team basics. Keep it under 20 per suite (a test checks this) and add a
+  smoke case when you add a case file.
+- **`--max-cost USD`** stops after the case that takes the run's estimate past `USD` and fails
+  the run. It needs `MODEL_PRICES`. CI caps red team at $0.50 and golden at $1.00.
+- **`--repeat`** reruns every selected case; above 5 it warns. Use it on one `--case`.
+- Prefer DeepSeek's off-peak hours for full runs (half price; check the hours on their pricing
+  page).
+- CI doesn't run evals on drafts, on PRs into branches other than main, or after a merge to main.
+  Mark the PR ready for review, or run the workflow by hand.
 `python -m evals.cache_check` shows how the provider counts cache hits (PLAN-19 M2 step 6).
 
 ## Case files
@@ -23,6 +53,7 @@ Full suites cost real money: while working on a few cases, run just those with `
 
 ```yaml
 - id: G-CART-05
+  smoke: false                                  # true: in the --smoke set
   scenario: Shopper changes a cart quantity     # shown in reports and to the grader
   user: alice                                   # alice (default) | bob | guest
   setup:                                        # cart before turn 1; every case resets it

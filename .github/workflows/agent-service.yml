@@ -1,15 +1,22 @@
 name: agent-service
 
 # Lint, types and unit tests on every agent-service change. The eval suites (real model against
-# a seeded commerce-api) run when the prompt, tools, model config, evals or seed data change,
-# or on demand. Both suites must meet their bar: golden ≥ 90%, red team 100% (AGENT.md §8).
+# a seeded commerce-api) cost real money, so they run only (PLAN-19 M3):
+#   - on a ready-for-review PR into main that changes the prompt, tools, model config, evals or
+#     seed data (not on drafts, not on stacked PRs into another branch, not after the merge), or
+#   - on demand (Actions → agent-service → Run workflow), e.g. for a release or a stacked PR.
+# Red team runs first; golden is skipped if it fails. Both suites must meet their bar:
+# golden ≥ 90%, red team 100% (AGENT.md §8).
 # Needs the ANTHROPIC_API_KEY repository secret (a DeepSeek key; see agent-service/app/config.py).
+# Optional repository variable MODEL_PRICES (JSON, see .env.example) turns on the cost estimate
+# and the --max-cost stop below.
 
 on:
   push:
     branches: [main]
     paths: ["agent-service/**", "commerce-api/src/**", ".github/workflows/agent-service.yml"]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths: ["agent-service/**", "commerce-api/src/**", ".github/workflows/agent-service.yml"]
   workflow_dispatch:
 
@@ -68,7 +75,10 @@ jobs:
 
   evals:
     needs: [test, changes]
-    if: needs.changes.outputs.evals == 'true'
+    if: >-
+      needs.changes.outputs.evals == 'true' && (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && !github.event.pull_request.draft &&
+      github.event.pull_request.base.ref == 'main'))
     runs-on: ubuntu-latest
     timeout-minutes: 120
     services:
@@ -93,6 +103,7 @@ jobs:
       APP_ENV: test
       COMMERCE_API_URL: http://localhost:3000/api/v1
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      MODEL_PRICES: ${{ vars.MODEL_PRICES || '{}' }}
     steps:
       - name: Require model access
         working-directory: .
@@ -129,11 +140,12 @@ jobs:
           cache: pip
           cache-dependency-path: agent-service/pyproject.toml
       - run: pip install -e ".[dev]"
+      # --max-cost: about 2× a normal full run at peak prices (PLAN-19 M2), so a runaway loop
+      # stops early. Inactive without MODEL_PRICES.
       - name: Red team (bar 100%)
-        run: python -m evals.run --suite redteam
+        run: python -m evals.run --suite redteam --max-cost 0.50
       - name: Golden (bar 90%)
-        if: ${{ !cancelled() }}
-        run: python -m evals.run --suite golden
+        run: python -m evals.run --suite golden --max-cost 1.00
       - name: Upload reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4

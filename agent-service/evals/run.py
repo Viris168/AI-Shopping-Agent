@@ -4,6 +4,9 @@
     python -m evals.run --suite redteam                # whole suite, pass bar 100%
     python -m evals.run --suite redteam --case R-INJ-01 --repeat 5
     python -m evals.run --suite golden --file orders   # only evals/golden/orders.yaml
+    python -m evals.run --suite golden --smoke         # the smoke set (`smoke: true` cases)
+    python -m evals.run --suite golden --changed       # what changed since main (evals/select.py)
+    python -m evals.run --suite golden --max-cost 0.30 # stop once the estimate passes $0.30
 
 Needs commerce-api running on seeded data (`npm run seed`), SERVICE_TOKEN set
 the same in both services, and model access. Results are written to evals/results/.
@@ -28,6 +31,10 @@ from app.llm import LLM
 from evals.cases import EVALS_DIR, PASS_BAR, Case, Suite, load_suite
 from evals.checks import Verdict, score
 from evals.harness import Logins, run_case
+from evals.select import changed_paths, select
+
+# Past this, --repeat is a whole-suite rerun in disguise; use it to chase one flaky case.
+REPEAT_WARN = 5
 
 # Public demo password from the commerce-api seed (src/database/seed.ts), not a real secret.
 DEMO_PASSWORD = "Password123!"  # noqa: S105
@@ -106,9 +113,20 @@ async def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--file", action="append",
                         help="Run only cases from <suite>/<FILE>.yaml (repeatable)")
     parser.add_argument("--repeat", type=int, default=1, help="Runs per case; all must pass")
+    parser.add_argument("--smoke", action="store_true",
+                        help="Run only the smoke set: cases marked `smoke: true`")
+    parser.add_argument("--changed", nargs="?", const="main", metavar="BASE",
+                        help="Run only the cases affected by changes since BASE (default main)")
+    parser.add_argument("--max-cost", type=float, metavar="USD",
+                        help="Stop after the case that takes the estimated cost past USD")
     parser.add_argument("--no-grader", action="store_true",
                         help="Deterministic checks only; cases with a grader then fail")
     args = parser.parse_args(argv)
+    if (args.smoke or args.changed) and (args.file or args.case):
+        parser.error("--smoke/--changed pick cases themselves; don't combine with --file/--case")
+    if args.repeat > REPEAT_WARN:
+        print(f"Warning: --repeat {args.repeat} runs every case {args.repeat}×; "
+              "use it on one flaky --case", file=sys.stderr)
 
     logging.basicConfig(level=logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -125,19 +143,42 @@ async def main(argv: list[str] | None = None) -> int:
         if unknown:
             sys.exit(f"Unknown case IDs: {', '.join(sorted(unknown))}")
         cases = [c for c in cases if c.id in args.case]
+    if args.smoke or args.changed:
+        picked: set[str] = set()
+        smoke = args.smoke
+        if args.changed:
+            sel = select(suite, changed_paths(args.changed))
+            for reason in sel.reasons:
+                print(f"changed: {reason}")
+            if sel.empty and not smoke:
+                print(f"No changes since {args.changed} affect the {suite} evals; nothing to run.")
+                return 0
+            picked, smoke = sel.files, smoke or sel.smoke
+        cases = [c for c in cases if c.file in picked or (smoke and c.smoke)]
+        print(f"Running {len(cases)} {suite} cases\n")
 
     settings = get_settings()
+    if args.max_cost is not None and not settings.model_prices:
+        print("Warning: MODEL_PRICES is not set, so --max-cost can't stop the run",
+              file=sys.stderr)
     await preflight(settings)
     logins = Logins(settings, os.environ.get("EVAL_PASSWORD", DEMO_PASSWORD))
     llm = None if args.no_grader else LLM(settings)
 
     results: list[dict[str, Any]] = []
     passed = 0
+    stopped = False
     with usage.tracking() as run_usage:
         for case in cases:
             ok, result = await run_case_and_report(case, settings, logins, llm, args.repeat)
             passed += ok
             results.append(result)
+            spent = run_usage.total.cost_usd
+            if args.max_cost is not None and spent >= args.max_cost and case is not cases[-1]:
+                stopped = True
+                print(f"\nStopped: est ${spent:.2f} reached --max-cost ${args.max_cost:.2f} "
+                      f"after {len(results)}/{len(cases)} cases")
+                break
 
     rate = passed / len(cases) if cases else 0.0
     bar = PASS_BAR[suite]
@@ -148,10 +189,11 @@ async def main(argv: list[str] | None = None) -> int:
     out_dir.mkdir(exist_ok=True)
     out = out_dir / f"{suite}-{time.strftime('%Y%m%d-%H%M%S')}.json"
     report = {"suite": suite, "model": settings.model_main, "passed": passed,
-              "total": len(cases), "usage": run_usage.as_dict(), "results": results}
+              "total": len(cases), "stopped_at_max_cost": stopped,
+              "usage": run_usage.as_dict(), "results": results}
     out.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     print(f"Report: {Path(out).relative_to(EVALS_DIR.parent)}")
-    return 0 if rate >= bar else 1
+    return 0 if rate >= bar and not stopped else 1
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@
       them to press Confirm, or asks what it's about first. Does not say a ticket exists.
 
 - id: G-SUP-02
+  smoke: true
   scenario: Defect report, then the shopper accepts a handoff
   turns:
     - "The soles on my Trailrunner shoes from ORD-1001 came apart after a week. I want to talk to someone."

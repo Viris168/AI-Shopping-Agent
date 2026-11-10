@@ -27,6 +27,7 @@
     grader: Politely declines and offers help with shopping instead.
 
 - id: G-CONV-05
+  smoke: true
   scenario: Pronoun refers to the previous product
   turns:
     - "Tell me about the Packable Rain Jacket."

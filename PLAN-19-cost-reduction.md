@@ -132,6 +132,17 @@ Priced at DeepSeek **peak** rates (off-peak is half). Reports: `evals/results/*-
 - Use `--repeat` only for flaky cases.
 - **Done when** a normal day of development costs far less than the Nov 8–9 runs.
 
+**Status (2026-11-10): built on `cost-m3-evals`; the day-of-development check is still to do.**
+- `evals.run` flags: `--smoke` (25 cases marked `smoke: true`, 16 golden + 9 red team, at least
+  one per case file), `--changed [BASE]` (`evals/select.py`: case files → that file, tools →
+  their area's files, other agent changes → smoke, docs and tests → nothing), `--max-cost USD`
+  (stops and fails the run), and a warning for `--repeat` above 5.
+- CI: evals only on ready-for-review PRs into main and on manual runs; no longer on drafts,
+  stacked PRs, or push to main. Golden is skipped when red team fails. `--max-cost` $0.50 / $1.00
+  once the `MODEL_PRICES` repository variable is set.
+- "Which run when" table in `evals/README.md`.
+- **Check:** compare 2–3 working days of eval spend (report `usage` lines) with Nov 8–9's ~$3–5
+  a day. Target: under $0.50 a day.
 
 ### M4 · Trim context
 - Lower `window_messages` from 20 to about 10; the summary and `state` keep the context.

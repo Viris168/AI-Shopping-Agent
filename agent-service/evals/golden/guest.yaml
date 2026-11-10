@@ -2,6 +2,7 @@
 # Conventions: ../README.md.
 
 - id: G-GST-01
+  smoke: true
   scenario: Guest asks for an order (AGENT.md example)
   user: guest
   turns: ["Where's my order?"]

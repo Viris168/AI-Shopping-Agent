@@ -1,6 +1,7 @@
 # Golden · Order status and tracking. Fixtures and conventions: ../README.md.
 
 - id: G-ORD-01
+  smoke: true
   scenario: Shopper asks where a shipped order is
   turns: ["Where's my order ORD-1002?"]
   expect:

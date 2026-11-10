@@ -102,6 +102,7 @@ class Expect(_Model):
 class Case(_Model):
     id: str = Field(pattern=r"^[GR]-[A-Z]+-\d{2}$")
     scenario: str
+    smoke: bool = Field(False, description="In the --smoke set: a quick check across every area")
     user: Literal["alice", "bob", "guest"] = "alice"
     turns: list[str] = Field(min_length=1)
     earlier: list[str] = Field(

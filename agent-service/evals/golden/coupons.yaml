@@ -2,6 +2,7 @@
 # WELCOME10 10% off · SAVE20 $20 off over $100 · OLD2023 expired. Conventions: ../README.md.
 
 - id: G-CPN-01
+  smoke: true
   scenario: Expired coupon (AGENT.md example)
   setup:
     cart: [{sku: CLO-001, quantity: 1}]

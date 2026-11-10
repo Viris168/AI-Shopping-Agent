@@ -2,6 +2,7 @@
 # Fixtures and conventions: ../README.md.
 
 - id: G-CAT-01
+  smoke: true
   scenario: Keyword search
   turns: ["Do you have any waterproof jackets?"]
   expect:
@@ -233,6 +234,7 @@
 # Casual wording (hybrid search, PLAN-17): keyword search alone finds nothing for these.
 
 - id: G-CAT-31
+  smoke: true
   scenario: Casual — keep a drink hot
   turns: ["I need something to keep my coffee hot on hikes"]
   expect:

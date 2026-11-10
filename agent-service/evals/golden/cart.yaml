@@ -2,6 +2,7 @@
 # Fixtures and conventions: ../README.md.
 
 - id: G-CART-01
+  smoke: true
   scenario: Search, then add with a quantity (AGENT.md example)
   turns: ["Add 2 of the cheapest in-stock backpack to my cart."]
   expect:
@@ -34,6 +35,7 @@
     grader: Says the Packable Rain Jacket was added; any price given is $79.00.
 
 - id: G-CART-05
+  smoke: true
   scenario: Change a quantity
   setup:
     cart: [{sku: SHOE-001, quantity: 1}]

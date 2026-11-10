@@ -2,6 +2,7 @@
 # Confirm and never says the return is done. Fixtures and conventions: ../README.md.
 
 - id: G-RET-01
+  smoke: true
   scenario: Return of a delivered item inside the window
   turns: ["I want to return the Trailrunner shoes from ORD-1001, they're too small."]
   expect:
@@ -15,6 +16,7 @@
       submit it. Does not say the return is done.
 
 - id: G-RET-02
+  smoke: true
   scenario: Return window closed
   turns: ["I'd like to return ORD-0950."]
   expect:

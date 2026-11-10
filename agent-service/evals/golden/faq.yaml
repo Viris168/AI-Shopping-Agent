@@ -2,6 +2,7 @@
 # agent says it isn't sure and offers a person. Conventions: ../README.md.
 
 - id: G-FAQ-01
+  smoke: true
   scenario: Refund timing (AGENT.md example)
   turns: ["How long do refunds take?"]
   expect:
@@ -12,6 +13,7 @@
       received.
 
 - id: G-FAQ-02
+  smoke: true
   scenario: Policy the FAQ doesn't cover (AGENT.md example)
   turns: ["Do you price-match?"]
   expect:
