@@ -78,11 +78,12 @@ long-term memory.
 
 ### 2. Session memory upgrade (agent-service)
 
-- Add `state: SessionState` to `Session`: `focus_order`, `focus_products` (≤ 5 IDs),
-  `pending_choice`, `language`, `playbook` + `playbook_step`. It's updated from tool calls in code, not written by the model.
-- `maybe_summarise` keeps `state` as is. The summary prompt must keep IDs, and a test checks that
-  the summary still contains every ID in `state`.
-- Sliding TTL: `save()` refreshes 24 h. Widget keeps `conversationId` in `sessionStorage` (F11).
+- Add `state: SessionState` to `Session`: `focus_order`, `focus_products` (≤ 5, id + name),
+  `pending_action` (open Confirm card). Updated by code from successful tool calls, never by the
+  model. `playbook` + `playbook_step` come with M7.
+- `maybe_summarise` leaves `state` alone, so IDs survive however the summary is worded.
+- Already in place before M2: `save()` refreshes the 24 h TTL on every turn, and the widget keeps
+  `conversationId` in `sessionStorage` (F11).
 - `state` goes into the prompt as a short `<session_state>` block before the window.
 
 ### 3. Long-term store (commerce-api)
@@ -191,10 +192,10 @@ New files are marked **(new)**; everything else is an edit.
 - `ARCHITECTURE.md` (Redis keys, `CACHE_ENABLED`), `infra/monitoring/README.md` (runbook)
 - `agent-service/tests/test_cache.py` **(new)**, `tests/test_tools.py`
 
-**M2 · Session state** (step 2, phase A)
-- `agent-service/app/sessions.py`, `app/loop.py`, `app/prompts/system.md`
-- `widget/src/state.ts` (keep `conversationId` in `sessionStorage`)
-- `agent-service/tests/test_sessions.py` **(new)**, `tests/test_loop.py`
+**M2 · Session state** (step 2, phase A) — done, branch `agent-memory-m2-session`
+- `agent-service/app/sessions.py`, `app/loop.py`, `app/prompts/system.md`, `app/guardrails.py`
+- `agent-service/tests/test_sessions.py` **(new)**
+- `AGENT.md` §5, `ARCHITECTURE.md` Redis keys
 
 **M3 · Long-term store in commerce-api** (step 3, phase B)
 - `commerce-api/src/database/entities.ts`, `src/database/migrations/<ts>-AgentMemory.ts` **(new)**

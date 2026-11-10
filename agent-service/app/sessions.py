@@ -1,8 +1,10 @@
-"""Conversation sessions in Redis (`sess:{conversationId}`, 24 h) with rolling summaries,
-and masked transcripts in commerce-api's `conversations` table (ARCHITECTURE.md §5.2)."""
+"""Conversation sessions in Redis (`sess:{conversationId}`, 24 h, refreshed on every save) with
+rolling summaries and structured state, and masked transcripts in commerce-api's `conversations`
+table (ARCHITECTURE.md §5.2)."""
 
 import json
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import asdict, dataclass, field
@@ -15,6 +17,7 @@ from app.auth import Auth
 from app.commerce_client import ApiError, CommerceClient, seg
 from app.guardrails import defang_control_tags
 from app.masking import mask, mask_text
+from app.tools.registry import ToolOutput
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +34,65 @@ def _is_tool_result_turn(msg: Message) -> bool:
     )
 
 
+MAX_FOCUS_PRODUCTS = 5
+_NAME_CHARS = 60
+
+
+@dataclass
+class SessionState:
+    """What the conversation is about, kept outside the message window so summarising can't
+    lose it (PLAN-18 step 2). Written by code from successful tool calls, never by the model.
+    IDs and names only: prices, stock and status always come from a fresh tool call (rule 5)."""
+
+    focus_order: str | None = None
+    # [{"id", "name"}], most recent last
+    focus_products: list[dict[str, str]] = field(default_factory=list)
+    # {"actionId", "tool", "summary", "expiresAt"} while a Confirm card is open
+    pending_action: dict[str, Any] | None = None
+
+    def note_tool(self, tool: str, raw: Any, out: ToolOutput) -> None:
+        if out.is_error:
+            return
+        args = raw if isinstance(raw, dict) else {}
+        result = out.for_model
+        if tool in ("get_order", "create_return"):
+            order = result.get("orderNumber") or args.get("orderNumber")
+            if isinstance(order, str):
+                self.focus_order = order[:40]
+        elif tool in ("get_product", "get_recommendations") and isinstance(result.get("id"), str):
+            self._focus_product(result["id"], result.get("name"))
+        elif tool in ("add_to_cart", "update_cart_item") and isinstance(args.get("productId"), str):
+            self._focus_product(args["productId"], None)
+
+    def _focus_product(self, product_id: str, name: Any) -> None:
+        old = next((p for p in self.focus_products if p["id"] == product_id), None)
+        entry = {"id": product_id[:64]}
+        if isinstance(name, str):
+            entry["name"] = defang_control_tags(name)[:_NAME_CHARS]
+        elif old and "name" in old:
+            entry["name"] = old["name"]
+        self.focus_products = [p for p in self.focus_products if p["id"] != product_id]
+        self.focus_products = [*self.focus_products, entry][-MAX_FOCUS_PRODUCTS:]
+
+    def render(self, now: float | None = None) -> str:
+        """Lines for the system prompt, or "" when there is nothing to track."""
+        lines = []
+        if self.focus_order:
+            lines.append(f"Order being discussed: {self.focus_order}")
+        if self.focus_products:
+            items = ", ".join(
+                f"{p['name']} ({p['id']})" if "name" in p else p["id"] for p in self.focus_products
+            )
+            lines.append(f"Products discussed (oldest first): {items}")
+        pending = self.pending_action
+        if pending and pending.get("expiresAt", 0) > (now or time.time()):
+            lines.append(
+                f"Waiting for the shopper to press Confirm: {pending['tool']} "
+                f"({defang_control_tags(str(pending.get('summary', '')))})"
+            )
+        return "\n".join(lines)
+
+
 @dataclass
 class Session:
     id: str
@@ -40,6 +102,13 @@ class Session:
     outcome: Outcome | None = None
     # messages[:persisted] are already in the transcript.
     persisted: int = 0
+    state: SessionState = field(default_factory=SessionState)
+
+    @classmethod
+    def from_json(cls, raw: str | bytes) -> "Session":
+        data = json.loads(raw)
+        data["state"] = SessionState(**(data.get("state") or {}))
+        return cls(**data)
 
     def _append_user_blocks(self, blocks: list[dict[str, Any]]) -> None:
         # Keep user/assistant alternation: merge into a trailing user turn.
@@ -94,7 +163,7 @@ class SessionStore:
         if conversation_id:
             raw = await self._redis.get(f"sess:{conversation_id}")
             if raw:
-                session = Session(**json.loads(raw))
+                session = Session.from_json(raw)
                 if session.user_id is None and auth.user_id:
                     session.user_id = auth.user_id  # guest logged in mid-conversation
                 if session.user_id == auth.user_id:
@@ -103,13 +172,14 @@ class SessionStore:
 
     async def get(self, conversation_id: str) -> Session | None:
         raw = await self._redis.get(f"sess:{conversation_id}")
-        return Session(**json.loads(raw)) if raw else None
+        return Session.from_json(raw) if raw else None
 
     async def save(self, session: Session) -> None:
         await self._redis.set(f"sess:{session.id}", json.dumps(asdict(session)), ex=self._ttl)
 
     async def maybe_summarise(self, session: Session, summarise: Summarise) -> None:
-        """Past 2× the window, fold the oldest half into the rolling summary."""
+        """Past 2× the window, fold the oldest half into the rolling summary. `state` is kept
+        as is, so the order and products in focus survive however the summary is worded."""
         if len(session.messages) <= self._window * 2:
             return
         cut = session._safe_cut(len(session.messages) // 2)
