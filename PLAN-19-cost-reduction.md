@@ -90,8 +90,10 @@ No prompt or model-behaviour change, so unit tests + `ruff` + `mypy` are enough 
 
 **Progress (2026-11-10, branch `cost-m2-usage`):** steps 1–5 built and tested. Per-conversation
 usage is stored as `tokens_cache_read` and `cost_micro_usd` (migration `ConversationCost`);
-summary and memory-extraction usage is sent after the turn as a messages-free update. Step 6 has a
-script (`python -m evals.cache_check`) but waits for DeepSeek balance; steps 7–8 to do.
+summary and memory-extraction usage is sent after the turn as a messages-free update. Step 6 checked
+2026-11-10 with `python -m evals.cache_check`: DeepSeek's `input_tokens` excludes cache hits (same
+3217-token prompt: 3217 input, then 17 input + 3200 cache_read), so `estimate_cost` needs no change;
+the prefix cache hit 99.5% of the repeated prompt. Steps 7–8 to do.
 
 - **Done when** every model call has a purpose, model, token counts and cost estimate; every eval
   report shows its cost; conversation records include every call; cache-hit accounting is checked

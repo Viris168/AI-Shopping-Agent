@@ -24,8 +24,9 @@ _MILLION = 1_000_000
 def estimate_cost(
     price: ModelPrice | None, input_tokens: int, cache_read: int, output_tokens: int
 ) -> float | None:
-    """USD for one call, or None when the model has no price. Assumes `input_tokens` excludes
-    cache reads, as on Anthropic's API (DeepSeek's to be verified, PLAN-19 M2 step 6)."""
+    """USD for one call, or None when the model has no price. `input_tokens` excludes cache
+    reads on Anthropic's API and on DeepSeek's (checked 2026-11-10 with evals/cache_check.py:
+    the same 3217-token prompt came back as 3217 input, then 17 input + 3200 cache_read)."""
     if price is None:
         return None
     return (
