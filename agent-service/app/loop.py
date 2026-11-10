@@ -19,7 +19,7 @@ from app.commerce_client import CommerceClient
 from app.config import Settings
 from app.guardrails import TokenBudget, suspect_facts, wrap_tool_result
 from app.llm import LLM
-from app.memory import Memory
+from app.memory import Memory, render_memory
 from app.sessions import Session, SessionStore, TranscriptStore
 from app.sse import Emit
 from app.tools.registry import Registry, Tool, ToolContext, ToolOutput
@@ -45,7 +45,7 @@ def _prompt_parts() -> tuple[str, str]:
 
 
 def build_system(
-    settings: Settings, auth: Auth, summary: str | None, state: str = ""
+    settings: Settings, auth: Auth, summary: str | None, state: str = "", memory: str = ""
 ) -> list[dict[str, Any]]:
     """Static block first (cached with the tools), per-request block after it."""
     static, dynamic = _prompt_parts()
@@ -72,6 +72,7 @@ def build_system(
         "{return_window_days}": str(settings.return_window_days),
         "{summary}": summary_text,
         "{session_state}": state_text,
+        "{memory}": memory,
     }
     for key, value in values.items():
         dynamic = dynamic.replace(key, value)
@@ -180,7 +181,8 @@ class Agent:
                 break
             resp = await self.llm.stream(
                 system=build_system(
-                    self.settings, auth, session.summary, session.state.render()
+                    self.settings, auth, session.summary, session.state.render(),
+                    render_memory(session.memory),
                 ),
                 messages=cast(list[MessageParam], session.window(self.settings.window_messages)),
                 tools=tools,

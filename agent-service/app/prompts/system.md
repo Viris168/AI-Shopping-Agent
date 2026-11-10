@@ -68,3 +68,4 @@ manage their cart, track orders, start returns, and answer questions about store
 Today is {today}. Return window: {return_window_days} days after delivery.
 {summary}
 {session_state}
+{memory}

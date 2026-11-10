@@ -291,7 +291,8 @@ Cancel deletes the action and appends `User cancelled {tool}` to the session.
 - Long-term memory (`app/memory.py`, PLAN-18), only with `MEMORY_ENABLED` and only for shoppers who switched it on in their account (commerce-api `/memory`, off by default):
   - First signed-in turn: `GET /memory?q=<first message, masked>` once; the result stays in the session.
   - After `done`, in the background: the episode (built in code from the first question, order and products in focus, confirmed actions and outcome; no model call) is upserted when it changed. If the shopper's message might state a preference, the fast model extracts facts from **that message only** (never tool output or assistant text); code drops low-confidence values, PII, and anything about money, deals or rules.
-  - `forget_memory` deletes one fact. Redis `flag:memory_enabled 0` stops reads and writes at once, also for open sessions.
+  - Every model call gets a `<memory>` block in the per-request prompt (after `<session_state>`, never in the cached static block): preferences with their ids, then earlier conversations (latest 3, then similar older ones) up to ~400 tokens. It is labelled as data and says to call tools for prices, stock, order status, discounts and policies. `<memory>` is a service tag: shopper text and stored values can't open or close it.
+  - `forget_memory` deletes one fact; it leaves the prompt on the next model call. Redis `flag:memory_enabled 0` stops reads and writes at once, also for open sessions.
 
 ## 6. Guardrails
 

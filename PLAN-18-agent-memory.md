@@ -213,9 +213,10 @@ New files are marked **(new)**; everything else is an edit.
   sweep would have no valid token. The episode is built in code (no model call) and only
   re-sent when it changes. Memory is also loaded here (first turn), so M5 is just the prompt
 
-**M5 · Read path** (step 5, phase B)
-- `agent-service/app/memory.py` (render), `app/loop.py`, `app/prompts/system.md`,
-  `app/guardrails.py` (`memory` as a service tag)
+**M5 · Read path** (step 5, phase B) — done, branch `agent-memory-m5-read`
+- `agent-service/app/memory.py` (`render_memory`), `app/loop.py`, `app/prompts/system.md`,
+  `app/guardrails.py` (`memory` as a service tag), `tests/test_memory.py`
+- Fact ids are checked against a UUID pattern, not masked (the card masker mangles UUIDs)
 
 **M6 · Account UI + widget chip** (step 7, phase C)
 - `storefront/src/pages/AccountPage.tsx` **(new)**, `src/App.tsx`, `src/api.ts`, `src/types.ts`,
