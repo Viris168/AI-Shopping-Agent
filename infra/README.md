@@ -30,13 +30,28 @@ stdin), and Compose passes them to the containers. They never go into an image.
 
 | Secret | Used by | Notes |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | agent-service | DeepSeek key by default (`ANTHROPIC_BASE_URL`). Use a different key from CI's eval key |
+| `ANTHROPIC_API_KEY` | agent-service | DeepSeek key by default (`ANTHROPIC_BASE_URL`). **Production's key comes from its own provider account**; `staging` uses the dev/eval account (see below) |
 | `JWT_SECRET` | both | Same value for both services, different per environment, 32+ chars. Generated |
 | `SERVICE_TOKEN` | both | agent-service → commerce-api `X-Service-Token`, 32+ chars. Generated |
 | `DATABASE_URL` | commerce-api, migrate | Managed Postgres 16 with the `vector` extension available, or `postgres:5432` if bundled |
 | `REDIS_URL` | agent-service | Managed Redis, or `redis:6379` if bundled |
 | `POSTGRES_PASSWORD` | postgres | Only with `BUNDLED_DATASTORES=true` |
 | `DEPLOY_SSH_KEY` | workflow | Private half of a deploy-only key. Generated |
+
+**Model provider accounts (PLAN-19 M1).** DeepSeek is prepaid, and keys on one account share its
+balance, so a separate *key* doesn't keep eval spend away from production; a separate *account*
+does (its balance is a hard cap). Two accounts:
+
+| Account | Its key goes in | Balance |
+|---|---|---|
+| Dev and evals | local `agent-service/.env`, the repository secret `ANTHROPIC_API_KEY` (CI evals), the `staging` environment | small top-ups; `python -m evals.balance redteam golden` says whether a full run fits |
+| Production | the `production` environment only | sized for traffic; the store cap is `DAILY_SPEND_CAP_USD`, and `AgentProviderBalanceLow` pages before it runs out |
+
+Set keys without echoing them: `gh secret set ANTHROPIC_API_KEY` (repository) and
+`gh secret set ANTHROPIC_API_KEY --env staging`; `setup-github-env.sh production` asks for
+production's. With Claude instead, use one Anthropic organization with a workspace per account and
+a spend limit on each. The repository variable `MODEL_PRICES` (the same JSON as `.env.example`)
+turns on CI's `--max-cost` caps and cost lines.
 
 Variables (not secret): `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_KNOWN_HOSTS`, `API_DOMAIN`,
 `CHAT_DOMAIN`, `ACME_EMAIL`, `STOREFRONT_URL`, `API_CORS_ORIGINS`, `CHAT_CORS_ORIGINS`,
