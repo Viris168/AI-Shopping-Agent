@@ -56,6 +56,13 @@ class FakeLLM:
                 on_text(block.text)
         return resp
 
+    def context(self, call: int) -> str:
+        """The `<context>` block sent with call `call` (app/loop.py with_context), or ""."""
+        return "".join(
+            b["text"] for m in self.calls[call] if isinstance(m["content"], list)
+            for b in m["content"] if b.get("type") == "text" and b["text"].startswith("<context>")
+        )
+
     async def summarise(self, previous: str | None, messages: list[Any]) -> str:
         return ""
 

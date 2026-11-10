@@ -56,6 +56,15 @@ Today is {today}. Return window: {return_window_days} days after delivery.
 
 `{auth_state}` is either `The shopper is logged in as {first_name}.` or `The shopper is a guest. Login-only tools are unavailable.`
 
+**Request layout and caching (PLAN-19 M4).** The provider caches the longest prefix that matches an earlier request, so everything that changes goes as late as possible:
+
+1. Tools and the static system block (cache breakpoint): the same for every shopper.
+2. The per-conversation system block (login, today's date, return window): the same on every call of a conversation.
+3. The history: every message since the last fold into the summary. It doesn't slide each turn, so it only changes at its start once per fold.
+4. A `<context>` block added at the start of the shopper's latest message (or the button-press event; last when that message holds tool results, which must lead): the rolling summary, `<session_state>`, `<memory>` and the playbook. It's rebuilt on every model call, so a tool result's effect shows in the next round, and it's only in the request: the session keeps the message without it, so old context never piles up in history.
+
+So only the shopper's latest message, its `<context>` and the rounds after it miss the cache. `<context>` is a service tag: shopper text, tool output, stored memory and the summary can't open or close it.
+
 ## 3. Tools
 
 Defined in `app/tools/*.py`, registered in `app/tools/registry.py`. Each tool has: name, description, JSON schema, `requires_auth`, `confirm`, and an async handler that calls `commerce_client`.
@@ -239,7 +248,8 @@ async def run_turn(session, user_msg, auth, emit):
     session.append_user(user_msg)
     tools = registry.for_auth(auth)
     for round in range(settings.MAX_TOOL_ROUNDS):          # 6
-        resp = await llm.stream(system=prompt(auth), messages=session.window(),
+        resp = await llm.stream(system=prompt(auth),
+                                messages=with_context(session.messages, anchor, context()),
                                 tools=tools, on_text=lambda t: emit("text_delta", {"text": t}))
         session.append_assistant(resp.content)
         calls = [b for b in resp.content if b.type == "tool_use"]
@@ -284,19 +294,19 @@ Cancel deletes the action and appends `User cancelled {tool}` to the session.
 ## 5. Memory
 
 - Session in Redis (`sess:{conversationId}`, 24 h TTL, refreshed on every save): messages, rolling summary, user ID, state.
-- State (`SessionState`) is written by code from successful tool calls, never by the model: the order in focus (`get_order`, confirmed `create_return`), the last 5 products (`get_product`, `get_recommendations`, cart adds), and the open Confirm card. IDs and names only, no prices or stock. It goes into the per-request prompt as `<session_state>` and is never summarised away, so "that order" still resolves after old messages are folded.
-- Window sent to the model: summary + last 20 messages. When exceeded, Haiku summarises the oldest half (keeping order numbers, product IDs, and pending decisions).
+- State (`SessionState`) is written by code from successful tool calls, never by the model: the order in focus (`get_order`, confirmed `create_return`), the last 5 products (`get_product`, `get_recommendations`, cart adds), and the open Confirm card. IDs and names only, no prices or stock. It goes into the `<context>` block as `<session_state>` and is never summarised away, so "that order" still resolves after old messages are folded.
+- History sent to the model: the summary (in `<context>`) + every message since the last fold. Past 2 × `WINDOW_MESSAGES` (20) messages, the fast model summarises the oldest half (keeping order numbers, product IDs, and pending decisions), so 20–40 messages are sent and the history only changes at a fold.
 - Guest → login mid-conversation: the session is kept and `user_id` attached on the next authenticated request.
 - Masked transcript written to Postgres `conversations` at the end of each turn.
 - Long-term memory (`app/memory.py`, PLAN-18), only with `MEMORY_ENABLED` and only for shoppers who switched it on in their account (commerce-api `/memory`, off by default):
   - First signed-in turn: `GET /memory?q=<first message, masked>` once; the result stays in the session.
   - After `done`, in the background: the episode (built in code from the first question, order and products in focus, confirmed actions and outcome; no model call) is upserted when it changed. If the shopper's message might state a preference, the fast model extracts facts from **that message only** (never tool output or assistant text); code drops low-confidence values, PII, and anything about money, deals or rules.
-  - Every model call gets a `<memory>` block in the per-request prompt (after `<session_state>`, never in the cached static block): preferences with their ids, then earlier conversations (latest 3, then similar older ones) up to ~400 tokens. It is labelled as data and says to call tools for prices, stock, order status, discounts and policies. `<memory>` is a service tag: shopper text and stored values can't open or close it.
+  - Every model call gets a `<memory>` block in `<context>` (after `<session_state>`, never in the system prompt): preferences with their ids, then earlier conversations (latest 3, then similar older ones) up to ~400 tokens. It is labelled as data and says to call tools for prices, stock, order status, discounts and policies. `<memory>` is a service tag: shopper text and stored values can't open or close it.
   - `forget_memory` deletes one fact; it leaves the prompt on the next model call. Redis `flag:memory_enabled 0` stops reads and writes at once, also for open sessions.
 
 ### Playbooks (procedural memory)
 
-With `PLAYBOOKS_ENABLED` (off by default), the per-request prompt gets a short "## Playbook" section for the task at hand: `app/prompts/playbooks/{returns,order_status,product_compare,handoff}.md`, each ≤ 150 words and changed only through PRs with evals.
+With `PLAYBOOKS_ENABLED` (off by default), the `<context>` block gets a short "## Playbook" section for the task at hand: `app/prompts/playbooks/{returns,order_status,product_compare,handoff}.md`, each ≤ 150 words and changed only through PRs with evals.
 
 - **Which one:** chosen in code from the shopper's message (keywords; at most 2; handoff first; returns replaces order status). It stays for follow-ups ("the blue one") until another is asked for. Tool output never selects one.
 - **Which step:** worked out from session state, not the model: e.g. returns 1 find the order → 2 once `get_order` succeeded → 4 while the Confirm card is open → 5 for the reply after Confirm, then it's dropped.

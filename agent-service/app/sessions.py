@@ -43,7 +43,7 @@ _TOPIC_CHARS = 150
 
 @dataclass
 class SessionState:
-    """What the conversation is about, kept outside the message window so summarising can't
+    """What the conversation is about, kept outside the message history so summarising can't
     lose it (PLAN-18 step 2). Written by code from successful tool calls, never by the model.
     IDs and names only: prices, stock and status always come from a fresh tool call (rule 5)."""
 
@@ -53,7 +53,7 @@ class SessionState:
     # {"actionId", "tool", "summary", "expiresAt"} while a Confirm card is open
     pending_action: dict[str, Any] | None = None
     # The shopper's first message (masked, short): what the conversation was about. Long-term
-    # memory only; not shown in the prompt (the message itself is in the window or summary).
+    # memory only; not shown in the prompt (the message itself is in the history or summary).
     topic: str | None = None
     # Confirmed actions, e.g. "create_return: Return 1 item from ORD-1001 (Too small)"
     completed: list[str] = field(default_factory=list)
@@ -174,10 +174,6 @@ class Session:
                 return i
         return len(self.messages)
 
-    def window(self, size: int) -> list[Message]:
-        cut = self._safe_cut(len(self.messages) - size) if len(self.messages) > size else 0
-        return self.messages[cut:]
-
 
 Summarise = Callable[[str | None, list[Message]], Awaitable[str]]
 
@@ -209,7 +205,11 @@ class SessionStore:
 
     async def maybe_summarise(self, session: Session, summarise: Summarise) -> None:
         """Past 2× the window, fold the oldest half into the rolling summary. `state` is kept
-        as is, so the order and products in focus survive however the summary is worded."""
+        as is, so the order and products in focus survive however the summary is worded.
+
+        The model gets every message since the last fold (PLAN-19 M4): the history then only
+        changes at its start here, once per fold, so the provider's prefix cache can reuse it
+        on every other call. A window sliding every turn would make the whole history a miss."""
         if len(session.messages) <= self._window * 2:
             return
         cut = session._safe_cut(len(session.messages) // 2)

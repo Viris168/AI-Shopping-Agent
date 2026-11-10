@@ -22,7 +22,7 @@ async def redis() -> AsyncIterator[FakeAsyncRedis]:
 
 
 def dynamic(llm: FakeLLM, call: int) -> str:
-    return str(llm.systems[call][1]["text"])
+    return llm.context(call)
 
 
 @pytest.mark.parametrize("name", list(playbooks.INTENTS))

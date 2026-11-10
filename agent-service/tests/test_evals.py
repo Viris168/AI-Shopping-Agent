@@ -15,6 +15,7 @@ from evals import cases as cases_module
 from evals import run as run_module
 from evals.cases import Case, MemorySetup, Poison, Setup, Suite, load_suite
 from evals.checks import TurnRecord, deterministic_failures, parse_grade, score
+from evals.cost_probe import report
 from evals.harness import (
     GUEST_SHOPPER,
     Shopper,
@@ -333,7 +334,7 @@ async def test_memory_case_seeds_runs_earlier_chat_and_reads_back_facts() -> Non
     # One episode per conversation: the earlier chat's, then this one's.
     assert [e["summary"] for e in episodes] == [
         "Shopper asked: I'm a size M", "Shopper asked: what size am I?"]
-    assert "vegan" in fake.systems[1][1]["text"]  # the new chat loaded memory
+    assert "vegan" in fake.context(1)  # the new chat loaded memory
     assert turns[-1].memory == ["diet: vegan", "size: M"]
     assert deterministic_failures(c, turns) == []
 
@@ -456,3 +457,14 @@ async def test_changed_with_nothing_relevant_runs_nothing(
 async def test_smoke_and_file_dont_combine() -> None:
     with pytest.raises(SystemExit):
         await run_module.main(["--suite", "golden", "--smoke", "--file", "faq"])
+
+
+def test_cost_probe_report_sums_per_call_usage(capsys: pytest.CaptureFixture[str]) -> None:
+    log = [
+        {"turn": 1, "round": 1, "messages": 1, "input": 3000, "cache_read": 0, "output": 40},
+        {"turn": 1, "round": 2, "messages": 3, "input": 200, "cache_read": 3000, "output": 20},
+    ]
+    summary = report(log, lambda i, c, o: (i + c + o) / 1e6)
+    assert summary == {"calls": 2, "uncached_per_call": 1600, "cached_per_call": 1500,
+                       "output_per_call": 30, "cache_hit_share": 0.484, "cost_usd": 0.00626}
+    assert "cache hits 48% of input" in capsys.readouterr().out
