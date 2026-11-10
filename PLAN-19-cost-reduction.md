@@ -96,17 +96,42 @@ summary and memory-extraction usage is sent after the turn as a messages-free up
 the prefix cache hit 99.5% of the repeated prompt. Step 7: a **Cost** row in
 `infra/monitoring/dashboard.json` (spend, cost/conversation, cache hit ratio, cost by purpose and
 model, tokens by purpose); every query checked against Prometheus 3.5's OTLP receiver, and the
-counter's Prometheus name is `agent_model_cost_USD_total`. Step 8 to do.
+counter's Prometheus name is `agent_model_cost_USD_total`. Step 8: first findings below, from
+an eval sample; production numbers still to collect.
 
 - **Done when** every model call has a purpose, model, token counts and cost estimate; every eval
   report shows its cost; conversation records include every call; cache-hit accounting is checked
   against the DeepSeek dashboard; and the top 3 sources of spend are named from real numbers.
+
+#### Findings (2026-11-10, eval sample)
+
+Sample: golden `checkout` + `language`, redteam `confirm` + `internals` = 23 cases, 73 model calls.
+Priced at DeepSeek **peak** rates (off-peak is half). Reports: `evals/results/*-20261110-2002*.json`.
+
+| # | Source | Share of cost | Notes |
+|---|---|---|---|
+| 1 | `chat` input, cache **miss** | **63%** | Only ~400 uncached tokens per call, but they cost 30× a cache hit: the per-request tail (tool results, state, memory, the new message) after the cached prefix |
+| 2 | `chat` output | **21%** | ~30 tokens per call, at 3× the input price |
+| 3 | `chat` input, cache **hit** | **12%** | Prefix cache works: 78–86% of prompt tokens are hits (~2.2–2.4k tokens per call) |
+| – | `eval_grade` (judge) | 4% | A cheaper judge isn't worth the effort |
+
+- **Per case:** $0.0023 at peak → a full golden + red-team run (244 cases) ≈ **$0.55 peak / $0.28
+  off-peak**. The 20 full runs on Nov 8–9 were roughly $5–11.
+- **Decision:** M3 now (free: targeted runs, full suites only before merge, prefer off-peak
+  hours). Then **M4 before M5**: trimming tool results and the per-request tail targets the
+  biggest slice (#1) without changing the model; M5 (routing to flash, ~4.4× cheaper per token)
+  next, as it needs both suites to pass.
+- **Gaps:** no summary or memory-extraction calls in this sample, and eval traffic isn't shopper
+  traffic. Re-check with a day of staging chat (dashboard Cost row) before M5's rollout.
+- Running evals from a Claude Code session: unset `ANTHROPIC_BASE_URL` and `CLAUDE_EFFORT` (the
+  session's own values override `.env`), as `.claude/launch.json` does for agent-service.
 
 ### M3 · Cheaper eval workflow
 - By default, run only the cases you changed (`--file`, `--case`); document this in `evals/README.md`.
 - Run the full golden + red-team suites only before a merge or release (CI on changed paths).
 - Use `--repeat` only for flaky cases.
 - **Done when** a normal day of development costs far less than the Nov 8–9 runs.
+
 
 ### M4 · Trim context
 - Lower `window_messages` from 20 to about 10; the summary and `state` keep the context.
