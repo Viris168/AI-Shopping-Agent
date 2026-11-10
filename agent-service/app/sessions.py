@@ -18,6 +18,7 @@ from app.commerce_client import ApiError, CommerceClient, seg
 from app.guardrails import defang_control_tags
 from app.masking import mask, mask_text
 from app.tools.registry import ToolOutput
+from app.usage import Counts
 
 log = logging.getLogger(__name__)
 
@@ -222,6 +223,12 @@ class SessionStore:
 TRANSCRIPT_BATCH = 100  # commerce-api's per-request cap
 
 
+def usage_body(spent: Counts) -> dict[str, int]:
+    """commerce-api's usage fields; cost as integer millionths of a dollar, like all money."""
+    return {"tokensIn": spent.input, "tokensOut": spent.output,
+            "tokensCacheRead": spent.cache_read, "costMicroUsd": round(spent.cost_usd * 1e6)}
+
+
 class TranscriptStore:
     """Appends each turn's new messages, masked, to commerce-api. Best effort: a failed save
     is logged and the messages go with the next turn; it never fails the shopper's turn."""
@@ -229,10 +236,9 @@ class TranscriptStore:
     def __init__(self, client: CommerceClient) -> None:
         self._client = client
 
-    async def record(self, session: Session, auth: Auth, usage: dict[str, int]) -> None:
+    async def record(self, session: Session, auth: Auth, spent: Counts | None) -> None:
         new = session.messages[session.persisted:]
-        tokens = {"tokensIn": usage.get("input_tokens", 0),
-                  "tokensOut": usage.get("output_tokens", 0)}
+        tokens = usage_body(spent) if spent else {}
         for start in range(0, max(len(new), 1), TRANSCRIPT_BATCH):
             body: dict[str, Any] = {"messages": mask(new[start:start + TRANSCRIPT_BATCH])}
             if start == 0:
@@ -250,6 +256,19 @@ class TranscriptStore:
                 log.warning("transcript_save_failed %s: %s", session.id, exc.status)
                 return
             session.persisted += len(body["messages"])
+
+    async def add_usage(self, conversation_id: str, auth: Auth, spent: Counts) -> None:
+        """Usage from calls made after the turn was recorded (summary, memory extraction).
+        Best effort, like `record`; it may run in the background, so it never raises."""
+        try:
+            await self._client.request(
+                "POST", f"conversations/{seg(conversation_id)}/turns", auth=auth,
+                conversation_id=conversation_id, json={"messages": [], **usage_body(spent)},
+            )
+        except ApiError as exc:
+            log.warning("usage_save_failed %s: %s", conversation_id, exc.status)
+        except Exception:
+            log.exception("usage_save_failed %s", conversation_id)
 
     async def feedback(self, conversation_id: str, message_id: str, rating: str,
                        comment: str | None, auth: Auth) -> None:

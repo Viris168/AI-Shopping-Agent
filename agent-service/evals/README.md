@@ -10,6 +10,12 @@ python -m evals.run --suite golden --file orders   # one file
 python -m evals.run --suite redteam --case R-PLNT-01 --repeat 5
 ```
 
+Each run ends with a usage line (calls, tokens, estimated cost and its split by purpose:
+`chat`, `summarise`, `memory_extract`, `eval_grade`), and the report JSON has `usage` for the run
+and for each case. Cost needs `MODEL_PRICES` (see `.env.example`); without it you get tokens only.
+Full suites cost real money: while working on a few cases, run just those with `--file`/`--case`.
+`python -m evals.cache_check` shows how the provider counts cache hits (PLAN-19 M2 step 6).
+
 ## Case files
 
 `golden/*.yaml` and `redteam/*.yaml` are YAML lists, one file per area. IDs are `G-AREA-NN` or

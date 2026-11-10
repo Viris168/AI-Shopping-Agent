@@ -11,7 +11,7 @@ from typing import Any, cast
 
 from anthropic.types import MessageParam
 
-from app import playbooks, telemetry
+from app import playbooks, telemetry, usage
 from app.actions import ActionStore, PendingAction
 from app.auth import Auth
 from app.cache import ToolCache
@@ -155,6 +155,14 @@ class Agent:
     async def run_turn(
         self, session: Session, user_msg: str | None, auth: Auth, emit: Emit
     ) -> None:
+        # Every model call of the turn, for the conversation's token and cost totals.
+        with usage.tracking() as spent:
+            await self._turn(session, user_msg, auth, emit, spent)
+
+    async def _turn(
+        self, session: Session, user_msg: str | None, auth: Auth, emit: Emit,
+        spent: usage.UsageTally,
+    ) -> None:
         if user_msg is not None:
             session.append_user(user_msg)
             session.state.note_topic(user_msg)
@@ -225,13 +233,15 @@ class Agent:
 
         suspect_facts("".join(reply), tool_texts)
         # Before summarising, so messages are saved before they can be folded away.
-        await self._record(session, auth, usage)
+        await self._record(session, auth, spent.take())
         await self.sessions.maybe_summarise(session, self.llm.summarise)
+        # The summary is written after the turn is recorded, so its usage goes separately.
+        await self._add_usage(session.id, auth, spent.take())
         episode = self.memory.pending_episode(session) if self.memory else None
         await self.sessions.save(session)
         emit("done", {"usage": usage})
         if self.memory is not None and session.memory_enabled and (episode or user_msg):
-            self._spawn(self.memory.write(session.id, auth, episode, user_msg, self.llm))
+            self._spawn(self._write_memory(session.id, auth, episode, user_msg))
 
     async def _handle_call(
         self, name: str, raw: Any, session: Session, auth: Auth, emit: Emit
@@ -308,9 +318,23 @@ class Agent:
         if session is not None:
             session.state.pending_action = None
             session.append_event(f"Shopper pressed Cancel for {action.tool}.")
-            await self._record(session, auth, {})
+            await self._record(session, auth, None)
             await self.sessions.save(session)
 
-    async def _record(self, session: Session, auth: Auth, usage: dict[str, int]) -> None:
+    async def _record(self, session: Session, auth: Auth, spent: usage.Counts | None) -> None:
         if self.transcripts is not None:
-            await self.transcripts.record(session, auth, usage)
+            await self.transcripts.record(session, auth, spent)
+
+    async def _add_usage(self, conversation_id: str, auth: Auth, spent: usage.Counts) -> None:
+        if self.transcripts is not None and spent.calls:
+            await self.transcripts.add_usage(conversation_id, auth, spent)
+
+    async def _write_memory(
+        self, conversation_id: str, auth: Auth, episode: dict[str, Any] | None,
+        user_msg: str | None,
+    ) -> None:
+        """Background, after `done`; its model calls are added to the conversation's totals."""
+        assert self.memory is not None
+        with usage.tracking() as spent:
+            await self.memory.write(conversation_id, auth, episode, user_msg, self.llm)
+        await self._add_usage(conversation_id, auth, spent.take())

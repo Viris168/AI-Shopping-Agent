@@ -54,7 +54,8 @@ describe('conversations (e2e)', () => {
   const row = async (id: string) =>
     (
       await db.query(
-        `SELECT user_id, messages, summary, outcome, tokens_in, tokens_out, feedback
+        `SELECT user_id, messages, summary, outcome, tokens_in, tokens_out,
+                tokens_cache_read, cost_micro_usd, feedback
          FROM conversations WHERE id = $1`,
         [id],
       )
@@ -70,7 +71,13 @@ describe('conversations (e2e)', () => {
     const id = randomUUID();
     await turn(
       id,
-      { messages: [msg('user', 'hi')], tokensIn: 10, tokensOut: 2 },
+      {
+        messages: [msg('user', 'hi')],
+        tokensIn: 10,
+        tokensOut: 2,
+        tokensCacheRead: 40,
+        costMicroUsd: 1500,
+      },
       aliceAgent,
     ).expect(204);
     await turn(
@@ -80,6 +87,7 @@ describe('conversations (e2e)', () => {
         summary: 'Greeted.',
         tokensIn: 5,
         tokensOut: 1,
+        costMicroUsd: 250,
       },
       aliceAgent,
     ).expect(204);
@@ -94,6 +102,12 @@ describe('conversations (e2e)', () => {
     ]);
     expect(saved.summary).toBe('Greeted.');
     expect([saved.tokens_in, saved.tokens_out]).toEqual([15, 3]);
+    // Usage sent later on its own (summaries, memory extraction) adds up the same way.
+    await turn(id, { messages: [], costMicroUsd: 50 }, aliceAgent).expect(204);
+    const after = await row(id);
+    expect(after.tokens_cache_read).toBe(40);
+    expect(after.cost_micro_usd).toBe('1800'); // bigint comes back as a string
+    expect(after.messages).toHaveLength(3);
   });
 
   it('keeps handoff once set and the last non-empty summary', async () => {

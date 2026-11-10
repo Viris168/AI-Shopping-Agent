@@ -10,8 +10,8 @@ from anthropic import APIError, APIStatusError, AsyncAnthropic
 from anthropic.types import Message, MessageParam, ThinkingConfigDisabledParam
 from opentelemetry.trace import Span
 
-from app import telemetry
-from app.config import Settings
+from app import telemetry, usage
+from app.config import ModelPrice, Settings
 from app.masking import mask_text
 
 SUMMARY_PROMPT = (
@@ -54,22 +54,32 @@ async def _observed(operation: str, model: str) -> AsyncIterator[Span]:
         telemetry.model_duration.record(watch.elapsed, {**attrs, "status": "ok"})
 
 
-def _record_usage(span: Span, operation: str, resp: Message) -> None:
-    usage = resp.usage
-    counts = {
-        "input": usage.input_tokens,
-        "output": usage.output_tokens,
-        "cache_read": usage.cache_read_input_tokens or 0,
-    }
-    span.set_attribute("gen_ai.usage.input_tokens", usage.input_tokens)
-    span.set_attribute("gen_ai.usage.output_tokens", usage.output_tokens)
+def _record_usage(
+    span: Span, operation: str, purpose: str, resp: Message, price: ModelPrice | None
+) -> None:
+    """Tokens and estimated cost on the span, the metrics and any open usage tally.
+    `purpose` says what the call was for (`chat`, `summarise`, `memory_extract`, `eval_grade`)."""
+    u = resp.usage
+    cache_read = u.cache_read_input_tokens or 0
+    cost = usage.estimate_cost(price, u.input_tokens, cache_read, u.output_tokens)
+    span.set_attribute("gen_ai.usage.input_tokens", u.input_tokens)
+    span.set_attribute("gen_ai.usage.output_tokens", u.output_tokens)
+    span.set_attribute("agent.purpose", purpose)
+    if cost is not None:
+        span.set_attribute("agent.cost_usd", cost)
     if resp.stop_reason:
         span.set_attribute("gen_ai.response.finish_reasons", [resp.stop_reason])
-    for kind, n in counts.items():
-        telemetry.model_tokens.add(n, {
-            "gen_ai.operation.name": operation, "gen_ai.request.model": resp.model,
-            "gen_ai.token.type": kind,
-        })
+    attrs = {"gen_ai.operation.name": operation, "gen_ai.request.model": resp.model,
+             "agent.purpose": purpose}
+    for kind, n in (("input", u.input_tokens), ("output", u.output_tokens),
+                    ("cache_read", cache_read)):
+        telemetry.model_tokens.add(n, {**attrs, "gen_ai.token.type": kind})
+    if cost is not None:
+        telemetry.model_cost.add(cost, attrs)
+    usage.record(purpose, resp.model, usage.Counts(
+        calls=1, input=u.input_tokens, output=u.output_tokens, cache_read=cache_read,
+        cost_usd=cost or 0.0, unpriced_calls=int(cost is None),
+    ))
 
 
 class LLM:
@@ -82,6 +92,11 @@ class LLM:
             timeout=settings.model_timeout_s,
             max_retries=2,
         )
+
+    def _price(self, requested: str, resp: Message) -> ModelPrice | None:
+        """The provider may answer with a dated model ID; fall back to the one we asked for."""
+        prices = self._s.model_prices
+        return prices.get(resp.model) or prices.get(requested)
 
     async def stream(
         self,
@@ -113,7 +128,8 @@ class LLM:
                     if event.type == "text":
                         on_text(event.text)
                 message = await stream.get_final_message()
-            _record_usage(span, "chat", message)
+            _record_usage(span, "chat", "chat", message,
+                          self._price(self._s.model_main, message))
             return message
 
     async def summarise(self, previous: str | None, messages: list[dict[str, Any]]) -> str:
@@ -127,11 +143,15 @@ class LLM:
                     previous=previous or "(none)", transcript=transcript
                 )}],
             )
-            _record_usage(span, "summarise", resp)
+            _record_usage(span, "summarise", "summarise", resp,
+                          self._price(self._s.model_fast, resp))
         return "".join(b.text for b in resp.content if b.type == "text").strip()
 
-    async def complete_fast(self, prompt: str, max_tokens: int = 256) -> str:
-        """Small one-shot call on the fast model (eval grading, ticket summaries)."""
+    async def complete_fast(
+        self, prompt: str, max_tokens: int = 256, purpose: str = "complete"
+    ) -> str:
+        """Small one-shot call on the fast model (memory extraction, eval grading). `purpose`
+        labels its tokens and cost."""
         async with _observed("complete", self._s.model_fast) as span:
             resp = await self._client.messages.create(
                 model=self._s.model_fast,
@@ -139,5 +159,6 @@ class LLM:
                 thinking=NO_THINKING,
                 messages=[{"role": "user", "content": prompt}],
             )
-            _record_usage(span, "complete", resp)
+            _record_usage(span, "complete", purpose, resp,
+                          self._price(self._s.model_fast, resp))
         return "".join(b.text for b in resp.content if b.type == "text").strip()

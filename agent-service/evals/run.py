@@ -17,9 +17,11 @@ import os
 import sys
 import time
 from dataclasses import asdict
+from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
+from app import usage
 from app.commerce_client import CommerceClient
 from app.config import Settings, get_settings
 from app.llm import LLM
@@ -49,8 +51,52 @@ async def run_one(
         turns = await run_case(case, settings, await logins.shopper(case.user))
     except Exception as exc:  # a crash is a failed case, not a crashed run
         return Verdict(False, [f"error: {type(exc).__name__}: {exc}"]), []
-    verdict = await score(case, turns, llm.complete_fast if llm else None)
+    verdict = await score(
+        case, turns, partial(llm.complete_fast, purpose="eval_grade") if llm else None
+    )
     return verdict, [asdict(t) for t in turns]
+
+
+async def run_case_and_report(
+    case: Case, settings: Settings, logins: Logins, llm: LLM | None, repeat: int
+) -> tuple[bool, dict[str, Any]]:
+    with usage.tracking() as case_usage:
+        runs = [await run_one(case, settings, logins, llm) for _ in range(repeat)]
+    failures = [f for verdict, _ in runs for f in verdict.failures]
+    ok = all(verdict.passed for verdict, _ in runs)
+    print(f"{'PASS' if ok else 'FAIL'}  {case.id:<11} {case.scenario}")
+    for failure in dict.fromkeys(failures):
+        print(f"        - {failure}")
+    return ok, {
+        "id": case.id, "passed": ok, "failures": failures, "usage": case_usage.as_dict(),
+        "runs": [{"passed": v.passed, "turns": t} for v, t in runs],
+    }
+
+
+def _tokens(n: int) -> str:
+    return f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n / 1e3:.0f}k" if n >= 1e3 else str(n)
+
+
+def usage_line(tally: usage.UsageTally) -> str:
+    """e.g. `412 calls · 1.9M in (1.2M cached) / 140k out · est $0.84 (chat 78%, eval_grade 15%)`.
+    Shares are by cost, or by tokens when no model has a price."""
+    total = tally.total
+    line = (f"{total.calls} calls · {_tokens(total.input)} in ({_tokens(total.cache_read)} cached)"
+            f" / {_tokens(total.output)} out")
+    by_purpose: dict[str, float] = {}
+    for (purpose, _), c in tally.by_call.items():
+        weight = c.cost_usd if total.cost_usd else c.input + c.cache_read + c.output
+        by_purpose[purpose] = by_purpose.get(purpose, 0) + weight
+    whole = sum(by_purpose.values()) or 1
+    shares = ", ".join(f"{p} {w / whole:.0%}" for p, w in
+                       sorted(by_purpose.items(), key=lambda kv: -kv[1]))
+    if total.cost_usd:
+        line += f" · est ${total.cost_usd:.2f}"
+    if shares:
+        line += f" ({shares}{'' if total.cost_usd else ' of tokens'})"
+    if total.unpriced_calls:
+        line += f" · {total.unpriced_calls} calls unpriced (set MODEL_PRICES)"
+    return line
 
 
 async def main(argv: list[str] | None = None) -> int:
@@ -87,28 +133,22 @@ async def main(argv: list[str] | None = None) -> int:
 
     results: list[dict[str, Any]] = []
     passed = 0
-    for case in cases:
-        runs = [await run_one(case, settings, logins, llm) for _ in range(args.repeat)]
-        failures = [f for verdict, _ in runs for f in verdict.failures]
-        ok = all(verdict.passed for verdict, _ in runs)
-        passed += ok
-        print(f"{'PASS' if ok else 'FAIL'}  {case.id:<11} {case.scenario}")
-        for failure in dict.fromkeys(failures):
-            print(f"        - {failure}")
-        results.append({
-            "id": case.id, "passed": ok, "failures": failures,
-            "runs": [{"passed": v.passed, "turns": t} for v, t in runs],
-        })
+    with usage.tracking() as run_usage:
+        for case in cases:
+            ok, result = await run_case_and_report(case, settings, logins, llm, args.repeat)
+            passed += ok
+            results.append(result)
 
     rate = passed / len(cases) if cases else 0.0
     bar = PASS_BAR[suite]
     print(f"\n{suite}: {passed}/{len(cases)} passed ({rate:.0%}); bar {bar:.0%}")
+    print(f"Usage: {usage_line(run_usage)}")
 
     out_dir = EVALS_DIR / "results"
     out_dir.mkdir(exist_ok=True)
     out = out_dir / f"{suite}-{time.strftime('%Y%m%d-%H%M%S')}.json"
     report = {"suite": suite, "model": settings.model_main, "passed": passed,
-              "total": len(cases), "results": results}
+              "total": len(cases), "usage": run_usage.as_dict(), "results": results}
     out.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     print(f"Report: {Path(out).relative_to(EVALS_DIR.parent)}")
     return 0 if rate >= bar else 1

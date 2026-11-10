@@ -3,11 +3,19 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Same fallback commerce-api uses outside production (commerce-api/src/auth/jwt.config.ts).
 DEV_JWT_SECRET = "dev-only-change-me"  # noqa: S105 - public dev fallback, rejected in production
+
+
+class ModelPrice(BaseModel):
+    """USD per million tokens."""
+
+    input: float = Field(ge=0)
+    cache_read: float = Field(ge=0)
+    output: float = Field(ge=0)
 
 
 class Settings(BaseSettings):
@@ -24,6 +32,9 @@ class Settings(BaseSettings):
     model_fast: str = "deepseek-flash"
     claude_effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     max_output_tokens: int = 1024
+    # Cost estimates (app/usage.py, PLAN-19 M2), keyed by model ID, from the provider's pricing
+    # page. JSON in MODEL_PRICES. A model without a price is counted in tokens only.
+    model_prices: dict[str, ModelPrice] = Field(default_factory=dict)
     model_timeout_s: float = 30
 
     # commerce-api

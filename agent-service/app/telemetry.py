@@ -46,6 +46,9 @@ turn_errors = _meter.create_counter("agent.turn.errors", description="Turns endi
 model_calls = _meter.create_counter("agent.model.calls", description="Model API calls by status")
 model_duration = _histogram("agent.model.duration", "One model API call")
 model_tokens = _meter.create_counter("agent.model.tokens", unit="{token}", description="Tokens")
+model_cost = _meter.create_counter(
+    "agent.model.cost", unit="USD", description="Estimated model cost (priced models only)"
+)
 tool_calls = _meter.create_counter("agent.tool.calls", description="Tool runs by status")
 tool_duration = _histogram("agent.tool.duration", "One tool run, including API retries")
 tool_cache = _meter.create_counter("agent.tool.cache", description="Tool cache hits and misses")

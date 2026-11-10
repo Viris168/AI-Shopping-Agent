@@ -157,6 +157,28 @@ async def test_model_api_errors_become_model_unavailable() -> None:
     assert count("agent.model.calls", status="error") == before + 1
 
 
+async def test_model_tokens_and_cost_carry_the_call_purpose() -> None:
+    def reply(_: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={
+            "id": "msg", "type": "message", "role": "assistant", "model": "fast",
+            "content": [{"type": "text", "text": "{}"}], "stop_reason": "end_turn",
+            "usage": {"input_tokens": 1_000_000, "output_tokens": 0},
+        })
+
+    client = AsyncAnthropic(api_key="k", base_url="http://model", max_retries=0,
+                            http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(reply)))
+    llm = LLM(settings(model_fast="fast", model_prices={
+        "fast": {"input": 3, "cache_read": 1, "output": 9}
+    }), client)
+    tokens = count("agent.model.tokens", **{"agent.purpose": "eval_grade",
+                                             "gen_ai.token.type": "input"})
+    cost = count("agent.model.cost", **{"agent.purpose": "eval_grade"})
+    await llm.complete_fast("grade", purpose="eval_grade")
+    assert count("agent.model.tokens", **{"agent.purpose": "eval_grade",
+                                           "gen_ai.token.type": "input"}) == tokens + 1_000_000
+    assert count("agent.model.cost", **{"agent.purpose": "eval_grade"}) == pytest.approx(cost + 3)
+
+
 async def test_model_outage_streams_a_fallback_error(redis: FakeAsyncRedis, api: FakeApi) -> None:
     class DownLLM(FakeLLM):
         async def stream(self, **_: Any) -> Any:
