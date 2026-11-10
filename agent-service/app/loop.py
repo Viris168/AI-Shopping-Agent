@@ -13,6 +13,7 @@ from anthropic.types import MessageParam
 from app import telemetry
 from app.actions import ActionStore, PendingAction
 from app.auth import Auth
+from app.cache import ToolCache
 from app.commerce_client import CommerceClient
 from app.config import Settings
 from app.guardrails import TokenBudget, suspect_facts, wrap_tool_result
@@ -117,9 +118,12 @@ class Agent:
     client: CommerceClient
     transcripts: TranscriptStore | None = None  # None in unit tests and evals
     on_tool_call: OnToolCall | None = None  # evals record calls here
+    cache: ToolCache | None = None  # None in unit tests unless a test sets it
 
     def _ctx(self, auth: Auth, conversation_id: str, idem_key: str | None = None) -> ToolContext:
-        return ToolContext(auth, conversation_id, self.client, self.settings, idem_key)
+        return ToolContext(
+            auth, conversation_id, self.client, self.settings, idem_key, self.cache
+        )
 
     async def run_turn(
         self, session: Session, user_msg: str | None, auth: Auth, emit: Emit

@@ -82,6 +82,18 @@ can reach it. Turn it back on with `DEL flag:agent_enabled`.
 **Durable**: set the GitHub Environment variable `AGENT_ENABLED=false` and redeploy. Redis can't
 turn on an assistant that `AGENT_ENABLED` turned off.
 
+## Tool cache
+
+agent-service caches public tool results (product search and details, categories, FAQ) in Redis:
+60 s for products, 10 min for FAQ and categories. Logged-in tools (cart, orders, returns) are never
+cached. Hits and misses are in `agent_tool_cache_total` (`tool`, `result`).
+
+| Need | Command |
+|---|---|
+| Turn the cache off | `SET flag:cache_enabled 0` (back on: `DEL flag:cache_enabled`) |
+| Drop every cached result (e.g. after re-seeding or a price change) | `INCR cache:tool:gen` |
+| Off durably | `CACHE_ENABLED=false` and redeploy |
+
 ## Rollout
 
 `/v1/config` also carries `rolloutPercent`. Each browser picks a fixed bucket 0–99 and sees the

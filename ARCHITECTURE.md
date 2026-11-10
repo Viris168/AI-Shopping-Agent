@@ -255,6 +255,8 @@ agent-service appends each turn's new messages (masked) after the turn; a failed
 | `action:{actionId}` | tool, args, userId, conversationId, idemKey | 10 min |
 | `rl:user:{id}` / `rl:ip:{ip}` | counters | 60 s |
 | `budget:{conversationId}` | tokens used | 24 h |
+| `cache:tool:{gen}:{tool}:{argsHash}` | public tool result (products, categories, FAQ) | 60 s products, 10 min FAQ/categories |
+| `cache:tool:gen` | cache generation; `INCR` drops every cached result | — |
 
 ## 6. Security
 
@@ -339,6 +341,7 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `CORS_ORIGINS` | `https://yourstore.com` | Widget host origins |
 | `AGENT_ENABLED` | `true` | Kill switch (Redis `flag:agent_enabled` can also turn it off) |
 | `ROLLOUT_PERCENT` | `100` | Share of browsers that see the widget (Redis `flag:rollout_percent` overrides) |
+| `CACHE_ENABLED` | `true` | Redis cache for public tool results (Redis `flag:cache_enabled` can also turn it off) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `_HEADERS` | — | Traces and metrics over OTLP/HTTP; empty → off |
 | `DEPLOY_ENV` | `staging` | Environment name in traces and metrics |
 | `TRACE_SAMPLE_RATIO` | `1.0` | Share of turns traced |
