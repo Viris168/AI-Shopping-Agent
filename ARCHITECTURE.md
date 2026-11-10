@@ -118,6 +118,8 @@ Global prefix `api/v1` (except `/health`). Swagger at `/docs`.
 | returns | `POST /returns`, `GET /returns` | JWT |
 | support | `POST /support/tickets` | optional JWT |
 | conversations | `POST /conversations/:id/turns`, `POST /conversations/:id/feedback` (transcripts, not a tool) | optional JWT + service token |
+| memory | `GET /memory?q=`, `POST /memory/episodes`, `POST /memory/facts`, `DELETE /memory/facts/:id` (agent memory, PLAN-18) | JWT + service token |
+| account/memory | `GET`, `PUT {enabled}`, `DELETE /account/memory`, `DELETE /account/memory/facts/:id` (storefront only; the agent gets 403) | JWT |
 
 Search (`GET /products?q=`, `GET /faq/search`) is hybrid: the keyword query and a pgvector query
 (bge-small-en-v1.5, run inside commerce-api; `src/search/`) are fused with Reciprocal Rank Fusion.
@@ -246,6 +248,18 @@ Events emitted to host: `shopchat:cart-updated`, `shopchat:open`, `shopchat:clos
 | created_at, updated_at | timestamptz | retention job deletes after 90 days |
 
 agent-service appends each turn's new messages (masked) after the turn; a failed write is retried with the next turn and never fails the shopper's turn. Writes need the service token and are owner-scoped in the query: a guest row can be claimed on login, a shopper's row is never written by anyone else. Audit rows for these writes keep route params only, not the transcript.
+
+### 5.2a Agent memory tables (PLAN-18)
+
+| Table | Columns | Notes |
+|---|---|---|
+| `memory_settings` | user_id PK, enabled (default false), updated_at | Consent. Only `PUT /account/memory` (storefront) changes it; turning it off deletes all facts and episodes |
+| `memory_episodes` | id, user_id, conversation_id (unique per user), summary ≤ 500 (masked), outcome, entities jsonb (order/product IDs), embedding vector(384), created_at | One per conversation; deleted after 90 days by the retention job |
+| `memory_facts` | id, user_id, kind (size/style/diet/brand_like/brand_dislike/other), value ≤ 200, value_key (unique per user + kind), source_conversation_id, confidence, created_at, updated_at | Kept until the shopper deletes them; max 50 per shopper |
+
+All three cascade on user delete. Every query filters by `user_id`; writes lock the settings row, so
+nothing lands after memory is switched off. With memory off, `GET /memory` returns empty lists and
+writes return 403.
 
 ### 5.3 Redis keys
 

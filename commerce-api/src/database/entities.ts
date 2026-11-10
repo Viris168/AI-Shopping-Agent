@@ -622,6 +622,112 @@ export class Conversation {
   updatedAt: Date;
 }
 
+export const MEMORY_FACT_KINDS = [
+  'size',
+  'style',
+  'diet',
+  'brand_like',
+  'brand_dislike',
+  'other',
+] as const;
+export type MemoryFactKind = (typeof MEMORY_FACT_KINDS)[number];
+
+/**
+ * The shopper's consent for long-term agent memory (PLAN-18). No row = off. Only the storefront
+ * session can change it, never the agent, so a prompt can't switch memory on.
+ */
+@Entity('memory_settings')
+export class MemorySettings {
+  @PrimaryColumn({ name: 'user_id', type: 'uuid' })
+  userId: string;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+
+  @Column({ type: 'boolean', default: false })
+  enabled: boolean;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
+}
+
+/** Episodic memory: one masked summary per past conversation. Kept 90 days, like transcripts. */
+@Entity('memory_episodes')
+@Unique(['userId', 'conversationId'])
+export class MemoryEpisode {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Index()
+  @Column({ name: 'user_id', type: 'uuid' })
+  userId: string;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+
+  @Column({ name: 'conversation_id', type: 'uuid' })
+  conversationId: string;
+
+  @Column({ type: 'varchar', length: 500 })
+  summary: string;
+
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  outcome: ConversationOutcome | null;
+
+  // IDs only: { orders: ['ORD-1001'], products: ['p1'] }.
+  @Column({ type: 'jsonb', default: () => "'{}'" })
+  entities: { orders?: string[]; products?: string[] };
+
+  // Of the summary (src/search/embedding.ts). Null if the model wasn't ready; found by recency then.
+  @Column({ type: 'vector', length: 384, nullable: true, select: false })
+  embedding: string | null;
+
+  // The retention job deletes by this.
+  @Index()
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
+}
+
+/** Semantic memory: preferences the shopper stated. Never prices, discounts, policies or PII. */
+@Entity('memory_facts')
+@Unique(['userId', 'kind', 'valueKey'])
+export class MemoryFact {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Index()
+  @Column({ name: 'user_id', type: 'uuid' })
+  userId: string;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+
+  @Column({ type: 'varchar', length: 20 })
+  kind: MemoryFactKind;
+
+  @Column({ type: 'varchar', length: 200 })
+  value: string;
+
+  // lower(trim(value)): "Size M" and "size m" are one fact.
+  @Column({ name: 'value_key', type: 'varchar', length: 200, select: false })
+  valueKey: string;
+
+  @Column({ name: 'source_conversation_id', type: 'uuid', nullable: true })
+  sourceConversationId: string | null;
+
+  @Column({ type: 'real', default: 1 })
+  confidence: number;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
+}
+
 export const ENTITIES = [
   User,
   Category,
@@ -638,4 +744,7 @@ export const ENTITIES = [
   IdempotencyKey,
   Conversation,
   PaymentEvent,
+  MemorySettings,
+  MemoryEpisode,
+  MemoryFact,
 ];

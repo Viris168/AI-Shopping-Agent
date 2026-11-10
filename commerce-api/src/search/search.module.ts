@@ -10,6 +10,7 @@ import { Embedder } from './embedding.js';
 const CACHE_SIZE = 500;
 /** Override with SEARCH_EMBED_TIMEOUT_MS (read per query). */
 const QUERY_TIMEOUT_MS = 300;
+const DOCUMENT_TIMEOUT_MS = 2000;
 const RETRY_LOAD_MS = 60_000;
 
 /**
@@ -96,6 +97,33 @@ export class EmbeddingService implements OnApplicationBootstrap {
     } catch (err) {
       // Never log the query itself: shoppers type personal details into search.
       this.logger.warn(`Query embedding failed: ${String(err)}`);
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  /**
+   * One document vector (no query prefix, no cache), e.g. an agent memory episode. Same rules as
+   * embedQuery: `null` when hybrid is off, the model isn't ready, or it takes over 2 s.
+   */
+  async embedDocument(text: string): Promise<number[] | null> {
+    if (!this.enabled) return null;
+    if (!this.ready) {
+      void this.warmUp();
+      return null;
+    }
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), DOCUMENT_TIMEOUT_MS);
+    });
+    try {
+      const vector = await Promise.race([
+        this.embedder.embedDocuments([text]).then(([v]) => v),
+        timeout,
+      ]);
+      return vector ?? null;
+    } catch (err) {
+      this.logger.warn(`Document embedding failed: ${String(err)}`);
       return null;
     } finally {
       clearTimeout(timer);

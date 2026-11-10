@@ -19,6 +19,7 @@ import { UserThrottlerGuard } from './common/user-throttler.guard.js';
 import { DatabaseModule } from './database/database.module.js';
 import { FaqModule } from './faq/faq.module.js';
 import { HealthModule } from './health/health.module.js';
+import { MemoryModule } from './memory/memory.module.js';
 import { OrdersModule } from './orders/orders.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { ProductsModule } from './products/products.module.js';
@@ -86,6 +87,7 @@ export function requestId(req: IncomingMessage, res: ServerResponse): string {
     FaqModule,
     SupportModule,
     ConversationsModule,
+    MemoryModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: UserThrottlerGuard },

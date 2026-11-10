@@ -7,6 +7,7 @@ import { Payments1794163827211 } from './1794163827211-Payments.js';
 import { HelpdeskForwarding1794170000000 } from './1794170000000-HelpdeskForwarding.js';
 import { Embeddings1794180000000 } from './1794180000000-Embeddings.js';
 import { TokenVersion1794190000000 } from './1794190000000-TokenVersion.js';
+import { AgentMemory1794200000000 } from './1794200000000-AgentMemory.js';
 
 export const MIGRATIONS = [
   Init1794128955639,
@@ -17,4 +18,5 @@ export const MIGRATIONS = [
   HelpdeskForwarding1794170000000,
   Embeddings1794180000000,
   TokenVersion1794190000000,
+  AgentMemory1794200000000,
 ];

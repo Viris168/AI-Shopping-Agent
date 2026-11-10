@@ -11,8 +11,15 @@ const BATCH = 1000;
 // Any constant works; it only has to match on every replica.
 const LOCK_KEY = 7_340_090;
 
+// Table → the timestamp it expires by. Agent memory episodes live as long as transcripts.
+const TABLES = [
+  ['conversations', 'updated_at'],
+  ['memory_episodes', 'created_at'],
+] as const;
+
 /**
- * Deletes transcripts not touched for `CONVERSATION_RETENTION_DAYS` (PRD: 90 days).
+ * Deletes transcripts not touched, and memory episodes not written, for
+ * `CONVERSATION_RETENTION_DAYS` (PRD: 90 days). Memory facts stay until the shopper deletes them.
  * Runs on every replica; the advisory lock lets one of them do the work.
  */
 @Injectable()
@@ -39,22 +46,24 @@ export class ConversationRetentionJob {
       if (!locked) return 0;
       try {
         let total = 0;
-        for (;;) {
-          // Uses the updated_at index; ctid avoids a second index lookup per row.
-          const [, count]: [unknown, number] = await runner.query(
-            `DELETE FROM "conversations" WHERE ctid IN (
-               SELECT ctid FROM "conversations"
-               WHERE "updated_at" < now() - make_interval(days => $1)
-               LIMIT $2)`,
-            [days, BATCH],
-          );
-          total += count;
-          if (count < BATCH) break;
+        for (const [table, column] of TABLES) {
+          let deleted = 0;
+          for (;;) {
+            // Uses the timestamp index; ctid avoids a second index lookup per row.
+            const [, count]: [unknown, number] = await runner.query(
+              `DELETE FROM "${table}" WHERE ctid IN (
+                 SELECT ctid FROM "${table}"
+                 WHERE "${column}" < now() - make_interval(days => $1)
+                 LIMIT $2)`,
+              [days, BATCH],
+            );
+            deleted += count;
+            if (count < BATCH) break;
+          }
+          if (deleted)
+            this.log.log(`Deleted ${deleted} ${table} older than ${days} days`);
+          total += deleted;
         }
-        if (total)
-          this.log.log(
-            `Deleted ${total} conversations older than ${days} days`,
-          );
         return total;
       } finally {
         await runner.query('SELECT pg_advisory_unlock($1)', [LOCK_KEY]);
