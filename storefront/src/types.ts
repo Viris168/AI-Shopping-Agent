@@ -159,3 +159,27 @@ export interface TicketCreated {
   status: string;
   expectedResponse: string;
 }
+
+/** The shopping assistant's long-term memory of this shopper (commerce-api /account/memory). */
+export type MemoryFactKind = 'size' | 'style' | 'diet' | 'brand_like' | 'brand_dislike' | 'other';
+
+export interface MemoryFact {
+  id: string;
+  kind: MemoryFactKind;
+  value: string;
+  updatedAt: string;
+}
+
+export interface MemoryEpisode {
+  id: string;
+  conversationId: string;
+  summary: string;
+  outcome: string | null;
+  createdAt: string;
+}
+
+export interface MemoryView {
+  enabled: boolean;
+  facts: MemoryFact[];
+  episodes: MemoryEpisode[];
+}

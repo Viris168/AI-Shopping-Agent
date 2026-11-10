@@ -58,6 +58,7 @@ export function Layout() {
             </NavLink>
             <NavLink to="/help">Help</NavLink>
             {user && <NavLink to="/orders">Orders</NavLink>}
+            {user && <NavLink to="/account">Account</NavLink>}
             <NavLink to="/cart" className="cart-link" aria-label={`Cart, ${count} item${count === 1 ? '' : 's'}`}>
               Cart
               {count > 0 && <span className="cart-count">{count}</span>}

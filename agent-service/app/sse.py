@@ -1,6 +1,7 @@
 """Server-sent events: encoding and running a turn behind a streaming response.
 
-Events (ARCHITECTURE.md §4.2): meta, text_delta, card, confirm_request, handoff, error, done.
+Events (ARCHITECTURE.md §4.2): meta, text_delta, card, confirm_request, handoff, memory, error,
+done.
 """
 
 import asyncio
@@ -15,7 +16,7 @@ from app import telemetry
 from app.llm import ModelUnavailable
 
 EventName = Literal[
-    "meta", "text_delta", "card", "confirm_request", "handoff", "error", "done"
+    "meta", "text_delta", "card", "confirm_request", "handoff", "memory", "error", "done"
 ]
 Emit = Callable[[EventName, dict[str, Any]], None]
 

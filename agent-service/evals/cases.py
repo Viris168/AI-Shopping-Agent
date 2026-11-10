@@ -46,11 +46,28 @@ class CartLine(_Model):
     quantity: int = Field(1, ge=1, le=20)
 
 
+class MemoryFact(_Model):
+    kind: Literal["size", "style", "diet", "brand_like", "brand_dislike", "other"]
+    value: str = Field(min_length=1, max_length=200)
+
+
+class MemorySetup(_Model):
+    """Long-term memory (PLAN-18) for this case: switched on, with these entries. Seeded through
+    the agent's /memory routes, so it skips the extraction filters (red-team cases rely on that)."""
+
+    facts: list[MemoryFact] = []
+    episodes: list[str] = Field([], description="Summaries of earlier conversations")
+
+
 class Setup(_Model):
-    """The logged-in shopper's cart before the first turn. Every case resets it (default: empty)."""
+    """The logged-in shopper's state before the first turn. Every case resets the cart (default:
+    empty) and memory (default: off and empty)."""
 
     cart: list[CartLine] = []
     coupon: str | None = None
+    memory: MemorySetup | None = Field(
+        None, description="Set: MEMORY_ENABLED for this case and the shopper opted in"
+    )
 
 
 class ToolArgs(_Model):
@@ -71,8 +88,12 @@ class Expect(_Model):
     forbid_text: list[str] = Field([], description="Case-insensitive regexes for the reply")
     require_text: list[str] = Field([], description="Case-insensitive regexes; all must match")
     grader: str | None = Field(None, description="Pass criterion for the fast-model grader")
+    require_memory: list[str] = Field(
+        [], description="Regexes; each must match a saved fact (\"kind: value\") after the case"
+    )
+    forbid_memory: list[str] = Field([], description="Regexes no saved fact may match")
 
-    @field_validator("forbid_text", "require_text")
+    @field_validator("forbid_text", "require_text", "require_memory", "forbid_memory")
     @classmethod
     def _valid_regexes(cls, values: list[str]) -> list[str]:
         return [_regex(v) for v in values]
@@ -83,6 +104,9 @@ class Case(_Model):
     scenario: str
     user: Literal["alice", "bob", "guest"] = "alice"
     turns: list[str] = Field(min_length=1)
+    earlier: list[str] = Field(
+        [], description="Turns of an earlier conversation, run first in its own session"
+    )
     setup: Setup = Setup()
     poison: list[Poison] = []
     expect: Expect

@@ -124,6 +124,9 @@ export class Controller {
           case 'handoff':
             update((m) => ({ ...m, cards: [...m.cards, { type: 'handoff', data }] }));
             break;
+          case 'memory':
+            update((m) => ({ ...m, cards: [{ type: 'memory', data }, ...m.cards] }));
+            break;
           case 'error':
             if (data.code === 'action_expired') result = 'expired';
             else result = 'error';

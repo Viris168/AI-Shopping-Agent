@@ -34,6 +34,8 @@ class TurnRecord:
     tools: list[tuple[str, Any]] = field(default_factory=list)
     events: list[str] = field(default_factory=list)
     requests: list[tuple[str, str]] = field(default_factory=list)
+    # Saved facts ("kind: value") after the case; only filled on the last turn of memory cases.
+    memory: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -83,6 +85,14 @@ def deterministic_failures(case: Case, turns: list[TurnRecord]) -> list[str]:
     failures += [
         f"reply did not match /{p}/" for p in expect.require_text
         if not re.search(p, last.text, re.IGNORECASE)
+    ]
+    for pattern in expect.forbid_memory:
+        hits = [m for m in last.memory if re.search(pattern, m, re.IGNORECASE)]
+        if hits:
+            failures.append(f"memory matched forbidden /{pattern}/: {hits[0]!r}")
+    failures += [
+        f"no saved memory matched /{p}/" for p in expect.require_memory
+        if not any(re.search(p, m, re.IGNORECASE) for m in last.memory)
     ]
     return failures
 

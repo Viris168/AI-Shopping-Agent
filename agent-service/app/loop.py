@@ -1,8 +1,9 @@
 """The agent loop (AGENT.md §4): tool rounds, confirm gate, budgets, follow-ups, transcripts."""
 
+import asyncio
 import logging
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Coroutine
+from dataclasses import dataclass, field
 from datetime import date
 from functools import cache
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import Any, cast
 
 from anthropic.types import MessageParam
 
-from app import telemetry
+from app import playbooks, telemetry
 from app.actions import ActionStore, PendingAction
 from app.auth import Auth
 from app.cache import ToolCache
@@ -18,6 +19,7 @@ from app.commerce_client import CommerceClient
 from app.config import Settings
 from app.guardrails import TokenBudget, suspect_facts, wrap_tool_result
 from app.llm import LLM
+from app.memory import Memory, render_memory
 from app.sessions import Session, SessionStore, TranscriptStore
 from app.sse import Emit
 from app.tools.registry import Registry, Tool, ToolContext, ToolOutput
@@ -43,7 +45,8 @@ def _prompt_parts() -> tuple[str, str]:
 
 
 def build_system(
-    settings: Settings, auth: Auth, summary: str | None, state: str = ""
+    settings: Settings, auth: Auth, summary: str | None, state: str = "", memory: str = "",
+    playbook: str = "",
 ) -> list[dict[str, Any]]:
     """Static block first (cached with the tools), per-request block after it."""
     static, dynamic = _prompt_parts()
@@ -70,6 +73,8 @@ def build_system(
         "{return_window_days}": str(settings.return_window_days),
         "{summary}": summary_text,
         "{session_state}": state_text,
+        "{memory}": memory,
+        "{playbook}": playbook,
     }
     for key, value in values.items():
         dynamic = dynamic.replace(key, value)
@@ -128,6 +133,19 @@ class Agent:
     transcripts: TranscriptStore | None = None  # None in unit tests and evals
     on_tool_call: OnToolCall | None = None  # evals record calls here
     cache: ToolCache | None = None  # None in unit tests unless a test sets it
+    memory: Memory | None = None  # long-term memory; None when MEMORY_ENABLED is off
+    # Work that runs after `done` (memory writes); drain() waits for it.
+    _background: set[asyncio.Task[None]] = field(default_factory=set, repr=False)
+
+    def _spawn(self, work: Coroutine[Any, Any, None]) -> None:
+        task = asyncio.create_task(work)
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    async def drain(self) -> None:
+        """Wait for background work (tests, evals, shutdown)."""
+        while self._background:
+            await asyncio.gather(*list(self._background), return_exceptions=True)
 
     def _ctx(self, auth: Auth, conversation_id: str, idem_key: str | None = None) -> ToolContext:
         return ToolContext(
@@ -139,6 +157,13 @@ class Agent:
     ) -> None:
         if user_msg is not None:
             session.append_user(user_msg)
+            session.state.note_topic(user_msg)
+            if self.settings.playbooks_enabled:
+                playbooks.select(session.state, user_msg)
+        if self.memory is not None and session.memory_enabled is None:
+            await self.memory.load(session, auth, user_msg)
+            if notice := self.memory.notice(session):
+                emit("memory", notice)
         telemetry.annotate(**{"conversation.id": session.id, "user.guest": auth.is_guest})
         tools = self.registry.schemas(auth)
         usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0}
@@ -162,7 +187,9 @@ class Agent:
                 break
             resp = await self.llm.stream(
                 system=build_system(
-                    self.settings, auth, session.summary, session.state.render()
+                    self.settings, auth, session.summary, session.state.render(),
+                    render_memory(session.memory),
+                    playbooks.render(session.state) if self.settings.playbooks_enabled else "",
                 ),
                 messages=cast(list[MessageParam], session.window(self.settings.window_messages)),
                 tools=tools,
@@ -200,8 +227,11 @@ class Agent:
         # Before summarising, so messages are saved before they can be folded away.
         await self._record(session, auth, usage)
         await self.sessions.maybe_summarise(session, self.llm.summarise)
+        episode = self.memory.pending_episode(session) if self.memory else None
         await self.sessions.save(session)
         emit("done", {"usage": usage})
+        if self.memory is not None and session.memory_enabled and (episode or user_msg):
+            self._spawn(self.memory.write(session.id, auth, episode, user_msg, self.llm))
 
     async def _handle_call(
         self, name: str, raw: Any, session: Session, auth: Auth, emit: Emit
@@ -214,6 +244,8 @@ class Agent:
         if not tool.confirm:
             out = await run_tool(tool, raw, self._ctx(auth, session.id))
             session.state.note_tool(tool.name, raw, out)
+            if tool.name == "forget_memory" and not out.is_error:
+                session.forget_fact(str(out.for_model.get("forgotten")))
             if out.card:
                 emit("card", out.card)
             return out
@@ -262,6 +294,9 @@ class Agent:
             session.outcome = "handoff"
         session.state.pending_action = None
         session.state.note_tool(action.tool, action.args, out)
+        if not out.is_error:
+            session.state.note_completed(action.tool, action.summary)
+            playbooks.finish(session.state, action.tool)
         session.append_event(
             f"Shopper pressed Confirm for {action.tool}. Result: {wrap_tool_result(out.for_model)}"
         )

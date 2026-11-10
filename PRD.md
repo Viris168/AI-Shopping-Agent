@@ -96,7 +96,7 @@ An AI chat assistant on the storefront. It helps shoppers find products, manage 
 | Security | Agent acts only with the shopper's own JWT; no admin credentials in the agent service |
 | Safety | No invented prices, stock, dates, discounts or policies; prompt-injection resistant |
 | Auditability | Every state-changing agent action logged with user and conversation ID |
-| Privacy | Personal data masked in logs and traces; transcripts kept 90 days |
+| Privacy | Personal data masked in logs and traces; transcripts kept 90 days. Assistant memory (PLAN-18) is opt-in per shopper, shown and deletable on the account page, never holds payment details, addresses or prices; chat notes kept 90 days, preferences until deleted. Privacy-notice wording to be signed off before rollout |
 | Accessibility | WCAG 2.1 AA; full keyboard support; screen-reader announcements |
 | Performance | Widget bundle < 40 KB gzipped; no layout shift on host page |
 | Cost | Tokens per conversation tracked; per-conversation budget enforced |

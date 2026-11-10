@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     # Public tool results in Redis (app/cache.py). Redis flag:cache_enabled can also turn it off.
     cache_enabled: bool = True
+    # Long-term memory (app/memory.py, PLAN-18). Off until rolled out; shoppers must also opt in.
+    # Redis flag:memory_enabled can turn it off at runtime.
+    memory_enabled: bool = False
+    # Task playbooks in the prompt (app/playbooks.py, PLAN-18 M7). A prompt change: switch on after
+    # the golden and red-team suites pass with it.
+    playbooks_enabled: bool = False
 
     store_name: str = "our store"
     storefront_url: str = "http://localhost:8080"

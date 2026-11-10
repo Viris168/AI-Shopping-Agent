@@ -5,6 +5,7 @@ import type {
   CheckoutResult,
   FaqResult,
   FaqTopic,
+  MemoryView,
   OrderDetail,
   OrderSummary,
   ProductDetail,
@@ -146,6 +147,13 @@ export const api = {
 
   searchFaq: (query: string, topic?: FaqTopic) =>
     request<{ results: FaqResult[] }>('GET', `/faq/search${q({ q: query, topic })}`),
+  /** What the shopping assistant remembers; only the shopper can switch it on (not the chat). */
+  memory: () => request<MemoryView>('GET', '/account/memory'),
+  /** Switching memory off also deletes everything it remembered. */
+  setMemory: (enabled: boolean) => request<MemoryView>('PUT', '/account/memory', { enabled }),
+  forgetAll: () => request<null>('DELETE', '/account/memory'),
+  forgetFact: (id: string) => request<null>('DELETE', `/account/memory/facts/${seg(id)}`),
+
   createTicket: (ticket: {
     subject: string;
     summary: string;

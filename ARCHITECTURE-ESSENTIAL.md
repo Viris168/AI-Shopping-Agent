@@ -44,6 +44,7 @@ Browser                      Cloud
 | create_return | `POST /returns` | ✓ | ✓ |
 | create_support_ticket | `POST /support/tickets` | – | ✓ |
 | checkout_link | none (storefront URL) | ✓ | – |
+| forget_memory (only with `MEMORY_ENABLED`) | `DELETE /memory/facts/{id}` | ✓ | – |
 
 ## Must-fix in commerce-api before launch
 

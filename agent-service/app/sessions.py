@@ -35,7 +35,9 @@ def _is_tool_result_turn(msg: Message) -> bool:
 
 
 MAX_FOCUS_PRODUCTS = 5
+MAX_COMPLETED = 5
 _NAME_CHARS = 60
+_TOPIC_CHARS = 150
 
 
 @dataclass
@@ -49,6 +51,23 @@ class SessionState:
     focus_products: list[dict[str, str]] = field(default_factory=list)
     # {"actionId", "tool", "summary", "expiresAt"} while a Confirm card is open
     pending_action: dict[str, Any] | None = None
+    # The shopper's first message (masked, short): what the conversation was about. Long-term
+    # memory only; not shown in the prompt (the message itself is in the window or summary).
+    topic: str | None = None
+    # Confirmed actions, e.g. "create_return: Return 1 item from ORD-1001 (Too small)"
+    completed: list[str] = field(default_factory=list)
+    # Active playbooks (app/playbooks.py), chosen in code from the shopper's messages.
+    playbooks: list[str] = field(default_factory=list)
+    # Playbooks whose task a confirmed action just completed (dropped on the next message).
+    playbooks_done: list[str] = field(default_factory=list)
+
+    def note_topic(self, text: str) -> None:
+        if self.topic is None:
+            self.topic = " ".join(mask_text(defang_control_tags(text)).split())[:_TOPIC_CHARS]
+
+    def note_completed(self, tool: str, summary: str) -> None:
+        entry = f"{tool}: {defang_control_tags(summary)}"[:200]
+        self.completed = [*self.completed, entry][-MAX_COMPLETED:]
 
     def note_tool(self, tool: str, raw: Any, out: ToolOutput) -> None:
         if out.is_error:
@@ -103,6 +122,16 @@ class Session:
     # messages[:persisted] are already in the transcript.
     persisted: int = 0
     state: SessionState = field(default_factory=SessionState)
+    # Long-term memory (app/memory.py): None until loaded on the first signed-in turn.
+    memory_enabled: bool | None = None
+    memory: dict[str, Any] | None = None
+    # Digest of the last episode written, so an unchanged episode isn't written again.
+    episode_digest: str | None = None
+
+    def forget_fact(self, fact_id: str) -> None:
+        """Drop a fact the shopper just had forgotten from this conversation's copy."""
+        if self.memory and isinstance(self.memory.get("facts"), list):
+            self.memory["facts"] = [f for f in self.memory["facts"] if f.get("id") != fact_id]
 
     @classmethod
     def from_json(cls, raw: str | bytes) -> "Session":

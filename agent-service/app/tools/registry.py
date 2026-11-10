@@ -134,7 +134,10 @@ class Registry:
         return [t.schema() for t in self.for_auth(auth)]
 
 
-def build_registry() -> Registry:
+def build_registry(*, memory: bool = False) -> Registry:
+    """`memory` adds forget_memory (MEMORY_ENABLED); off, the tool list is unchanged."""
     from app.tools import cart, catalog, faq, orders, support
+    from app.tools import memory as memory_tools
 
-    return Registry([*catalog.TOOLS, *faq.TOOLS, *cart.TOOLS, *orders.TOOLS, *support.TOOLS])
+    tools = [*catalog.TOOLS, *faq.TOOLS, *cart.TOOLS, *orders.TOOLS, *support.TOOLS]
+    return Registry([*tools, *memory_tools.TOOLS] if memory else tools)

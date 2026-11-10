@@ -37,7 +37,7 @@ build-backend = "setuptools.build_meta"
 include = ["app*", "evals*"]
 
 [tool.setuptools.package-data]
-app = ["prompts/*.md"]
+app = ["prompts/*.md", "prompts/playbooks/*.md"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
