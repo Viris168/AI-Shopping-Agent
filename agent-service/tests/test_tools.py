@@ -81,6 +81,14 @@ def test_schemas_have_no_titles_and_forbid_extra_fields() -> None:
         assert schema["input_schema"].get("additionalProperties") is False, schema["name"]
 
 
+def test_search_tools_ask_for_english_queries() -> None:
+    # Catalog, FAQ and their embeddings are English-only; a Spanish or Japanese query finds
+    # nothing and the agent says the product doesn't exist (G-LANG-02, G-LANG-06).
+    schemas = {s["name"]: s for s in REGISTRY.schemas(ALICE)}
+    for name in ("search_products", "search_faq"):
+        assert "English" in schemas[name]["input_schema"]["properties"]["q"]["description"]
+
+
 # --- validation and errors -------------------------------------------------------
 
 async def test_login_only_tool_returns_login_required_for_guests_without_calling_api() -> None:

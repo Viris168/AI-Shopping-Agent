@@ -28,7 +28,9 @@ def trim_product(p: dict[str, Any]) -> dict[str, Any]:
 
 class SearchProducts(_Input):
     q: str | None = Field(
-        None, max_length=200, description="Keywords, e.g. 'waterproof running shoes'"
+        None, max_length=200,
+        description="English keywords, e.g. 'waterproof running shoes', even when the shopper "
+        "writes in another language: the catalog is in English",
     )
     category: str | None = Field(
         None, max_length=60, description="Category slug from list_categories"
@@ -94,6 +96,7 @@ TOOLS = [
     Tool(
         "search_products",
         "Search the catalog. Use for any product discovery request. "
+        "The catalog is in English: translate the shopper's words into English keywords. "
         "Prices are in cents in filters.",
         SearchProducts, search_products, cache_ttl_s=PRODUCT_CACHE_S,
     ),

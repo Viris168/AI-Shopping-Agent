@@ -11,7 +11,10 @@ FAQ_CACHE_S = 600
 
 class SearchFaq(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    q: str = Field(min_length=1, max_length=300)
+    q: str = Field(
+        min_length=1, max_length=300,
+        description="The question in English, even when the shopper writes in another language",
+    )
     topic: Literal["shipping", "returns", "payment", "orders", "account", "warranty"] | None = None
 
 
@@ -37,7 +40,8 @@ async def search_faq(args: SearchFaq, ctx: ToolContext) -> ToolOutput:
 TOOLS = [
     Tool(
         "search_faq",
-        "Search store policies and FAQ. Call before answering any policy question.",
+        "Search store policies and FAQ. Call before answering any policy question. "
+        "The FAQ is in English: search in English.",
         SearchFaq, search_faq, cache_ttl_s=FAQ_CACHE_S,
     ),
 ]
