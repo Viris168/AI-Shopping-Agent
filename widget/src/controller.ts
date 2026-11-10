@@ -162,8 +162,20 @@ export class Controller {
       return 'expired';
     }
     const t = this.i18n.t;
-    const [message, retryable] =
-      status === 413
+    // Spend limits (agent-service app/limits.py): retrying won't help until the limit resets.
+    const limit = err instanceof ApiError ? err.limit : undefined;
+    const limitMessage =
+      status === 429 && limit
+        ? ({
+            shopper_daily: t('errDailyLimit'),
+            conversation: t('errConversationLimit'),
+            guests_paused: t('errGuestsPaused'),
+            new_chats: t('errTooManyChats'),
+          } as Record<string, string>)[limit]
+        : undefined;
+    const [message, retryable] = limitMessage
+      ? [limitMessage, false]
+      : status === 413
         ? [t('errTooLong', { max: this.opts.maxChars }), false]
         : status === 429
           ? [t('errRateLimited'), true]

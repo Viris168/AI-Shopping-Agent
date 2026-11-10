@@ -12,7 +12,7 @@ import logging
 import re
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
@@ -58,6 +58,27 @@ actions = _meter.create_counter("agent.actions", description="Confirm-first acti
 feedback = _meter.create_counter("agent.feedback", description="Thumbs up/down")
 routes = _meter.create_counter(
     "agent.routes", description="Model routing decisions: a turn's start, and moves to main"
+)
+limit_hits = _meter.create_counter(
+    "agent.limit.hits", description="Spend and rate limits reached, by limit and shopper kind"
+)
+# The provider's prepaid balance (app/balance.py), for the low-balance alert.
+_provider_balance: float | None = None
+
+
+def set_provider_balance(usd: float) -> None:
+    global _provider_balance
+    _provider_balance = usd
+
+
+def _observe_balance(_: metrics.CallbackOptions) -> Iterable[metrics.Observation]:
+    if _provider_balance is not None:
+        yield metrics.Observation(_provider_balance)
+
+
+provider_balance = _meter.create_observable_gauge(
+    "agent.provider.balance", callbacks=[_observe_balance], unit="USD",
+    description="Model provider's prepaid balance (DeepSeek), polled every 15 minutes",
 )
 kill_switch_rejections = _meter.create_counter(
     "agent.disabled.rejections", description="Requests refused by the kill switch"

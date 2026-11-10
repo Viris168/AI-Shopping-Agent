@@ -83,3 +83,43 @@ groups:
           summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of fast-model turns fail over to the main model"
           description: The fast model is failing; routed turns cost double. Turn routing off until it recovers.
           runbook: infra/monitoring/README.md#fast-model-failing
+
+      - alert: AgentDailySpendHigh
+        # Spend limits (PLAN-19 M7, app/limits.py): the store's estimated model spend today
+        # crossed 80% of DAILY_SPEND_CAP_USD (guests are now paused) or 100% (the assistant is
+        # off until UTC midnight). Counted once per crossing.
+        expr: |
+          sum by (job, limit) (increase(agent_limit_hits_total{limit=~"store_daily_80|store_daily_100"}[30m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.job }}: daily spend crossed {{ $labels.limit }}"
+          description: >-
+            store_daily_80: guests can't chat until UTC midnight. store_daily_100: nobody can.
+            Check the Spend limits row for who is spending; raise DAILY_SPEND_CAP_USD only if
+            it's real shoppers.
+          runbook: infra/monitoring/README.md#spend-limits
+
+      - alert: AgentLimitHitsSpike
+        # Many guests hitting their daily or new-chat limit: likely a bot spreading over IPs.
+        expr: |
+          sum by (job) (increase(agent_limit_hits_total{kind="guest",limit=~"shopper_daily|new_chats"}[15m])) >= 20
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value }} guest limit hits in 15 min"
+          description: Possible bot traffic against the assistant. Limits are holding; see the runbook for next steps.
+          runbook: infra/monitoring/README.md#spend-limits
+
+      - alert: AgentProviderBalanceLow
+        # DeepSeek is prepaid (app/balance.py polls it every 15 min): at $0 every model call fails.
+        # Fires below $2, or below two days of the last day's spend.
+        expr: |
+          min by (job) (agent_provider_balance_USD) < 2
+          or
+          min by (job) (agent_provider_balance_USD)
+            < 2 * sum by (job) (increase(agent_model_cost_USD_total[1d]))
+        for: 15m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }}: model provider balance is ${{ $value | printf \"%.2f\" }}"
+          description: Top up the provider account before it reaches $0, or every chat turn fails.
+          runbook: infra/monitoring/README.md#spend-limits

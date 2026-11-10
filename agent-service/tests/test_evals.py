@@ -8,9 +8,11 @@ import httpx
 import pytest
 from anthropic.types import TextBlock, ToolUseBlock
 
+from app import balance as app_balance
 from app import usage
 from app.auth import Auth
 from app.config import Settings
+from evals import balance as eval_balance
 from evals import cases as cases_module
 from evals import run as run_module
 from evals.cases import Case, MemorySetup, Poison, Setup, Suite, load_suite
@@ -485,3 +487,52 @@ def test_cost_probe_report_sums_per_call_usage(capsys: pytest.CaptureFixture[str
     assert summary == {"calls": 2, "uncached_per_call": 1600, "cached_per_call": 1500,
                        "output_per_call": 30, "cache_hit_share": 0.484, "cost_usd": 0.00626}
     assert "cache hits 48% of input" in capsys.readouterr().out
+
+
+# --- eval account balance (PLAN-19 M1) ---------------------------------------------
+
+def _balance(monkeypatch: pytest.MonkeyPatch, usd: float | None | Exception) -> None:
+    async def fetch(*_: Any) -> float | None:
+        if isinstance(usd, Exception):
+            raise usd
+        return usd
+    monkeypatch.setattr(app_balance, "fetch", fetch)
+
+
+def test_estimate_is_per_case_and_capped() -> None:
+    assert eval_balance.estimate(100) == pytest.approx(0.25)
+    assert eval_balance.estimate(10, repeat=3) == pytest.approx(0.075)
+    assert eval_balance.estimate(244, max_cost=0.2) == 0.2
+
+
+async def test_balance_check_refuses_warns_or_skips(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    s = Settings(_env_file=None)
+    _balance(monkeypatch, 0.40)
+    problem = await eval_balance.check(s, 0.61)
+    assert problem is not None and "$0.40 is below this run's estimated $0.61" in problem
+
+    assert await eval_balance.check(s, 0.30) is None
+    assert "balance is $0.40; top it up soon" in capsys.readouterr().err
+
+    _balance(monkeypatch, None)  # not DeepSeek / no key
+    assert await eval_balance.check(s, 99) is None
+    _balance(monkeypatch, httpx.ConnectError("down"))
+    assert await eval_balance.check(s, 99) is None
+    assert "not checked (ConnectError)" in capsys.readouterr().err
+
+
+async def test_run_stops_before_any_case_when_the_balance_is_short(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    ran = _fake_run(monkeypatch, tmp_path, cost_per_case=0.0)
+    _balance(monkeypatch, 0.01)
+    with pytest.raises(SystemExit, match="Top up the dev/eval account"):
+        await run_module.main(["--suite", "golden", "--smoke", "--no-grader"])
+    assert ran == []
+
+    _balance(monkeypatch, 0.01)  # a --max-cost cap below the balance lets it run
+    assert await run_module.main(["--suite", "golden", "--smoke", "--no-grader",
+                                  "--max-cost", "0.005"]) == 0
+    assert ran

@@ -42,6 +42,20 @@ breaking the non-negotiable rules. The DeepSeek balance ran out on 2026-11-09, m
 - Set a low-balance alert in the DeepSeek dashboard.
 - **Done when** an eval run can't use the production balance.
 
+**Status (2026-11-10): code and docs on `cost-m1-separation`; the second account is yours to
+create.** DeepSeek keys on one account share its prepaid balance (no per-key cap that we know of),
+so the separation is two accounts: dev/eval (local `.env`, CI's repository secret, `staging`) and
+production (the `production` environment only). The repo was already set up for separate secrets
+(`setup-github-env.sh` asks for a key "separate from CI's").
+- `evals/balance.py`: `evals.run` and `evals.cost_probe` read the balance first and stop before the
+  first case if it can't cover the run (cases × repeats × $0.0025, or `--max-cost`); warn below $2.
+  CI runs `python -m evals.balance redteam golden` before seeding. Checked for real: $0.47 covers
+  the red team ($0.15) but not both suites ($0.63).
+- Repository variable `MODEL_PRICES` set, so CI's `--max-cost` caps (M3) work.
+- Docs: `infra/README.md` (accounts table), evals README.
+- **Still to do (you):** create the production account and top up; put its key only in the
+  `production` environment; keep the current account for dev, CI and staging.
+
 ### M2 · Measure where tokens go
 
 **Already there:** `_record_usage` ([llm.py](agent-service/app/llm.py)) splits `agent.model.tokens`
@@ -269,6 +283,26 @@ manual-only), so there's no traffic to split. Built now:
 - Review `token_budget` and `rate_limit_per_min` against real usage from M2.
 - Consider lower limits for guests than for signed-in shoppers.
 - **Done when** no single user or bot can burn an outsized share of credit.
+
+**Status (2026-11-10): built on `cost-m7-limits`.** The old limits stopped one runaway
+conversation, but a bot could open a new conversation every time (each with a fresh 300k-token
+budget), nothing capped daily spend, and guests had the same limits as signed-in shoppers. Worst
+case was about $40/day per guest IP (20 msgs/min at ~$0.0014/turn), up to ~$290 with heavy turns.
+- `app/limits.py`: estimated spend in Redis as integer micro-dollars per UTC day, checked before
+  each chat turn. Store cap `DAILY_SPEND_CAP_USD` ($5): guests pause from 80%, everyone at 100%
+  (and `/v1/config` hides the widget). Per signed-in shopper $0.50/day, per guest IP $0.10/day,
+  per conversation $0.10, new conversations 30/h (user) and 10/h (guest IP); guest message rate
+  10/min. A confirmed action is never refused for cost. Redis down → turns go ahead.
+- Refusals are 429/503 with `X-Limit`; the widget shows its own translated text (en, vi) and no
+  retry button.
+- `app/balance.py` polls DeepSeek's free `/user/balance` every 15 min → `agent.provider.balance`.
+- Metrics `agent.limit.hits{limit, kind}`; alerts `AgentDailySpendHigh`, `AgentLimitHitsSpike`,
+  `AgentProviderBalanceLow` (< $2 or < 2 days of spend); dashboard row *Spend limits*; runbook
+  `infra/monitoring/README.md#spend-limits`.
+- The per-conversation token budget stays as the backstop when `MODEL_PRICES` is unset.
+- Not done: hashed top-spender panel (would need a per-shopper label); CAPTCHA for guests (only if
+  `AgentLimitHitsSpike` shows bots).
+- No prompt or model change, so no eval runs. Defaults are guesses until there's real traffic.
 
 ## Order
 

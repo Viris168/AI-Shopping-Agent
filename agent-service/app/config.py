@@ -68,8 +68,20 @@ class Settings(BaseSettings):
     max_tool_rounds: int = 6
     turn_timeout_s: float = 45
     max_message_chars: int = 2000
-    rate_limit_per_min: int = 20
-    token_budget: int = 300_000
+    rate_limit_per_min: int = 20  # signed-in shoppers
+    guest_rate_limit_per_min: int = 10  # guests, per IP
+    token_budget: int = 300_000  # per conversation; the backstop when MODEL_PRICES is unset
+
+    # Spend limits (app/limits.py, PLAN-19 M7), in US dollars of estimated model cost
+    # (MODEL_PRICES). 0 turns a limit off.
+    daily_spend_cap_usd: float = Field(5.0, ge=0)  # whole store; guests pause at 80%
+    daily_spend_user_usd: float = Field(0.5, ge=0)  # per signed-in shopper
+    daily_spend_guest_usd: float = Field(0.1, ge=0)  # per guest IP
+    conversation_spend_usd: float = Field(0.1, ge=0)
+    new_conversations_per_hour_user: int = Field(30, ge=0)
+    new_conversations_per_hour_guest: int = Field(10, ge=0)
+    # Poll the provider's prepaid balance (DeepSeek only) for the low-balance alert.
+    provider_balance_check: bool = True
     # History: past 2× this many messages, the oldest half folds into the summary. The model
     # gets every message since the last fold (so between this and 2× this).
     window_messages: int = 20

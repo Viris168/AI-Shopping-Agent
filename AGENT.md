@@ -329,13 +329,17 @@ With `PLAYBOOKS_ENABLED` (off by default), the `<context>` block gets a short "#
 | Stage | Check | Action |
 |---|---|---|
 | Input | > 2,000 chars | 413, widget shows limit |
-| Input | rate limit (20/min user or IP) | 429 |
-| Input | token budget exhausted | offer handoff |
+| Input | rate limit (20/min signed-in user, 10/min guest IP) | 429 |
+| Input | store's daily spend cap (`DAILY_SPEND_CAP_USD`, $5): guests from 80%, everyone at 100% | 429 / 503; widget hides at 100% until UTC midnight |
+| Input | daily spend per shopper ($0.50 signed-in, $0.10 guest IP), per conversation ($0.10), new chats per hour (30 / 10) | 429 with `X-Limit`; widget shows its own text, no retry |
+| Input | token budget exhausted (per conversation; the backstop without `MODEL_PRICES`) | offer handoff |
 | Tool args | schema validation (Pydantic) | error result to model |
 | Tool args | login-only tool as guest | `login_required` result |
 | Tool output | wrap in `<tool_result>`; strip HTML | — |
 | Output | URLs not on store domains | removed by widget |
 | Output | price/percent mentioned that wasn't in any tool result this turn | logged as `suspect_fact`, sampled for review |
+
+Spend limits (PLAN-19 M7, `app/limits.py`) are in estimated dollars from `MODEL_PRICES`, kept in Redis as integer micro-dollars per UTC day, so opening new conversations doesn't reset them. A confirmed action is never refused for cost; its follow-up reply still counts. If Redis is down, turns go ahead and the provider's prepaid balance is the backstop; `AgentProviderBalanceLow` warns before it runs out (`app/balance.py`).
 
 ## 7. Handoff triggers
 

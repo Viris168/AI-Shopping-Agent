@@ -7,7 +7,8 @@ name: agent-service
 #   - on demand (Actions → agent-service → Run workflow), e.g. for a release or a stacked PR.
 # Red team runs first; golden is skipped if it fails. Both suites must meet their bar:
 # golden ≥ 90%, red team 100% (AGENT.md §8).
-# Needs the ANTHROPIC_API_KEY repository secret (a DeepSeek key; see agent-service/app/config.py).
+# Needs the ANTHROPIC_API_KEY repository secret: a key on the dev/eval provider account, never
+# production's (PLAN-19 M1, infra/README.md; DeepSeek by default, see agent-service/app/config.py).
 # Optional repository variable MODEL_PRICES (JSON, see .env.example) turns on the cost estimate
 # and the --max-cost stop below.
 
@@ -119,6 +120,16 @@ jobs:
           echo "::add-mask::$jwt"; echo "::add-mask::$token"
           { echo "JWT_SECRET=$jwt"; echo "SERVICE_TOKEN=$token"; } >> "$GITHUB_ENV"
       - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: agent-service/pyproject.toml
+      - run: pip install -e ".[dev]"
+      # Before seeding: fail fast with a clear message if the eval account (a separate provider
+      # account from production's, PLAN-19 M1) can't cover both suites, instead of 402 halfway.
+      - name: Eval account balance
+        run: python -m evals.balance redteam golden
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -134,12 +145,6 @@ jobs:
           nohup node dist/main.js > "$RUNNER_TEMP/commerce-api.log" 2>&1 &
           for _ in $(seq 60); do curl -sf http://localhost:3000/health && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/commerce-api.log"; exit 1
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: agent-service/pyproject.toml
-      - run: pip install -e ".[dev]"
       # --max-cost: about 2× a normal full run at peak prices (PLAN-19 M2), so a runaway loop
       # stops early. Inactive without MODEL_PRICES.
       - name: Red team (bar 100%)
