@@ -282,7 +282,8 @@ Cancel deletes the action and appends `User cancelled {tool}` to the session.
 
 ## 5. Memory
 
-- Session in Redis (`sess:{conversationId}`, 24 h TTL): messages, rolling summary, user ID.
+- Session in Redis (`sess:{conversationId}`, 24 h TTL, refreshed on every save): messages, rolling summary, user ID, state.
+- State (`SessionState`) is written by code from successful tool calls, never by the model: the order in focus (`get_order`, confirmed `create_return`), the last 5 products (`get_product`, `get_recommendations`, cart adds), and the open Confirm card. IDs and names only, no prices or stock. It goes into the per-request prompt as `<session_state>` and is never summarised away, so "that order" still resolves after old messages are folded.
 - Window sent to the model: summary + last 20 messages. When exceeded, Haiku summarises the oldest half (keeping order numbers, product IDs, and pending decisions).
 - Guest → login mid-conversation: the session is kept and `user_id` attached on the next authenticated request.
 - Masked transcript written to Postgres `conversations` at the end of each turn.

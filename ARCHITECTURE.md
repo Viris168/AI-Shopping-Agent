@@ -251,7 +251,7 @@ agent-service appends each turn's new messages (masked) after the turn; a failed
 
 | Key | Value | TTL |
 |---|---|---|
-| `sess:{conversationId}` | messages, summary, userId | 24 h |
+| `sess:{conversationId}` | messages, summary, userId, state (order/products in focus, open Confirm card) | 24 h, refreshed on save |
 | `action:{actionId}` | tool, args, userId, conversationId, idemKey | 10 min |
 | `rl:user:{id}` / `rl:ip:{ip}` | counters | 60 s |
 | `budget:{conversationId}` | tokens used | 24 h |
