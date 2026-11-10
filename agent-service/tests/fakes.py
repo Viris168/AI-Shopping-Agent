@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
 
+from app import usage
 from app.config import Settings
 
 API_BASE = "http://api/api/v1/"
@@ -47,17 +48,29 @@ class FakeLLM:
         self.systems.append(system)
         self.calls.append(json.loads(json.dumps(messages)))
         resp = self.responses.pop(0)
+        usage.record("chat", resp.model, usage.Counts(
+            calls=1, input=resp.usage.input_tokens, output=resp.usage.output_tokens,
+        ))
         for block in resp.content:
             if isinstance(block, TextBlock):
                 on_text(block.text)
         return resp
+
+    def context(self, call: int) -> str:
+        """The `<context>` block sent with call `call` (app/loop.py with_context), or ""."""
+        return "".join(
+            b["text"] for m in self.calls[call] if isinstance(m["content"], list)
+            for b in m["content"] if b.get("type") == "text" and b["text"].startswith("<context>")
+        )
 
     async def summarise(self, previous: str | None, messages: list[Any]) -> str:
         return ""
 
     fast_reply = '{"facts": []}'
 
-    async def complete_fast(self, prompt: str, max_tokens: int = 256) -> str:
+    async def complete_fast(
+        self, prompt: str, max_tokens: int = 256, purpose: str = "complete"
+    ) -> str:
         self.fast_prompts.append(prompt)
         return self.fast_reply
 

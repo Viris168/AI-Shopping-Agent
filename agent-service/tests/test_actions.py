@@ -10,13 +10,14 @@ import httpx
 import pytest
 from fakeredis import FakeAsyncRedis
 
+from app import usage
 from app.actions import ActionStore
 from app.auth import GUEST, Auth, get_auth
 from app.config import get_settings
 from app.guardrails import RateLimiter
 from app.loop import Agent
 from app.main import app
-from app.sessions import Session, TranscriptStore
+from app.sessions import Session, TranscriptStore, usage_body
 from tests.fakes import FakeApi, FakeLLM, message, settings, text, tool_use
 from tests.test_loop import ALICE, BOB, RETURN_ARGS, Events, make_agent, turn
 
@@ -254,6 +255,45 @@ async def test_each_turn_sends_only_new_masked_messages(redis: FakeAsyncRedis,
     assert api.turns[0]["tokensIn"] == 1 and api.turns[0]["tokensOut"] == 1
     assert session.persisted == len(session.messages) == 4
     assert all(r.headers["Authorization"] == "Bearer tok-alice" for r in api.requests)
+
+
+def test_usage_body_sends_cost_as_integer_micro_dollars() -> None:
+    spent = usage.Counts(calls=2, input=10, output=3, cache_read=40, cost_usd=0.0012346)
+    assert usage_body(spent) == {"tokensIn": 10, "tokensOut": 3, "tokensCacheRead": 40,
+                                 "costMicroUsd": 1235}
+
+
+class SummarisingLLM(FakeLLM):
+    async def summarise(self, previous: str | None, messages: list[Any]) -> str:
+        usage.record("summarise", "fast", usage.Counts(calls=1, input=50, output=10,
+                                                       cost_usd=0.0001))
+        return "Greeted twice."
+
+
+async def test_summary_usage_is_sent_after_the_turn(redis: FakeAsyncRedis, api: Api) -> None:
+    agent = make_agent(redis, api, SummarisingLLM(message(text("Hi!")), message(text("Yo."))),
+                       window_messages=1)
+    agent.transcripts = TranscriptStore(agent.client)
+    session, _ = await turn(agent, "hello")
+    await turn(agent, "again", session=session)
+
+    assert [len(t["messages"]) for t in api.turns] == [2, 2, 0]
+    assert api.turns[1]["tokensIn"] == 1  # the turn's own chat call
+    assert api.turns[2] == {"messages": [], "tokensIn": 50, "tokensOut": 10,
+                            "tokensCacheRead": 0, "costMicroUsd": 100}
+
+
+async def test_background_memory_usage_is_added_to_the_conversation(redis: FakeAsyncRedis,
+                                                                    api: Api) -> None:
+    class Memory:
+        async def write(self, *_: Any) -> None:
+            usage.record("memory_extract", "fast", usage.Counts(calls=1, input=7, output=2))
+
+    agent = agent_with_transcripts(redis, api, FakeLLM())
+    agent.memory = Memory()  # type: ignore[assignment]
+    await agent._write_memory("c1", ALICE, None, "I wear size M")
+    assert api.turns == [{"messages": [], "tokensIn": 7, "tokensOut": 2,
+                          "tokensCacheRead": 0, "costMicroUsd": 0}]
 
 
 async def test_a_failed_save_is_retried_with_the_next_turn(redis: FakeAsyncRedis,

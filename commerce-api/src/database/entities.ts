@@ -610,6 +610,14 @@ export class Conversation {
   @Column({ name: 'tokens_out', type: 'integer', default: 0 })
   tokensOut: number;
 
+  @Column({ name: 'tokens_cache_read', type: 'integer', default: 0 })
+  tokensCacheRead: number;
+
+  // Estimated model cost in millionths of a US dollar (agent-service MODEL_PRICES); integer like
+  // all money here. bigint comes back from pg as a string.
+  @Column({ name: 'cost_micro_usd', type: 'bigint', default: 0 })
+  costMicroUsd: string;
+
   @Column({ type: 'jsonb', default: () => "'[]'" })
   feedback: ConversationFeedback[];
 

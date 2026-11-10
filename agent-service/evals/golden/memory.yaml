@@ -3,6 +3,7 @@
 # opt the shopper in; `earlier` runs a previous conversation first. Conventions: ../README.md.
 
 - id: G-MEM-01
+  smoke: true
   scenario: A size the shopper asked to remember is used in a later conversation
   setup: {memory: {}}
   earlier: ["I wear size M in tops, please remember that."]

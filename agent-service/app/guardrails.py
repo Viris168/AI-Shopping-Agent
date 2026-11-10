@@ -13,10 +13,11 @@ from app.config import Settings
 log = logging.getLogger(__name__)
 
 _TAG = re.compile(r"<[^>]*>")
-# Tags only the service writes: button presses, tool output, the rolling summary, session state,
-# long-term memory.
+# Tags only the service writes: button presses, tool output, the per-call context and what it
+# holds (rolling summary, session state, long-term memory).
 _CONTROL_TAG = re.compile(
-    r"<(\s*/?\s*)(event|tool_result|conversation_summary|session_state|memory)\b", re.IGNORECASE
+    r"<(\s*/?\s*)(event|tool_result|context|conversation_summary|session_state|memory)\b",
+    re.IGNORECASE,
 )
 _MONEY_OR_PERCENT = re.compile(r"[$€£]\s?\d[\d,]*(?:\.\d+)?|\d+(?:\.\d+)?\s?%")
 

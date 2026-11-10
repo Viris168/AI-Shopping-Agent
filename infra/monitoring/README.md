@@ -48,13 +48,20 @@ are text in development and JSON (with `request_id` and `trace_id`) when `APP_EN
 | `agent_turn_errors_total` | `route`, `error_type` | `model_unavailable` (fallback card), `timeout`, `internal` |
 | `agent_streams_active` | `route` | Open SSE streams |
 | `agent_model_calls_total`, `agent_model_duration_seconds` | `gen_ai_operation_name`, `gen_ai_request_model`, `status`, `error_type` | One model API call (after the SDK's 2 retries) |
-| `agent_model_tokens_total` | `gen_ai_token_type` (input, output, cache_read) | Tokens |
+| `agent_model_tokens_total` | `gen_ai_token_type` (input, output, cache_read), `gen_ai_operation_name`, `gen_ai_request_model`, `agent_purpose` (chat, summarise, memory_extract, eval_grade, complete) | Tokens |
+| `agent_model_cost_USD_total` | `gen_ai_operation_name`, `gen_ai_request_model`, `agent_purpose` | Estimated cost from `MODEL_PRICES`; models without a price are left out |
 | `agent_tool_calls_total`, `agent_tool_duration_seconds` | `tool`, `status` | `ok`; `rejected` (login, not found, bad input: expected); `error` (store 5xx/429/unreachable) |
 | `agent_conversations_total` | — | New conversations |
 | `agent_handoffs_total` | — | Support tickets created |
 | `agent_actions_total` | `tool`, `result` | Confirm cards: requested, confirmed, failed, cancelled, expired |
 | `agent_feedback_total` | `rating` | Thumbs up/down |
 | `agent_disabled_rejections_total` | — | Requests refused by the kill switch |
+
+**Cost row** (dashboard): spend, cost per conversation and cache hit ratio for the selected
+range, then cost per hour by purpose and by model, tokens by purpose, and the cache hit ratio over
+time. Cost is an estimate from agent-service's `MODEL_PRICES`; models without a price are left out
+of cost but still count in tokens. Eval runs usually don't export metrics: their usage is in the
+eval report instead (`evals/README.md`).
 
 Traces: one root span per turn (`turn chat`, `turn confirm`) with `conversation.id`, then a span
 per model call (`chat <model>`, token counts), per tool (`tool <name>`) and per commerce-api

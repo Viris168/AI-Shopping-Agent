@@ -76,6 +76,19 @@ export class RecordTurnDto {
   @Min(0)
   @Max(10_000_000)
   tokensOut?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100_000_000)
+  tokensCacheRead?: number;
+
+  // Estimated model cost of this turn in millionths of a US dollar.
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1_000_000_000)
+  costMicroUsd?: number;
 }
 
 export class FeedbackDto {
@@ -117,8 +130,9 @@ export class ConversationsService {
   async recordTurn(id: string, userId: string | null, dto: RecordTurnDto) {
     const rows: { id: string }[] = await this.db.query(
       `INSERT INTO "conversations" AS c
-         ("id", "user_id", "messages", "summary", "outcome", "tokens_in", "tokens_out")
-       VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)
+         ("id", "user_id", "messages", "summary", "outcome", "tokens_in", "tokens_out",
+          "tokens_cache_read", "cost_micro_usd")
+       VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9)
        ON CONFLICT ("id") DO UPDATE SET
          "user_id" = EXCLUDED."user_id",
          "messages" = c."messages" || EXCLUDED."messages",
@@ -126,6 +140,8 @@ export class ConversationsService {
          "outcome" = COALESCE(EXCLUDED."outcome", c."outcome"),
          "tokens_in" = c."tokens_in" + EXCLUDED."tokens_in",
          "tokens_out" = c."tokens_out" + EXCLUDED."tokens_out",
+         "tokens_cache_read" = c."tokens_cache_read" + EXCLUDED."tokens_cache_read",
+         "cost_micro_usd" = c."cost_micro_usd" + EXCLUDED."cost_micro_usd",
          "updated_at" = now()
        WHERE c."user_id" IS NULL OR c."user_id" = EXCLUDED."user_id"
        RETURNING "id"`,
@@ -137,6 +153,8 @@ export class ConversationsService {
         dto.outcome ?? null,
         dto.tokensIn ?? 0,
         dto.tokensOut ?? 0,
+        dto.tokensCacheRead ?? 0,
+        dto.costMicroUsd ?? 0,
       ],
     );
     if (rows.length === 0)

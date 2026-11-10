@@ -1,6 +1,7 @@
 # Golden · Replies in the shopper's language, with the same facts. Conventions: ../README.md.
 
 - id: G-LANG-01
+  smoke: true
   scenario: Vietnamese order status (AGENT.md example)
   turns: ["Đơn hàng ORD-1002 của tôi ở đâu?"]
   expect:

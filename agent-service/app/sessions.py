@@ -18,6 +18,7 @@ from app.commerce_client import ApiError, CommerceClient, seg
 from app.guardrails import defang_control_tags
 from app.masking import mask, mask_text
 from app.tools.registry import ToolOutput
+from app.usage import Counts
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ _TOPIC_CHARS = 150
 
 @dataclass
 class SessionState:
-    """What the conversation is about, kept outside the message window so summarising can't
+    """What the conversation is about, kept outside the message history so summarising can't
     lose it (PLAN-18 step 2). Written by code from successful tool calls, never by the model.
     IDs and names only: prices, stock and status always come from a fresh tool call (rule 5)."""
 
@@ -52,7 +53,7 @@ class SessionState:
     # {"actionId", "tool", "summary", "expiresAt"} while a Confirm card is open
     pending_action: dict[str, Any] | None = None
     # The shopper's first message (masked, short): what the conversation was about. Long-term
-    # memory only; not shown in the prompt (the message itself is in the window or summary).
+    # memory only; not shown in the prompt (the message itself is in the history or summary).
     topic: str | None = None
     # Confirmed actions, e.g. "create_return: Return 1 item from ORD-1001 (Too small)"
     completed: list[str] = field(default_factory=list)
@@ -173,10 +174,6 @@ class Session:
                 return i
         return len(self.messages)
 
-    def window(self, size: int) -> list[Message]:
-        cut = self._safe_cut(len(self.messages) - size) if len(self.messages) > size else 0
-        return self.messages[cut:]
-
 
 Summarise = Callable[[str | None, list[Message]], Awaitable[str]]
 
@@ -208,7 +205,11 @@ class SessionStore:
 
     async def maybe_summarise(self, session: Session, summarise: Summarise) -> None:
         """Past 2× the window, fold the oldest half into the rolling summary. `state` is kept
-        as is, so the order and products in focus survive however the summary is worded."""
+        as is, so the order and products in focus survive however the summary is worded.
+
+        The model gets every message since the last fold (PLAN-19 M4): the history then only
+        changes at its start here, once per fold, so the provider's prefix cache can reuse it
+        on every other call. A window sliding every turn would make the whole history a miss."""
         if len(session.messages) <= self._window * 2:
             return
         cut = session._safe_cut(len(session.messages) // 2)
@@ -222,6 +223,12 @@ class SessionStore:
 TRANSCRIPT_BATCH = 100  # commerce-api's per-request cap
 
 
+def usage_body(spent: Counts) -> dict[str, int]:
+    """commerce-api's usage fields; cost as integer millionths of a dollar, like all money."""
+    return {"tokensIn": spent.input, "tokensOut": spent.output,
+            "tokensCacheRead": spent.cache_read, "costMicroUsd": round(spent.cost_usd * 1e6)}
+
+
 class TranscriptStore:
     """Appends each turn's new messages, masked, to commerce-api. Best effort: a failed save
     is logged and the messages go with the next turn; it never fails the shopper's turn."""
@@ -229,10 +236,9 @@ class TranscriptStore:
     def __init__(self, client: CommerceClient) -> None:
         self._client = client
 
-    async def record(self, session: Session, auth: Auth, usage: dict[str, int]) -> None:
+    async def record(self, session: Session, auth: Auth, spent: Counts | None) -> None:
         new = session.messages[session.persisted:]
-        tokens = {"tokensIn": usage.get("input_tokens", 0),
-                  "tokensOut": usage.get("output_tokens", 0)}
+        tokens = usage_body(spent) if spent else {}
         for start in range(0, max(len(new), 1), TRANSCRIPT_BATCH):
             body: dict[str, Any] = {"messages": mask(new[start:start + TRANSCRIPT_BATCH])}
             if start == 0:
@@ -250,6 +256,19 @@ class TranscriptStore:
                 log.warning("transcript_save_failed %s: %s", session.id, exc.status)
                 return
             session.persisted += len(body["messages"])
+
+    async def add_usage(self, conversation_id: str, auth: Auth, spent: Counts) -> None:
+        """Usage from calls made after the turn was recorded (summary, memory extraction).
+        Best effort, like `record`; it may run in the background, so it never raises."""
+        try:
+            await self._client.request(
+                "POST", f"conversations/{seg(conversation_id)}/turns", auth=auth,
+                conversation_id=conversation_id, json={"messages": [], **usage_body(spent)},
+            )
+        except ApiError as exc:
+            log.warning("usage_save_failed %s: %s", conversation_id, exc.status)
+        except Exception:
+            log.exception("usage_save_failed %s", conversation_id)
 
     async def feedback(self, conversation_id: str, message_id: str, rating: str,
                        comment: str | None, auth: Auth) -> None:

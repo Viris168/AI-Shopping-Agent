@@ -275,7 +275,7 @@ class Memory:
             if user_msg and might_state_preference(user_msg):
                 raw = await llm.complete_fast(
                     FACTS_PROMPT.format(message=defang_control_tags(mask_text(user_msg))),
-                    max_tokens=200,
+                    max_tokens=200, purpose="memory_extract",
                 )
                 for fact in parse_facts(raw):
                     await self._client.request(

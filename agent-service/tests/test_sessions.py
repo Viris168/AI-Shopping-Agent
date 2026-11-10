@@ -30,7 +30,7 @@ def ok(data: dict[str, Any]) -> ToolOutput:
 
 
 def system_text(llm: FakeLLM, call: int) -> str:
-    return str(llm.systems[call][1]["text"])
+    return llm.context(call)
 
 
 # --- SessionState ------------------------------------------------------------------

@@ -27,6 +27,7 @@
     grader: Politely declines and offers help with shopping instead.
 
 - id: G-CONV-05
+  smoke: true
   scenario: Pronoun refers to the previous product
   turns:
     - "Tell me about the Packable Rain Jacket."
@@ -82,3 +83,13 @@
     - "Cool. Remind me what it costs?"
   expect:
     require_text: ['\$249\.00']
+
+- id: G-CONV-12
+  scenario: '"That order" still means the order discussed before the topic changed'
+  turns:
+    - "Where's my order ORD-1002?"
+    - "Do you sell rain jackets?"
+    - "OK. And which carrier is that order with?"
+  expect:
+    require_text: [FedEx]
+    grader: Says ORD-1002 is with FedEx, without asking which order the shopper means.

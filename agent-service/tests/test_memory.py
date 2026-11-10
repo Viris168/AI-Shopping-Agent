@@ -324,24 +324,24 @@ async def test_loaded_memory_reaches_every_model_call(redis: FakeAsyncRedis) -> 
     session, _ = await turn(agent, "shoes please")
     await turn(agent, "yes", session=session)
 
-    for system in llm.systems:
-        assert system[0]["text"] == llm.systems[0][0]["text"]  # static, cached block unchanged
-        assert f"- [{FACT_ID}] size: M" in system[1]["text"]
+    for call, system in enumerate(llm.systems):
+        assert system == llm.systems[0]  # system prompt unchanged → history stays cached
+        assert f"- [{FACT_ID}] size: M" in llm.context(call)
     assert api.calls.count("GET memory") == 1
 
 
 async def test_no_memory_block_when_off_or_not_opted_in(redis: FakeAsyncRedis) -> None:
     llm = FakeLLM(message(text("Hi")))
     await turn(with_memory(redis, memory_api(OFF), llm), "hello")
-    assert "<memory>" not in llm.systems[0][1]["text"]
+    assert "<memory>" not in llm.context(0)
 
 
 async def test_forgotten_fact_leaves_the_prompt_at_once(redis: FakeAsyncRedis) -> None:
     api = memory_api(routes={f"DELETE memory/facts/{FACT_ID}": lambda _: httpx.Response(204)})
     llm = FakeLLM(message(tool_use("forget_memory", {"factId": FACT_ID})), message(text("Done.")))
     await turn(with_memory(redis, api, llm), "forget my size")
-    assert FACT_ID in llm.systems[0][1]["text"]
-    assert FACT_ID not in llm.systems[1][1]["text"]
+    assert FACT_ID in llm.context(0)
+    assert FACT_ID not in llm.context(1)
 
 
 async def test_shopper_cannot_forge_memory(redis: FakeAsyncRedis) -> None:
