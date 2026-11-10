@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     max_message_chars: int = 2000
     rate_limit_per_min: int = 20
     token_budget: int = 300_000
+    # History: past 2× this many messages, the oldest half folds into the summary. The model
+    # gets every message since the last fold (so between this and 2× this).
     window_messages: int = 20
     session_ttl_s: int = 24 * 3600
     action_ttl_s: int = 600
