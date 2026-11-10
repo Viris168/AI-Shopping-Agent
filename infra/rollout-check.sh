@@ -13,6 +13,10 @@
 #   PROM_URL=https://prometheus-prod-<n>.grafana.net/api/prom  PROM_AUTH=<instanceId>:<token>
 #
 # Optional: TRANSCRIPTS (default 20), PROM_JOB (default production/agent-service).
+#
+# Model-routing steps (PLAN-19 M6): ROUTING=1 also compares the routed and control groups from
+# the conversations table (cost, thumbs-down, handoffs; needs >= ROUTING_MIN routed conversations,
+# default 200) and samples routed transcripts only. It never changes flag:routing_percent.
 # Exit 0 = gate passed, 1 = a check failed, 2 = tool error rate not checked (no PROM_URL).
 # It never changes the rollout flag; that stays a manual `SET flag:rollout_percent`.
 set -euo pipefail
@@ -23,6 +27,9 @@ days=${2:-2}
 sample=${TRANSCRIPTS:-20}
 [[ $sample =~ ^[1-9][0-9]{0,2}$ ]] || { echo "TRANSCRIPTS must be 1-999" >&2; exit 1; }
 job=${PROM_JOB:-production/agent-service}
+routing=${ROUTING:-0}
+routing_min=${ROUTING_MIN:-200}
+[[ $routing_min =~ ^[1-9][0-9]{0,5}$ ]] || { echo "ROUTING_MIN must be 1-999999" >&2; exit 1; }
 for cmd in ssh jq; do
   command -v "$cmd" >/dev/null || { echo "needs $cmd" >&2; exit 1; }
 done
@@ -101,6 +108,42 @@ check "no duplicate returns" "
   SELECT o.order_number || '  x' || count(*) FROM return_requests r JOIN orders o ON o.id = r.order_id
    WHERE r.created_at > $since GROUP BY o.order_number, r.items HAVING count(*) > 1;"
 
+# --- Model routing: routed vs control ------------------------------------------------------
+# Gate (infra/monitoring/README.md#model-routing-rollout): routed cost per conversation at least
+# 15% below control; thumbs-down and handoff rates no worse than 1.5x control AND +2 points.
+if [ "$routing" = 1 ]; then
+  groups=$(sql <<SQL
+SELECT routing_group, count(*),
+       avg((coalesce(outcome, '') = 'handoff')::int)::numeric(6,4),
+       avg((EXISTS (SELECT 1 FROM jsonb_array_elements(feedback) f
+                     WHERE f->>'rating' = 'down'))::int)::numeric(6,4),
+       avg(cost_micro_usd)::bigint
+  FROM conversations WHERE created_at > $since AND routing_group IN ('routed', 'control')
+ GROUP BY routing_group;
+SQL
+)
+  echo "     group    conversations  handoff  thumbs-down  cost/conv (micro-USD)"
+  tr '|' ' ' <<<"$groups" | awk '{ printf "     %-8s %13s  %7s  %11s  %s\n", $1, $2, $3, $4, $5 }'
+  verdict=$(tr '|' ' ' <<<"$groups" | awk -v min="$routing_min" '
+    { n[$1] = $2; h[$1] = $3; d[$1] = $4; c[$1] = $5 }
+    function worse(r, k) { return r > k * 1.5 && r > k + 0.02 }
+    END {
+      if (n["routed"] < min || n["control"] < 1) { print "skip"; exit }
+      if (c["routed"] > 0.85 * c["control"]) print "FAIL routed cost/conversation not 15% below control"
+      if (worse(d["routed"], d["control"])) print "FAIL routed thumbs-down rate worse than control"
+      if (worse(h["routed"], h["control"])) print "FAIL routed handoff rate worse than control"
+    }')
+  if [ "$verdict" = skip ]; then
+    echo "skip routing comparison: fewer than $routing_min routed conversations (or no control)"
+    skipped=1
+  elif [ -n "$verdict" ]; then
+    echo "$verdict"
+    fail=1
+  else
+    echo "ok   routing: routed cheaper, quality within the gate"
+  fi
+fi
+
 # --- Transcripts to review -----------------------------------------------------------------
 # Thumbs-down first, then handoffs, then random. Already masked by agent-service, but still
 # shopper conversations: kept in a private temp dir, outside the repo.
@@ -112,6 +155,7 @@ SELECT row_to_json(t) FROM (
   SELECT id, created_at, outcome, summary, feedback, messages,
          EXISTS (SELECT 1 FROM jsonb_array_elements(feedback) f WHERE f->>'rating' = 'down') AS down
     FROM conversations WHERE created_at > $since
+     AND ($routing <> 1 OR routing_group = 'routed')
    ORDER BY down DESC, (outcome = 'handoff') DESC NULLS LAST, random()
    LIMIT $sample) t;
 SQL
@@ -123,6 +167,10 @@ jq -r '[.id[0:8], (.outcome // "-"), (if .down then "thumbs-down" else "" end),
 echo "     Add failures to agent-service/evals/golden/ (seed data, not the shopper's),"
 echo "     then delete the dir: rm -r $out"
 
+if [ $fail -ne 0 ] && [ "$routing" = 1 ]; then
+  echo "Gate FAILED: SET flag:routing_percent 0, or SET flag:model_routing 0 (infra/monitoring/README.md#model-routing-rollout)"
+  exit 1
+fi
 if [ $fail -ne 0 ]; then
   echo "Gate FAILED: roll back with DEL flag:rollout_percent (infra/monitoring/README.md#rollout)"
   exit 1

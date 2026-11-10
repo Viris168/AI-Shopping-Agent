@@ -18,7 +18,7 @@ manual run   ─► deploy-production.yml
 | `deploy.sh` | Runs on the VM: pull → migrate → embed → `up --wait` |
 | `smoke.sh` | Runs from the runner against the public URLs |
 | `setup-github-env.sh` | Creates a GitHub Environment and fills in its secrets and variables |
-| `rollout-check.sh` | Exit gate for a rollout step: tool errors, cross-user rows, duplicate returns, transcript sample (read-only) |
+| `rollout-check.sh` | Exit gate for a rollout step: tool errors, cross-user rows, duplicate returns, transcript sample; `ROUTING=1` compares the model-routing groups (read-only) |
 | `monitoring/` | Grafana dashboard, alert rules, kill switch and rollout runbooks |
 
 ## Secrets

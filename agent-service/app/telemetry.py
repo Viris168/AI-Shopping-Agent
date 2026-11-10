@@ -56,9 +56,28 @@ conversations = _meter.create_counter("agent.conversations", description="New co
 handoffs = _meter.create_counter("agent.handoffs", description="Support tickets created")
 actions = _meter.create_counter("agent.actions", description="Confirm-first actions by result")
 feedback = _meter.create_counter("agent.feedback", description="Thumbs up/down")
+routes = _meter.create_counter(
+    "agent.routes", description="Model routing decisions: a turn's start, and moves to main"
+)
 kill_switch_rejections = _meter.create_counter(
     "agent.disabled.rejections", description="Requests refused by the kill switch"
 )
+
+
+# --- model routing group -----------------------------------------------------------
+
+# The conversation's routing group (app/routing.py) for this request, so the rollout can compare
+# cost and quality between groups. "off" when routing isn't on.
+_routing_group: ContextVar[str] = ContextVar("routing_group", default="off")
+
+
+def set_routing_group(group: str) -> None:
+    _routing_group.set(group)
+
+
+def grouped(attrs: dict[str, Any] | None = None) -> dict[str, Any]:
+    """`attrs` plus this request's `agent.routing_group`."""
+    return {**(attrs or {}), "agent.routing_group": _routing_group.get()}
 
 
 # --- request IDs -----------------------------------------------------------------

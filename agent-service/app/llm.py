@@ -69,8 +69,8 @@ def _record_usage(
         span.set_attribute("agent.cost_usd", cost)
     if resp.stop_reason:
         span.set_attribute("gen_ai.response.finish_reasons", [resp.stop_reason])
-    attrs = {"gen_ai.operation.name": operation, "gen_ai.request.model": resp.model,
-             "agent.purpose": purpose}
+    attrs = telemetry.grouped({"gen_ai.operation.name": operation,
+                               "gen_ai.request.model": resp.model, "agent.purpose": purpose})
     for kind, n in (("input", u.input_tokens), ("output", u.output_tokens),
                     ("cache_read", cache_read)):
         telemetry.model_tokens.add(n, {**attrs, "gen_ai.token.type": kind})

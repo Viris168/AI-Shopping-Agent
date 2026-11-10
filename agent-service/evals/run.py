@@ -178,7 +178,9 @@ async def main(argv: list[str] | None = None) -> int:
 
     settings = get_settings()
     if args.routing:
-        settings = settings.model_copy(update={"model_routing_enabled": True})
+        settings = settings.model_copy(
+            update={"model_routing_enabled": True, "routing_percent": 100}
+        )
     if args.max_cost is not None and not settings.model_prices:
         print("Warning: MODEL_PRICES is not set, so --max-cost can't stop the run",
               file=sys.stderr)

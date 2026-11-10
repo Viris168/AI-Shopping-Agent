@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # Model routing (app/routing.py, PLAN-19 M5): simple turns on MODEL_FAST. A prompt-path
     # change: switch on after both suites pass with it. Redis flag:model_routing can turn it off.
     model_routing_enabled: bool = False
+    # Share of new conversations routed (M6 rollout); the rest are the control group. Redis
+    # flag:routing_percent overrides it. Only with MODEL_ROUTING_ENABLED.
+    routing_percent: int = Field(0, ge=0, le=100)
 
     store_name: str = "our store"
     storefront_url: str = "http://localhost:8080"

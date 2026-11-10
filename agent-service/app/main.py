@@ -164,7 +164,8 @@ async def chat(
     await _rate_limit(request, auth)
     session = await agent.sessions.load(body.conversationId, auth)
     if not session.messages:
-        telemetry.conversations.add(1)
+        group = await agent.routing_group(session)  # assigned once, kept in the session
+        telemetry.conversations.add(1, {"agent.routing_group": group})
 
     async def run(emit: Emit) -> None:
         message_id = f"{session.id}:{len(session.messages)}"
@@ -215,7 +216,9 @@ async def feedback(
             raise HTTPException(404, "We couldn't find that conversation.") from exc
         log.warning("feedback_save_failed %s: %s", body.conversationId, exc.status)
         raise HTTPException(503, "Feedback can't be saved right now.") from exc
-    telemetry.feedback.add(1, {"rating": body.rating})
+    session = await agent.sessions.get(body.conversationId)
+    group = session.routing_group if session and session.routing_group else "off"
+    telemetry.feedback.add(1, {"rating": body.rating, "agent.routing_group": group})
     return Response(status_code=204)
 
 

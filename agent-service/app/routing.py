@@ -13,9 +13,15 @@ model writes the reply: order and cart records carry free text (item names, carr
 where planted instructions can sit, and on the red team the fast model repeated them to warn the
 shopper in about 1 run in 3 (R-INJ-05/06/08), against the rule not to repeat them at all.
 
-Off unless MODEL_ROUTING_ENABLED; Redis `flag:model_routing 0` turns it off at runtime.
+Rollout (PLAN-19 M6): with MODEL_ROUTING_ENABLED, each conversation joins a group once, from a
+hash of its ID: `routed` if its bucket (0–99) is below ROUTING_PERCENT (Redis
+`flag:routing_percent` overrides), else `control` (always the main model). The group is kept in
+the session, so moving the percentage never switches an open conversation's model, and metrics
+carry it (`agent.routing_group`) so the two groups can be compared. Redis `flag:model_routing 0`
+puts every turn on the main model at once ("off"), whatever the group.
 """
 
+import hashlib
 import logging
 import re
 from typing import Literal
@@ -29,7 +35,9 @@ from app.sessions import Session
 log = logging.getLogger(__name__)
 
 FLAG_ROUTING = "flag:model_routing"
+FLAG_PERCENT = "flag:routing_percent"
 Tier = Literal["fast", "main"]
+Group = Literal["routed", "control", "off"]
 
 # Confirm-first, money, or changes to what the assistant remembers.
 MAIN_ONLY_TOOLS = frozenset({
@@ -51,7 +59,7 @@ _SENSITIVE = re.compile(
 # Their results hold order or cart free text: the main model writes the reply after them.
 MAIN_AFTER_TOOLS = frozenset({
     "list_orders", "get_order", "view_cart", "add_to_cart", "update_cart_item",
-    "remove_cart_item",
+    "remove_cart_item", "get_product",
 })
 
 # Playbook intents that end in a confirm-first tool.
@@ -76,20 +84,35 @@ def route(message: str | None, session: Session) -> tuple[Tier, str]:
     return "fast", "simple"
 
 
+def bucket(conversation_id: str) -> int:
+    """0–99, fixed per conversation."""
+    return int(hashlib.sha256(conversation_id.encode()).hexdigest(), 16) % 100
+
+
 class Router:
     def __init__(self, settings: Settings, redis: Redis | None) -> None:
         self._settings = settings
         self._redis = redis
 
-    async def enabled(self) -> bool:
-        """MODEL_ROUTING_ENABLED, unless Redis `flag:model_routing 0` turns it off everywhere."""
+    async def group(self, session: Session) -> Group:
+        """This conversation's group, assigned on first use and then kept in the session."""
         if not self._settings.model_routing_enabled:
-            return False
-        if self._redis is None:
-            return True
-        try:
-            raw = await self._redis.get(FLAG_ROUTING)
-        except Exception:
-            log.warning("routing flag unreadable from redis; using MODEL_ROUTING_ENABLED")
-            return True
-        return not (isinstance(raw, str) and raw.strip().lower() in ("0", "false", "off"))
+            return "off"
+        raw_flag: object = None
+        raw_percent: object = None
+        if self._redis is not None:
+            try:
+                # decode_responses=True (main.py), so values are str.
+                raw_flag, raw_percent = await self._redis.mget(FLAG_ROUTING, FLAG_PERCENT)
+            except Exception:
+                log.warning("routing flags unreadable from redis; using the env settings")
+        if isinstance(raw_flag, str) and raw_flag.strip().lower() in ("0", "false", "off"):
+            return "off"
+        if session.routing_group in ("routed", "control"):
+            return session.routing_group  # type: ignore[return-value]
+        percent = self._settings.routing_percent
+        if isinstance(raw_percent, str) and raw_percent.strip().isdigit():
+            percent = min(int(raw_percent), 100)
+        group: Group = "routed" if bucket(session.id) < percent else "control"
+        session.routing_group = group
+        return group

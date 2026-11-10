@@ -211,7 +211,7 @@ class Agent:
         # The latest shopper message (or event) carries the per-call context; see with_context.
         anchor = max(i for i, m in enumerate(session.messages) if m["role"] == "user")
         tier: routing.Tier = "main"
-        if self.router is not None and await self.router.enabled():
+        if await self.routing_group(session) == "routed":
             tier, reason = routing.route(user_msg, session)
             self._note_route(session, tier, reason)
         tool_errors = 0
@@ -318,10 +318,20 @@ class Agent:
         if self.memory is not None and session.memory_enabled and (episode or user_msg):
             self._spawn(self._write_memory(session.id, auth, episode, user_msg))
 
+    async def routing_group(self, session: Session) -> routing.Group:
+        """The conversation's rollout group (app/routing.py); also labels this request's
+        metrics with it."""
+        group: routing.Group = (
+            await self.router.group(session) if self.router is not None else "off"
+        )
+        telemetry.set_routing_group(group)
+        return group
+
     def _note_route(self, session: Session, tier: routing.Tier, reason: str) -> None:
         if tier == "main":
             session.model_tier = "main"  # sticky: see app/routing.py
         telemetry.annotate(**{"agent.model_tier": tier, "agent.route_reason": reason})
+        telemetry.routes.add(1, {"agent.model_tier": tier, "agent.route_reason": reason})
         if self.on_route:
             self.on_route(tier, reason)
 
@@ -365,7 +375,7 @@ class Agent:
             "actionId": action.id, "tool": action.tool, "summary": action.summary,
             "expiresAt": action.expires_at,
         }
-        telemetry.actions.add(1, {"tool": tool.name, "result": "requested"})
+        telemetry.actions.add(1, telemetry.grouped({"tool": tool.name, "result": "requested"}))
         return ToolOutput({"status": "awaiting_user_confirmation"})
 
     async def confirm(self, action: PendingAction, auth: Auth, emit: Emit) -> None:
@@ -374,13 +384,17 @@ class Agent:
         if tool is None:
             raise RuntimeError(f"unknown action tool {action.tool}")
         telemetry.annotate(**{"conversation.id": action.conversation_id})
+        session = await self.sessions.get(action.conversation_id)
+        telemetry.set_routing_group(
+            session.routing_group or "off" if session is not None else "off"
+        )
         ctx = self._ctx(auth, action.conversation_id, action.idem_key)
         out = await run_tool(tool, action.args, ctx)
-        telemetry.actions.add(1, {
+        telemetry.actions.add(1, telemetry.grouped({
             "tool": action.tool, "result": "confirmed" if not out.is_error else "failed",
-        })
+        }))
         if action.tool == "create_support_ticket" and not out.is_error:
-            telemetry.handoffs.add(1)
+            telemetry.handoffs.add(1, telemetry.grouped())
         if out.card:
             emit("card", out.card)
             if action.tool == "create_support_ticket":
@@ -388,7 +402,6 @@ class Agent:
                     "ticketId": out.for_model.get("ticketId"),
                     "expectedResponse": out.for_model.get("expectedResponse"),
                 })
-        session = await self.sessions.get(action.conversation_id)
         if session is None or session.user_id != auth.user_id:
             emit("done", {})
             return
@@ -405,8 +418,10 @@ class Agent:
         await self.run_turn(session, None, auth, emit)
 
     async def cancel(self, action: PendingAction, auth: Auth) -> None:
-        telemetry.actions.add(1, {"tool": action.tool, "result": "cancelled"})
         session = await self.sessions.get(action.conversation_id)
+        group = session.routing_group if session and session.routing_group else "off"
+        telemetry.actions.add(1, {"tool": action.tool, "result": "cancelled",
+                                  "agent.routing_group": group})
         if session is not None:
             session.state.pending_action = None
             session.append_event(f"Shopper pressed Cancel for {action.tool}.")

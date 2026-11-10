@@ -130,6 +130,8 @@ class Session:
     episode_digest: str | None = None
     # Model routing (app/routing.py): "main" once a turn needed the main model; it stays there.
     model_tier: str | None = None
+    # Rollout group, fixed once assigned: "routed" or "control" (app/routing.py).
+    routing_group: str | None = None
 
     def forget_fact(self, fact_id: str) -> None:
         """Drop a fact the shopper just had forgotten from this conversation's copy."""
@@ -249,6 +251,8 @@ class TranscriptStore:
                     body["summary"] = mask_text(session.summary)[:4000]
                 if session.outcome:
                     body["outcome"] = session.outcome
+                if session.routing_group in ("routed", "control"):
+                    body["routingGroup"] = session.routing_group
             try:
                 await self._client.request(
                     "POST", f"conversations/{seg(session.id)}/turns", auth=auth,

@@ -257,6 +257,16 @@ async def test_each_turn_sends_only_new_masked_messages(redis: FakeAsyncRedis,
     assert all(r.headers["Authorization"] == "Bearer tok-alice" for r in api.requests)
 
 
+async def test_turns_send_the_routing_group_once_assigned(redis: FakeAsyncRedis,
+                                                         api: Api) -> None:
+    agent = agent_with_transcripts(redis, api, FakeLLM(message(text("Hi!")), message(text("Hi"))))
+    session, _ = await turn(agent, "hello")  # routing off: no group
+    assert "routingGroup" not in api.turns[-1]
+    session.routing_group = "control"
+    await turn(agent, "again", session=session)
+    assert api.turns[-1]["routingGroup"] == "control"
+
+
 def test_usage_body_sends_cost_as_integer_micro_dollars() -> None:
     spent = usage.Counts(calls=2, input=10, output=3, cache_read=40, cost_usd=0.0012346)
     assert usage_body(spent) == {"tokensIn": 10, "tokensOut": 3, "tokensCacheRead": 40,

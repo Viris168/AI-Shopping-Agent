@@ -362,6 +362,7 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `CACHE_ENABLED` | `true` | Redis cache for public tool results (Redis `flag:cache_enabled` can also turn it off) |
 | `PLAYBOOKS_ENABLED` | `false` | Task playbooks in the prompt (PLAN-18 M7); switch on after golden + red-team pass with it |
 | `MODEL_ROUTING_ENABLED` | `false` | Simple turns on `MODEL_FAST` (PLAN-19 M5, `app/routing.py`); switch on after both suites pass with `--routing`. Redis `flag:model_routing 0` turns it off at runtime |
+| `ROUTING_PERCENT` | `0` | Share of new conversations in the routed group when `MODEL_ROUTING_ENABLED` (M6 rollout; the rest are control). Redis `flag:routing_percent` overrides |
 | `MEMORY_ENABLED` | `false` | Long-term memory (PLAN-18); shoppers must also opt in. Redis `flag:memory_enabled 0` turns it off at runtime |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `_HEADERS` | — | Traces and metrics over OTLP/HTTP; empty → off |
 | `DEPLOY_ENV` | `staging` | Environment name in traces and metrics |

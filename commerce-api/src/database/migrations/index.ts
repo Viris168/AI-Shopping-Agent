@@ -9,6 +9,7 @@ import { Embeddings1794180000000 } from './1794180000000-Embeddings.js';
 import { TokenVersion1794190000000 } from './1794190000000-TokenVersion.js';
 import { AgentMemory1794200000000 } from './1794200000000-AgentMemory.js';
 import { ConversationCost1794210000000 } from './1794210000000-ConversationCost.js';
+import { ConversationRoutingGroup1794220000000 } from './1794220000000-ConversationRoutingGroup.js';
 
 export const MIGRATIONS = [
   Init1794128955639,
@@ -21,4 +22,5 @@ export const MIGRATIONS = [
   TokenVersion1794190000000,
   AgentMemory1794200000000,
   ConversationCost1794210000000,
+  ConversationRoutingGroup1794220000000,
 ];

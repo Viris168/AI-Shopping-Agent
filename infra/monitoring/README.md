@@ -101,7 +101,7 @@ cached. Hits and misses are in `agent_tool_cache_total` (`tool`, `result`).
 | Drop every cached result (e.g. after re-seeding or a price change) | `INCR cache:tool:gen` |
 | Off durably | `CACHE_ENABLED=false` and redeploy |
 
-Model routing (`MODEL_ROUTING_ENABLED`, PLAN-19 M5): `SET flag:model_routing 0` sends every turn to `MODEL_MAIN` at once (back on: `DEL flag:model_routing`). Cost and tokens by model are on the Cost row.
+Model routing (`MODEL_ROUTING_ENABLED`, PLAN-19 M5): `SET flag:model_routing 0` sends every turn to `MODEL_MAIN` at once (back on: `DEL flag:model_routing`). Cost and tokens by model are on the Cost row; routed vs control is on the Model routing rollout row.
 
 ## Rollout
 
@@ -124,7 +124,47 @@ no duplicate returns. It also downloads a sample of masked transcripts (thumbs-d
 first) to a private temp dir; add the failures to `agent-service/evals/golden/`. Exit 0 = passed,
 1 = failed (roll back), 2 = error rate not checked. It never changes the flag.
 
+## Model routing rollout
+
+PLAN-19 M6. With `MODEL_ROUTING_ENABLED=true`, each new conversation joins a group from a hash of
+its ID: `routed` (simple turns on `MODEL_FAST`, `app/routing.py`) if its bucket is below the
+routing percentage, otherwise `control` (always `MODEL_MAIN`). A conversation keeps its group, so
+moving the percentage only affects new ones. Metrics carry `agent_routing_group`, and the
+conversations table stores `routing_group`.
+
+| Step | Setting | Watch |
+|---|---|---|
+| Gate | both eval suites pass with `--routing` (AGENT.md §8) | before any traffic |
+| 0. Staging | `ROUTING_PERCENT=100` | staff dogfood |
+| 1. 10% | `SET flag:routing_percent 10` | ≥ 3 days and ≥ 200 routed conversations |
+| 2. 50% | `SET flag:routing_percent 50` | same |
+| 3. 100% | `SET flag:routing_percent 100` | one week, then `ROUTING_PERCENT=100` in the environment |
+
+`ROUTING_PERCENT` (default 0) sets the value after a deploy; the Redis flag wins while it exists.
+
+**Gate for the next step:** `ROUTING=1 infra/rollout-check.sh <user@vm> [days]` compares the
+groups from the database and passes only if routed cost per conversation is at least 15% below
+control, and routed thumbs-down and handoff rates are no worse than 1.5× control **and** +2
+points. With fewer than 200 routed conversations it skips the comparison (exit 2). It also samples
+routed transcripts (thumbs-down and handoffs first): read them, and add any wrong reply to the evals
+as a case that must pass with `--routing`. At these volumes a couple of points of thumbs-down is
+noise, so the transcript review counts as much as the rates.
+
+| Need | Command |
+|---|---|
+| Stop routing everywhere, now (open conversations too, from their next turn) | `SET flag:model_routing 0` (back: `DEL flag:model_routing`) |
+| No new conversations routed; open ones finish as they are | `SET flag:routing_percent 0` |
+| Off durably | `MODEL_ROUTING_ENABLED=false` and redeploy |
+
 ## Runbooks
+
+### Fast model failing
+
+`AgentFastModelFailing`: over 5% of turns that started on the fast model hit an error and were
+redone on the main model. Shoppers still get answers, but those turns pay for two calls. Check the
+provider's status page and the *Moves to the main model* panel; if it persists, `SET
+flag:model_routing 0` until the fast model recovers. If both models fail, AgentModelErrorSpike
+pages as well.
 
 ### Tool errors
 

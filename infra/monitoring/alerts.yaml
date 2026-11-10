@@ -66,3 +66,20 @@ groups:
         annotations:
           summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of turns time out or crash"
           runbook: infra/monitoring/README.md#failing-turns
+
+      - alert: AgentFastModelFailing
+        # Model routing (PLAN-19 M6): turns that started on the fast model but hit an error and
+        # were redone on the main model. Shoppers still get answers (the main model takes over),
+        # but those turns pay for two calls. AgentModelErrorSpike pages if both models fail.
+        expr: |
+          (
+            sum by (job) (rate(agent_routes_total{agent_route_reason="fast_error"}[15m]))
+              / sum by (job) (rate(agent_routes_total{agent_route_reason="simple"}[15m]))
+          ) > 0.05
+          and sum by (job) (increase(agent_routes_total{agent_route_reason="simple"}[15m])) >= 20
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of fast-model turns fail over to the main model"
+          description: The fast model is failing; routed turns cost double. Turn routing off until it recovers.
+          runbook: infra/monitoring/README.md#fast-model-failing

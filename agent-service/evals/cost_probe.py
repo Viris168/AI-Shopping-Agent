@@ -121,7 +121,9 @@ async def main(argv: list[str] | None = None) -> int:
 
     settings = get_settings()
     if args.routing:
-        settings = settings.model_copy(update={"model_routing_enabled": True})
+        settings = settings.model_copy(
+            update={"model_routing_enabled": True, "routing_percent": 100}
+        )
     await preflight(settings)
     logins = Logins(settings, os.environ.get("EVAL_PASSWORD", DEMO_PASSWORD))
     llm = ProbeLLM(settings)

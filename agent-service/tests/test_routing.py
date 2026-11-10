@@ -5,8 +5,9 @@ from collections.abc import AsyncIterator
 import pytest
 from fakeredis import FakeAsyncRedis
 
+from app import telemetry
 from app.loop import Agent
-from app.routing import FLAG_ROUTING, Router, route
+from app.routing import FLAG_PERCENT, FLAG_ROUTING, Router, bucket, route
 from app.sessions import Session
 from tests.fakes import FakeApi, FakeLLM, message, settings, text, tool_use
 from tests.test_loop import api, make_agent, turn  # noqa: F401 - api is a fixture
@@ -23,7 +24,7 @@ async def redis() -> AsyncIterator[FakeAsyncRedis]:
 
 
 def routed(redis: FakeAsyncRedis, api: FakeApi, llm: FakeLLM) -> Agent:  # noqa: F811
-    agent = make_agent(redis, api, llm, model_routing_enabled=True)
+    agent = make_agent(redis, api, llm, model_routing_enabled=True, routing_percent=100)
     agent.router = Router(agent.settings, redis)
     return agent
 
@@ -152,6 +153,48 @@ async def test_route_is_reported_for_evals(
     assert seen == [("fast", "simple")]
 
 
+# --- rollout groups (M6) --------------------------------------------------------------
+
 async def test_router_needs_the_config_switch(redis: FakeAsyncRedis) -> None:
-    assert not await Router(settings(model_routing_enabled=False), redis).enabled()
-    assert await Router(settings(model_routing_enabled=True), redis).enabled()
+    off = Router(settings(model_routing_enabled=False, routing_percent=100), redis)
+    assert await off.group(Session(id="s")) == "off"
+
+
+async def test_groups_split_by_percent_and_stay_fixed(redis: FakeAsyncRedis) -> None:
+    router = Router(settings(model_routing_enabled=True, routing_percent=30), redis)
+    sessions = [Session(id=f"conv-{i}") for i in range(1000)]
+    groups = [await router.group(s) for s in sessions]
+    assert 250 < groups.count("routed") < 350  # about 30%
+    for s, g in zip(sessions, groups, strict=True):
+        assert g == ("routed" if bucket(s.id) < 30 else "control")
+        assert s.routing_group == g
+
+    await redis.set(FLAG_PERCENT, "100")  # moving the rollout doesn't move open conversations
+    assert [await router.group(s) for s in sessions] == groups
+    assert await router.group(Session(id="new-conv")) == "routed"
+
+
+async def test_kill_switch_beats_the_group_without_losing_it(redis: FakeAsyncRedis) -> None:
+    router = Router(settings(model_routing_enabled=True, routing_percent=100), redis)
+    session = Session(id="s")
+    assert await router.group(session) == "routed"
+    await redis.set(FLAG_ROUTING, "0")
+    assert await router.group(session) == "off"
+    await redis.delete(FLAG_ROUTING)
+    assert await router.group(session) == "routed"
+
+
+async def test_control_group_always_uses_the_main_model(
+    redis: FakeAsyncRedis, api: FakeApi,  # noqa: F811
+) -> None:
+    llm = FakeLLM(message(text("Hi")))
+    agent = make_agent(redis, api, llm, model_routing_enabled=True, routing_percent=0)
+    agent.router = Router(agent.settings, redis)
+    session, _ = await turn(agent, "hi")
+    assert llm.fast == [False] and session.routing_group == "control"
+
+
+async def test_metrics_carry_the_group(redis: FakeAsyncRedis, api: FakeApi) -> None:  # noqa: F811
+    agent = routed(redis, api, FakeLLM(message(text("Hi"))))
+    await turn(agent, "hi")
+    assert telemetry.grouped({"a": 1}) == {"a": 1, "agent.routing_group": "routed"}
