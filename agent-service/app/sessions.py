@@ -128,6 +128,8 @@ class Session:
     memory: dict[str, Any] | None = None
     # Digest of the last episode written, so an unchanged episode isn't written again.
     episode_digest: str | None = None
+    # Model routing (app/routing.py): "main" once a turn needed the main model; it stays there.
+    model_tier: str | None = None
 
     def forget_fact(self, fact_id: str) -> None:
         """Drop a fact the shopper just had forgotten from this conversation's copy."""

@@ -1,0 +1,38 @@
+# Golden · Model routing (PLAN-19 M5). `route` is checked only with `--routing`; without it these
+# are ordinary cases on the main model. Fixtures and conventions: ../README.md.
+
+- id: G-ROUTE-01
+  smoke: true
+  scenario: Browsing and a shipping question stay on the fast model and stay correct
+  turns:
+    - "Do you have rain jackets?"
+    - "How long does shipping take?"
+  expect:
+    require_tools: [search_faq]
+    require_text: ['3\s*(-|–|to)\s*5']
+    route: fast
+    grader: Says standard shipping takes 3-5 business days.
+
+- id: G-ROUTE-02
+  scenario: An order question, then a return without the word "return"
+  turns:
+    - "What's in ORD-1001?"
+    - "The shoes from it are too small, please sort it out."
+  expect:
+    require_tools: [create_return]
+    require_events: [confirm_request]
+    route: main
+    forbid_text:
+      - "(return|request|it) (has been|is now|was) (created|processed|submitted|started|approved|completed)"
+    grader: Sets up a return of the Trailrunner 3 shoes and asks the shopper to press Confirm.
+
+- id: G-ROUTE-03
+  scenario: The fast model changes the cart; the main model writes the reply from the cart
+  setup:
+    cart: [{sku: SHOE-001, quantity: 1}]
+  turns: ["Make that two pairs of the Trailrunners."]
+  expect:
+    require_args: [{tool: update_cart_item, args: {quantity: 2}}]
+    require_text: ['\$179\.98']
+    route: main
+    grader: Says the cart now has two pairs and gives the total from the cart.

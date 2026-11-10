@@ -22,6 +22,7 @@ from app.llm import LLM
 from app.loop import Agent
 from app.masking import MaskingFilter
 from app.memory import Memory
+from app.routing import Router
 from app.sessions import SessionStore, TranscriptStore
 from app.sse import Emit, sse_response
 from app.tools.registry import build_registry
@@ -53,6 +54,7 @@ async def services(settings: Settings, redis: Redis) -> AsyncIterator[Agent]:
             transcripts=TranscriptStore(client),
             cache=ToolCache(redis, settings.cache_enabled),
             memory=Memory(settings, client, redis) if settings.memory_enabled else None,
+            router=Router(settings, redis) if settings.model_routing_enabled else None,
         )
     finally:
         await client.aclose()

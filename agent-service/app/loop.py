@@ -11,14 +11,14 @@ from typing import Any, cast
 
 from anthropic.types import MessageParam
 
-from app import playbooks, telemetry, usage
+from app import playbooks, routing, telemetry, usage
 from app.actions import ActionStore, PendingAction
 from app.auth import Auth
 from app.cache import ToolCache
 from app.commerce_client import CommerceClient
 from app.config import Settings
 from app.guardrails import TokenBudget, defang_control_tags, suspect_facts, wrap_tool_result
-from app.llm import LLM
+from app.llm import LLM, ModelUnavailable
 from app.memory import Memory, render_memory
 from app.sessions import Session, SessionStore, TranscriptStore
 from app.sse import Emit
@@ -35,6 +35,8 @@ BUDGET_TEXT = (
 DYNAMIC_MARKER = "<!-- dynamic"
 
 OnToolCall = Callable[[str, Any], None]
+# (tier, reason) whenever a turn's model is chosen or moves to the main model.
+OnRoute = Callable[[str, str], None]
 
 
 @cache
@@ -163,6 +165,8 @@ class Agent:
     on_tool_call: OnToolCall | None = None  # evals record calls here
     cache: ToolCache | None = None  # None in unit tests unless a test sets it
     memory: Memory | None = None  # long-term memory; None when MEMORY_ENABLED is off
+    router: routing.Router | None = None  # model routing; None → always the main model
+    on_route: OnRoute | None = None  # evals record the model tier per turn here
     # Work that runs after `done` (memory writes); drain() waits for it.
     _background: set[asyncio.Task[None]] = field(default_factory=set, repr=False)
 
@@ -206,6 +210,11 @@ class Agent:
         system = build_system(self.settings, auth)
         # The latest shopper message (or event) carries the per-call context; see with_context.
         anchor = max(i for i, m in enumerate(session.messages) if m["role"] == "user")
+        tier: routing.Tier = "main"
+        if self.router is not None and await self.router.enabled():
+            tier, reason = routing.route(user_msg, session)
+            self._note_route(session, tier, reason)
+        tool_errors = 0
         usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0}
         reply: list[str] = []
         tool_texts: list[str] = []
@@ -232,16 +241,40 @@ class Agent:
                 session.summary, session.state.render(), render_memory(session.memory),
                 playbooks.render(session.state) if self.settings.playbooks_enabled else "",
             )
-            resp = await self.llm.stream(
-                system=system,
-                messages=cast(list[MessageParam], with_context(session.messages, anchor, context)),
-                tools=tools,
-                on_text=on_text,
-            )
+            messages = cast(list[MessageParam], with_context(session.messages, anchor, context))
+            resp = None
+            if tier == "fast":
+                # Held back until we know the fast model's response stands; a dropped one is
+                # never seen. The same prompt and tools go to both models.
+                held: list[str] = []
+                escalate: str | None
+                try:
+                    resp = await self.llm.stream(system=system, messages=messages, tools=tools,
+                                                 on_text=held.append, fast=True)
+                except ModelUnavailable:
+                    escalate = "fast_error"
+                else:
+                    await self.budget.add(
+                        session.id, resp.usage.input_tokens + resp.usage.output_tokens
+                    )
+                    escalate = self._needs_main(resp)
+                if escalate:
+                    tier = "main"
+                    self._note_route(session, tier, escalate)
+                    resp = None
+                else:
+                    for chunk in held:
+                        on_text(chunk)
+            if resp is None:
+                resp = await self.llm.stream(
+                    system=system, messages=messages, tools=tools, on_text=on_text
+                )
+                await self.budget.add(
+                    session.id, resp.usage.input_tokens + resp.usage.output_tokens
+                )
             usage["input_tokens"] += resp.usage.input_tokens
             usage["output_tokens"] += resp.usage.output_tokens
             usage["cache_read_input_tokens"] += resp.usage.cache_read_input_tokens or 0
-            await self.budget.add(session.id, resp.usage.input_tokens + resp.usage.output_tokens)
 
             calls = [b for b in resp.content if b.type == "tool_use"]
             if calls and resp.stop_reason in ("max_tokens", "refusal"):
@@ -262,7 +295,14 @@ class Agent:
                 out = await self._handle_call(call.name, call.input, session, auth, emit)
                 tool_texts.append(wrap_tool_result(out.for_model))
                 results.append(tool_result(call.id, out))
+                tool_errors += out.is_error
             session.append_tool_results(results)
+            if tier == "fast" and any(c.name in routing.MAIN_AFTER_TOOLS for c in calls):
+                tier = "main"  # order/cart free text: see app/routing.py
+                self._note_route(session, tier, "order_cart_data")
+            elif tier == "fast" and tool_errors >= 2:
+                tier = "main"  # struggling: let the main model take over
+                self._note_route(session, tier, "tool_errors")
         else:
             emit("text_delta", {"text": FALLBACK_HANDOFF_TEXT})
 
@@ -277,6 +317,23 @@ class Agent:
         emit("done", {"usage": usage})
         if self.memory is not None and session.memory_enabled and (episode or user_msg):
             self._spawn(self._write_memory(session.id, auth, episode, user_msg))
+
+    def _note_route(self, session: Session, tier: routing.Tier, reason: str) -> None:
+        if tier == "main":
+            session.model_tier = "main"  # sticky: see app/routing.py
+        telemetry.annotate(**{"agent.model_tier": tier, "agent.route_reason": reason})
+        if self.on_route:
+            self.on_route(tier, reason)
+
+    @staticmethod
+    def _needs_main(resp: Any) -> str | None:
+        """Why the fast model's response must be redone by the main model, or None."""
+        if resp.stop_reason in ("max_tokens", "refusal"):
+            return f"fast_{resp.stop_reason}"
+        tools = [b.name for b in resp.content if b.type == "tool_use"]
+        if any(name in routing.MAIN_ONLY_TOOLS for name in tools):
+            return "main_only_tool"
+        return None
 
     async def _handle_call(
         self, name: str, raw: Any, session: Session, auth: Auth, emit: Emit

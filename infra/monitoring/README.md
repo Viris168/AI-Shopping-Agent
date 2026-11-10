@@ -101,6 +101,8 @@ cached. Hits and misses are in `agent_tool_cache_total` (`tool`, `result`).
 | Drop every cached result (e.g. after re-seeding or a price change) | `INCR cache:tool:gen` |
 | Off durably | `CACHE_ENABLED=false` and redeploy |
 
+Model routing (`MODEL_ROUTING_ENABLED`, PLAN-19 M5): `SET flag:model_routing 0` sends every turn to `MODEL_MAIN` at once (back on: `DEL flag:model_routing`). Cost and tokens by model are on the Cost row.
+
 ## Rollout
 
 `/v1/config` also carries `rolloutPercent`. Each browser picks a fixed bucket 0–99 and sees the

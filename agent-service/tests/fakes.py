@@ -9,6 +9,7 @@ from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
 
 from app import usage
 from app.config import Settings
+from app.llm import ModelUnavailable
 
 API_BASE = "http://api/api/v1/"
 
@@ -42,9 +43,17 @@ class FakeLLM:
         self.calls: list[list[Any]] = []
         self.systems: list[list[dict[str, Any]]] = []
         self.fast_prompts: list[str] = []
+        self.fast: list[bool] = []  # per chat call: True on MODEL_FAST (model routing)
+        self.tools: list[list[dict[str, Any]]] = []
+        self.fail_fast = False  # the fast model is down (ModelUnavailable)
 
     async def stream(self, *, system: list[dict[str, Any]], messages: list[Any],
-                     on_text: Callable[[str], None], **_: Any) -> Message:
+                     on_text: Callable[[str], None], tools: list[dict[str, Any]] | None = None,
+                     fast: bool = False, **_: Any) -> Message:
+        if fast and self.fail_fast:
+            raise ModelUnavailable("529")
+        self.fast.append(fast)
+        self.tools.append(tools or [])
         self.systems.append(system)
         self.calls.append(json.loads(json.dumps(messages)))
         resp = self.responses.pop(0)

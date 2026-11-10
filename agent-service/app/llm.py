@@ -105,15 +105,18 @@ class LLM:
         messages: list[MessageParam],
         tools: list[dict[str, Any]],
         on_text: Callable[[str], None],
+        fast: bool = False,
     ) -> Message:
-        """One main-model call, streaming text deltas. Returns the complete message.
+        """One chat call, streaming text deltas. Returns the complete message. `fast` uses
+        MODEL_FAST instead of MODEL_MAIN (model routing, app/routing.py).
 
         Caching: tools render before system, so the breakpoint on the static system
         block caches tools + static prompt. Put per-request text after it. DeepSeek ignores
         cache_control and caches prompt prefixes on its own.
         """
+        model = self._s.model_fast if fast else self._s.model_main
         kwargs: dict[str, Any] = {
-            "model": self._s.model_main,
+            "model": model,
             "max_tokens": self._s.max_output_tokens,
             "system": system,
             "messages": messages,
@@ -122,14 +125,13 @@ class LLM:
         }
         if self._s.claude_effort:
             kwargs["output_config"] = {"effort": self._s.claude_effort}
-        async with _observed("chat", self._s.model_main) as span:
+        async with _observed("chat", model) as span:
             async with self._client.messages.stream(**kwargs) as stream:
                 async for event in stream:
                     if event.type == "text":
                         on_text(event.text)
                 message = await stream.get_final_message()
-            _record_usage(span, "chat", "chat", message,
-                          self._price(self._s.model_main, message))
+            _record_usage(span, "chat", "chat", message, self._price(model, message))
             return message
 
     async def summarise(self, previous: str | None, messages: list[dict[str, Any]]) -> str:

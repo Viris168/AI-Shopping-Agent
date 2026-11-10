@@ -158,6 +158,7 @@ agent-service/
 │   ├── actions.py           # pending actions (confirm gate)
 │   ├── guardrails.py        # input limits, budget, output checks
 │   ├── commerce_client.py   # httpx client for commerce-api
+│   ├── routing.py           # model routing: fast model for simple turns (MODEL_ROUTING_ENABLED)
 │   ├── prompts/system.md
 │   ├── prompts/playbooks/   # returns, order_status, product_compare, handoff (PLAYBOOKS_ENABLED)
 │   └── tools/
@@ -345,7 +346,7 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `ANTHROPIC_API_KEY` | — | Model access (a DeepSeek key by default) |
 | `ANTHROPIC_BASE_URL` | `https://api.deepseek.com/anthropic` | DeepSeek's Anthropic-compatible API; empty → Anthropic |
 | `MODEL_MAIN` | `deepseek-v4-pro` | Agent loop |
-| `MODEL_FAST` | `deepseek-flash` | Summaries, ticket text, eval grading |
+| `MODEL_FAST` | `deepseek-flash` | Summaries, ticket text, eval grading; simple chat turns when routing is on |
 | `COMMERCE_API_URL` | `http://commerce-api:3000/api/v1` | Tool backend |
 | `SERVICE_TOKEN` | — | Sent as `X-Service-Token` |
 | `JWT_SECRET` / `JWT_ISSUER` | — / `commerce-api` | Verify shopper tokens |
@@ -360,6 +361,7 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `ROLLOUT_PERCENT` | `100` | Share of browsers that see the widget (Redis `flag:rollout_percent` overrides) |
 | `CACHE_ENABLED` | `true` | Redis cache for public tool results (Redis `flag:cache_enabled` can also turn it off) |
 | `PLAYBOOKS_ENABLED` | `false` | Task playbooks in the prompt (PLAN-18 M7); switch on after golden + red-team pass with it |
+| `MODEL_ROUTING_ENABLED` | `false` | Simple turns on `MODEL_FAST` (PLAN-19 M5, `app/routing.py`); switch on after both suites pass with `--routing`. Redis `flag:model_routing 0` turns it off at runtime |
 | `MEMORY_ENABLED` | `false` | Long-term memory (PLAN-18); shoppers must also opt in. Redis `flag:memory_enabled 0` turns it off at runtime |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `_HEADERS` | — | Traces and metrics over OTLP/HTTP; empty → off |
 | `DEPLOY_ENV` | `staging` | Environment name in traces and metrics |

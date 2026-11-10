@@ -12,6 +12,17 @@ System context: [ARCHITECTURE.md](./ARCHITECTURE.md). Product context: [PRD.md](
 
 Model IDs live in config (`MODEL_MAIN`, `MODEL_FAST`), never hard-coded. All SDK calls go through `app/llm.py` so the provider can be swapped in one place.
 
+### Model routing (`MODEL_ROUTING_ENABLED`, off by default; PLAN-19 M5)
+
+Simple turns run on `MODEL_FAST` (about 4× cheaper per token), the rest on `MODEL_MAIN` (`app/routing.py`):
+
+- **Code decides, before any model call.** A turn starts on the main model when the shopper's message matches the `returns` or `handoff` playbook patterns, mentions money (coupons, discounts, codes like `WELCOME10`, percentages, refunds, charges, disputes, fraud, staff/VIP), a safety or legal topic, frustration, or memory ("remember", "forget"), or when a Confirm card is open or the turn is a Confirm follow-up. Everything else starts on the fast model.
+- **Main-only tools:** `apply_coupon`, `create_return`, `create_support_ticket`, `forget_memory`. Both models see the same prompt and tool list (anything else would break the prefix cache). If the fast model calls a main-only tool, stops at `max_tokens`/refusal or errors, its response is dropped unseen and the same round goes to the main model. Two tool errors on the fast model also hand over.
+- **Order and cart data go to the main model.** After `list_orders`, `get_order`, `view_cart` or a cart change runs, the main model writes the reply. Those records hold free text (item names, carrier, tracking) where planted instructions can sit, and on the red team the fast model repeated such text to warn the shopper in about 1 run in 3 (R-INJ-05/06/08), which the prompt forbids. So the fast model keeps greetings, product search and details, FAQ and the checkout link.
+- **One way.** Provider caches are per model: a move to the main model re-sends the history uncached to it once, so the conversation then stays there (`Session.model_tier = "main"`). Switching back and forth would cost more than routing saves.
+- The fast model's text is held until its response is complete, so a dropped response is never shown; the main model streams as before.
+- Redis `flag:model_routing 0` turns it off at runtime. Spans carry `agent.model_tier` and `agent.route_reason`; cost by model is on the dashboard.
+
 ## 2. System prompt
 
 Stored in `app/prompts/system.md`. Variables in `{braces}` are filled per request; the static part comes first so it can be cached.
@@ -377,6 +388,7 @@ Full lists: `evals/golden/*.yaml` (~165 cases) and `evals/redteam/*.yaml` (~50),
 - Deterministic checks first: tools called, arguments, events emitted, required and forbidden text.
 - Haiku grader for free-text criteria (grounded, polite, concise), with a fixed rubric.
 - Pass bars: golden ≥ 90%, red team 100%. CI (`.github/workflows/agent-service.yml`) runs both suites when the prompt, tools, model config, evals or seed data change, and fails below the bar.
+- `MODEL_ROUTING_ENABLED` is off by default. Before switching it on, run both suites with `--routing` (the `route` expectation in `golden/routing.yaml` and `redteam/routing.yaml` is checked only then), plus `--file planted --file injection --file routing --repeat 3` on the red team.
 - `MEMORY_ENABLED` and `PLAYBOOKS_ENABLED` are off by default. Before switching either on, run both suites with it set (`MEMORY_ENABLED=true python -m evals.run --suite golden`, and the same for redteam and for `PLAYBOOKS_ENABLED`); both bars must hold. Memory cases switch memory on for themselves either way.
 
 ## 9. Changing the agent

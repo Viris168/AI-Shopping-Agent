@@ -24,7 +24,7 @@ from evals.harness import (
     reset_memory,
     run_case,
 )
-from evals.run import usage_line
+from evals.run import routing_line, usage_line
 from evals.select import TOOL_FILES, select
 from tests.fakes import FakeLLM, message
 
@@ -459,12 +459,29 @@ async def test_smoke_and_file_dont_combine() -> None:
         await run_module.main(["--suite", "golden", "--smoke", "--file", "faq"])
 
 
+def test_route_check_applies_only_with_routing_on() -> None:
+    c = case(route="fast")
+    assert deterministic_failures(c, [TurnRecord()]) == []  # routing off: nothing recorded
+    on_main = TurnRecord(routes=["fast:simple", "main:main_only_tool"])
+    assert deterministic_failures(c, [on_main]) == [
+        "last turn ended on the main model, expected fast (fast:simple → main:main_only_tool)"]
+    assert deterministic_failures(c, [TurnRecord(routes=["fast:simple"])]) == []
+
+
+def test_routing_line_counts_fast_turns_and_reasons() -> None:
+    results = [{"runs": [{"turns": [{"routes": ["fast:simple"]},
+                                    {"routes": ["fast:simple", "main:main_only_tool"]},
+                                    {"routes": ["main:sticky"]}]}]}]
+    assert routing_line(results) == (
+        "1/3 turns on the fast model (33%); to main: main_only_tool 1")
+
+
 def test_cost_probe_report_sums_per_call_usage(capsys: pytest.CaptureFixture[str]) -> None:
     log = [
         {"turn": 1, "round": 1, "messages": 1, "input": 3000, "cache_read": 0, "output": 40},
         {"turn": 1, "round": 2, "messages": 3, "input": 200, "cache_read": 3000, "output": 20},
     ]
-    summary = report(log, lambda i, c, o: (i + c + o) / 1e6)
+    summary = report(log, lambda i, c, o, _: (i + c + o) / 1e6)
     assert summary == {"calls": 2, "uncached_per_call": 1600, "cached_per_call": 1500,
                        "output_per_call": 30, "cache_hit_share": 0.484, "cost_usd": 0.00626}
     assert "cache hits 48% of input" in capsys.readouterr().out

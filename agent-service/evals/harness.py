@@ -243,8 +243,12 @@ async def run_case(
             def on_tool_call(name: str, args: Any) -> None:
                 emit.record.tools.append((name, args))
 
+            def on_route(tier: str, reason: str) -> None:
+                emit.record.routes.append(f"{tier}:{reason}")
+
             agent = dataclasses.replace(
-                base, client=client, on_tool_call=on_tool_call, llm=llm or base.llm,
+                base, client=client, on_tool_call=on_tool_call, on_route=on_route,
+                llm=llm or base.llm,
                 memory=Memory(settings, client, redis) if base.memory else None,
             )
             records: list[TurnRecord] = []

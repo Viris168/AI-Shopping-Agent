@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     # Task playbooks in the prompt (app/playbooks.py, PLAN-18 M7). A prompt change: switch on after
     # the golden and red-team suites pass with it.
     playbooks_enabled: bool = False
+    # Model routing (app/routing.py, PLAN-19 M5): simple turns on MODEL_FAST. A prompt-path
+    # change: switch on after both suites pass with it. Redis flag:model_routing can turn it off.
+    model_routing_enabled: bool = False
 
     store_name: str = "our store"
     storefront_url: str = "http://localhost:8080"
