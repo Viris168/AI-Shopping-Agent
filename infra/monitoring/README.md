@@ -57,6 +57,12 @@ are text in development and JSON (with `request_id` and `trace_id`) when `APP_EN
 | `agent_feedback_total` | `rating` | Thumbs up/down |
 | `agent_disabled_rejections_total` | — | Requests refused by the kill switch |
 
+**Cost row** (dashboard): spend, cost per conversation and cache hit ratio for the selected
+range, then cost per hour by purpose and by model, tokens by purpose, and the cache hit ratio over
+time. Cost is an estimate from agent-service's `MODEL_PRICES`; models without a price are left out
+of cost but still count in tokens. Eval runs usually don't export metrics: their usage is in the
+eval report instead (`evals/README.md`).
+
 Traces: one root span per turn (`turn chat`, `turn confirm`) with `conversation.id`, then a span
 per model call (`chat <model>`, token counts), per tool (`tool <name>`) and per commerce-api
 request (`commerce-api GET`). Spans carry no message text or personal data.

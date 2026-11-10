@@ -93,7 +93,10 @@ usage is stored as `tokens_cache_read` and `cost_micro_usd` (migration `Conversa
 summary and memory-extraction usage is sent after the turn as a messages-free update. Step 6 checked
 2026-11-10 with `python -m evals.cache_check`: DeepSeek's `input_tokens` excludes cache hits (same
 3217-token prompt: 3217 input, then 17 input + 3200 cache_read), so `estimate_cost` needs no change;
-the prefix cache hit 99.5% of the repeated prompt. Steps 7–8 to do.
+the prefix cache hit 99.5% of the repeated prompt. Step 7: a **Cost** row in
+`infra/monitoring/dashboard.json` (spend, cost/conversation, cache hit ratio, cost by purpose and
+model, tokens by purpose); every query checked against Prometheus 3.5's OTLP receiver, and the
+counter's Prometheus name is `agent_model_cost_USD_total`. Step 8 to do.
 
 - **Done when** every model call has a purpose, model, token counts and cost estimate; every eval
   report shows its cost; conversation records include every call; cache-hit accounting is checked
