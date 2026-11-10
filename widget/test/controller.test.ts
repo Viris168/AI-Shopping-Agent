@@ -69,6 +69,21 @@ describe('Controller', () => {
     expect(JSON.parse((fetch.mock.calls[1] as unknown as [string, RequestInit])[1].body as string).message).toBe('hello');
   });
 
+  it('explains spend limits without offering a retry', async () => {
+    mockFetch(
+      jsonResponse(429, { detail: "You've reached today's limit." }, { 'X-Limit': 'shopper_daily' }),
+      jsonResponse(429, { detail: 'Please sign in.' }, { 'X-Limit': 'guests_paused' }),
+    );
+    const { store, controller } = setup();
+    await controller.send('hello');
+    await controller.send('hello again');
+    const errors = store.state.messages.filter((m) => m.error).map((m) => m.error);
+    expect(errors).toEqual([
+      { message: "You've reached today's limit for the assistant. Please try again tomorrow, or contact us.", retryable: false },
+      { message: 'The assistant is busy right now. Please sign in to keep chatting.', retryable: false },
+    ]);
+  });
+
   it('flags a model outage and the kill switch for the fallback card', async () => {
     mockFetch(
       sseResponse(sse(['error', { code: 'model_unavailable', message: "The assistant can't answer right now.", retryable: true }], ['done', {}])),

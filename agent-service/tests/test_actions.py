@@ -15,6 +15,7 @@ from app.actions import ActionStore
 from app.auth import GUEST, Auth, get_auth
 from app.config import get_settings
 from app.guardrails import RateLimiter
+from app.limits import SpendLimits
 from app.loop import Agent
 from app.main import app
 from app.sessions import Session, TranscriptStore, usage_body
@@ -150,6 +151,7 @@ async def http_client(agent: Agent, redis: FakeAsyncRedis) -> httpx.AsyncClient:
     app.state.agent = agent
     app.state.redis = redis
     app.state.limiter = RateLimiter(redis, 1000)
+    app.state.limits = SpendLimits(agent.settings, redis)
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://agent")
 
 

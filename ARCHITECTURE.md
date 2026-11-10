@@ -355,7 +355,13 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `MAX_TOOL_ROUNDS` | `6` | Loop cap |
 | `TURN_TIMEOUT_S` | `45` | Turn cap |
 | `MAX_MESSAGE_CHARS` | `2000` | Input cap |
-| `RATE_LIMIT_PER_MIN` | `20` | Messages per user/IP |
+| `RATE_LIMIT_PER_MIN` | `20` | Messages per minute per signed-in user |
+| `GUEST_RATE_LIMIT_PER_MIN` | `10` | Messages per minute per guest IP |
+| `DAILY_SPEND_CAP_USD` | `5` | Store's estimated model spend per UTC day: guests pause at 80%, everyone at 100% (PLAN-19 M7). 0 = off |
+| `DAILY_SPEND_USER_USD` / `DAILY_SPEND_GUEST_USD` | `0.5` / `0.1` | Per signed-in shopper / per guest IP per day |
+| `CONVERSATION_SPEND_USD` | `0.1` | Per conversation |
+| `NEW_CONVERSATIONS_PER_HOUR_USER` / `_GUEST` | `30` / `10` | New conversations per shopper per hour |
+| `PROVIDER_BALANCE_CHECK` | `true` | Poll DeepSeek's prepaid balance every 15 min for `AgentProviderBalanceLow` |
 | `CORS_ORIGINS` | `https://yourstore.com` | Widget host origins |
 | `AGENT_ENABLED` | `true` | Kill switch (Redis `flag:agent_enabled` can also turn it off) |
 | `ROLLOUT_PERCENT` | `100` | Share of browsers that see the widget (Redis `flag:rollout_percent` overrides) |

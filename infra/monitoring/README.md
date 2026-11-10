@@ -156,6 +156,31 @@ noise, so the transcript review counts as much as the rates.
 | No new conversations routed; open ones finish as they are | `SET flag:routing_percent 0` |
 | Off durably | `MODEL_ROUTING_ENABLED=false` and redeploy |
 
+## Spend limits
+
+PLAN-19 M7 (`agent-service/app/limits.py`). Estimated model spend (from `MODEL_PRICES`) is kept
+in Redis per UTC day as integer micro-dollars: `spend:<day>:store`, `spend:<day>:user:<id>` or
+`spend:<day>:ip:<ip>`, and `spend:conv:<id>`. Before each chat turn:
+
+| Limit | Default | Shopper sees |
+|---|---|---|
+| Store per day `DAILY_SPEND_CAP_USD` | $5 | from 80% guests get "sign in to keep chatting"; at 100% nobody can chat and the widget hides until UTC midnight |
+| Per signed-in shopper / guest IP per day | $0.50 / $0.10 | "today's limit", no retry |
+| Per conversation | $0.10 | "this chat has reached its limit" |
+| New conversations per hour | 30 / 10 | "continue in this chat" |
+| Messages per minute | 20 / 10 | "you're sending messages quickly" |
+
+| Need | Command |
+|---|---|
+| See today's store spend (micro-USD) | `GET spend:$(date -u +%F):store` |
+| Give the store more room today (real shoppers, not a bot) | raise `DAILY_SPEND_CAP_USD` and redeploy, or `DECRBY spend:<day>:store <micro-USD>` |
+| Reset one shopper | `DEL spend:<day>:user:<id>` (or `ip:<ip>`) |
+
+**AgentDailySpendHigh:** check the Spend limits row. Many guest hits (`AgentLimitHitsSpike`) mean
+bot traffic: limits hold, but consider a CAPTCHA (Cloudflare Turnstile) on guest chats or the
+kill switch. **AgentProviderBalanceLow:** top up the provider account (DeepSeek: platform
+billing page) before it reaches $0; at $0 every turn fails.
+
 ## Runbooks
 
 ### Fast model failing

@@ -9,6 +9,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** The spend or rate limit that refused the request (`X-Limit`), if any. */
+    readonly limit?: string,
   ) {
     super(message);
   }
@@ -119,7 +121,7 @@ export class ChatApi {
         } catch {
           // Not JSON; the status is enough.
         }
-        throw new ApiError(res.status, detail);
+        throw new ApiError(res.status, detail, res.headers.get('X-Limit') ?? undefined);
       }
       await sleep(500 * 2 ** attempt);
     }

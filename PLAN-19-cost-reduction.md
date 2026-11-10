@@ -270,6 +270,26 @@ manual-only), so there's no traffic to split. Built now:
 - Consider lower limits for guests than for signed-in shoppers.
 - **Done when** no single user or bot can burn an outsized share of credit.
 
+**Status (2026-11-10): built on `cost-m7-limits`.** The old limits stopped one runaway
+conversation, but a bot could open a new conversation every time (each with a fresh 300k-token
+budget), nothing capped daily spend, and guests had the same limits as signed-in shoppers. Worst
+case was about $40/day per guest IP (20 msgs/min at ~$0.0014/turn), up to ~$290 with heavy turns.
+- `app/limits.py`: estimated spend in Redis as integer micro-dollars per UTC day, checked before
+  each chat turn. Store cap `DAILY_SPEND_CAP_USD` ($5): guests pause from 80%, everyone at 100%
+  (and `/v1/config` hides the widget). Per signed-in shopper $0.50/day, per guest IP $0.10/day,
+  per conversation $0.10, new conversations 30/h (user) and 10/h (guest IP); guest message rate
+  10/min. A confirmed action is never refused for cost. Redis down → turns go ahead.
+- Refusals are 429/503 with `X-Limit`; the widget shows its own translated text (en, vi) and no
+  retry button.
+- `app/balance.py` polls DeepSeek's free `/user/balance` every 15 min → `agent.provider.balance`.
+- Metrics `agent.limit.hits{limit, kind}`; alerts `AgentDailySpendHigh`, `AgentLimitHitsSpike`,
+  `AgentProviderBalanceLow` (< $2 or < 2 days of spend); dashboard row *Spend limits*; runbook
+  `infra/monitoring/README.md#spend-limits`.
+- The per-conversation token budget stays as the backstop when `MODEL_PRICES` is unset.
+- Not done: hashed top-spender panel (would need a per-shopper label); CAPTCHA for guests (only if
+  `AgentLimitHitsSpike` shows bots).
+- No prompt or model change, so no eval runs. Defaults are guesses until there's real traffic.
+
 ## Order
 
 M1 → M2 → M3 are quick and can land this week. M4 and M5 are the code changes. M6 and M7 follow once
