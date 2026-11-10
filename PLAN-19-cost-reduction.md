@@ -42,6 +42,20 @@ breaking the non-negotiable rules. The DeepSeek balance ran out on 2026-11-09, m
 - Set a low-balance alert in the DeepSeek dashboard.
 - **Done when** an eval run can't use the production balance.
 
+**Status (2026-11-10): code and docs on `cost-m1-separation`; the second account is yours to
+create.** DeepSeek keys on one account share its prepaid balance (no per-key cap that we know of),
+so the separation is two accounts: dev/eval (local `.env`, CI's repository secret, `staging`) and
+production (the `production` environment only). The repo was already set up for separate secrets
+(`setup-github-env.sh` asks for a key "separate from CI's").
+- `evals/balance.py`: `evals.run` and `evals.cost_probe` read the balance first and stop before the
+  first case if it can't cover the run (cases × repeats × $0.0025, or `--max-cost`); warn below $2.
+  CI runs `python -m evals.balance redteam golden` before seeding. Checked for real: $0.47 covers
+  the red team ($0.15) but not both suites ($0.63).
+- Repository variable `MODEL_PRICES` set, so CI's `--max-cost` caps (M3) work.
+- Docs: `infra/README.md` (accounts table), evals README.
+- **Still to do (you):** create the production account and top up; put its key only in the
+  `production` environment; keep the current account for dev, CI and staging.
+
 ### M2 · Measure where tokens go
 
 **Already there:** `_record_usage` ([llm.py](agent-service/app/llm.py)) splits `agent.model.tokens`

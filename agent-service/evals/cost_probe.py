@@ -27,6 +27,7 @@ from anthropic.types import Message
 from app.config import get_settings
 from app.llm import LLM
 from app.usage import estimate_cost
+from evals import balance
 from evals.cases import EVALS_DIR, Case
 from evals.harness import Logins, run_case
 from evals.run import DEMO_PASSWORD, preflight
@@ -124,6 +125,10 @@ async def main(argv: list[str] | None = None) -> int:
         settings = settings.model_copy(
             update={"model_routing_enabled": True, "routing_percent": 100}
         )
+    # About 25 main-model calls; budget it like 20 cases.
+    problem = await balance.check(settings, balance.estimate(20))
+    if problem:
+        sys.exit(problem)
     await preflight(settings)
     logins = Logins(settings, os.environ.get("EVAL_PASSWORD", DEMO_PASSWORD))
     llm = ProbeLLM(settings)

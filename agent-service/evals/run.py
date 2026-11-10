@@ -29,6 +29,7 @@ from app import usage
 from app.commerce_client import CommerceClient
 from app.config import Settings, get_settings
 from app.llm import LLM
+from evals import balance
 from evals.cases import EVALS_DIR, PASS_BAR, Case, Suite, load_suite
 from evals.checks import Verdict, score
 from evals.harness import Logins, run_case
@@ -184,6 +185,11 @@ async def main(argv: list[str] | None = None) -> int:
     if args.max_cost is not None and not settings.model_prices:
         print("Warning: MODEL_PRICES is not set, so --max-cost can't stop the run",
               file=sys.stderr)
+    problem = await balance.check(
+        settings, balance.estimate(len(cases), args.repeat, args.max_cost)
+    )
+    if problem:
+        sys.exit(problem)
     await preflight(settings)
     logins = Logins(settings, os.environ.get("EVAL_PASSWORD", DEMO_PASSWORD))
     llm = None if args.no_grader else LLM(settings)
