@@ -165,7 +165,8 @@ agent-service/
 │       ├── faq.py           # search_faq
 │       ├── cart.py          # view_cart, add_to_cart, update_cart_item, remove_cart_item, apply_coupon
 │       ├── orders.py        # list_orders, get_order, create_return
-│       └── support.py       # create_support_ticket
+│       ├── support.py       # create_support_ticket
+│       └── memory.py        # forget_memory (only with MEMORY_ENABLED)
 ├── evals/
 │   ├── golden/*.yaml
 │   ├── redteam/*.yaml
@@ -356,6 +357,7 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `AGENT_ENABLED` | `true` | Kill switch (Redis `flag:agent_enabled` can also turn it off) |
 | `ROLLOUT_PERCENT` | `100` | Share of browsers that see the widget (Redis `flag:rollout_percent` overrides) |
 | `CACHE_ENABLED` | `true` | Redis cache for public tool results (Redis `flag:cache_enabled` can also turn it off) |
+| `MEMORY_ENABLED` | `false` | Long-term memory (PLAN-18); shoppers must also opt in. Redis `flag:memory_enabled 0` turns it off at runtime |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `_HEADERS` | — | Traces and metrics over OTLP/HTTP; empty → off |
 | `DEPLOY_ENV` | `staging` | Environment name in traces and metrics |
 | `TRACE_SAMPLE_RATIO` | `1.0` | Share of turns traced |

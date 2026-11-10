@@ -77,6 +77,7 @@ Defined in `app/tools/*.py`, registered in `app/tools/registry.py`. Each tool ha
 | `create_return` | `POST /returns` | ✓ | ✓ | `return_created` |
 | `create_support_ticket` | `POST /support/tickets` | – | ✓ | `ticket_created` |
 | `checkout_link` | none (builds storefront URL) | ✓ | – | `checkout_link` |
+| `forget_memory` | `DELETE /memory/facts/{id}` (only with `MEMORY_ENABLED`) | ✓ | – | – |
 
 Guests are sent only the tools without `requires_auth`.
 
@@ -287,6 +288,10 @@ Cancel deletes the action and appends `User cancelled {tool}` to the session.
 - Window sent to the model: summary + last 20 messages. When exceeded, Haiku summarises the oldest half (keeping order numbers, product IDs, and pending decisions).
 - Guest → login mid-conversation: the session is kept and `user_id` attached on the next authenticated request.
 - Masked transcript written to Postgres `conversations` at the end of each turn.
+- Long-term memory (`app/memory.py`, PLAN-18), only with `MEMORY_ENABLED` and only for shoppers who switched it on in their account (commerce-api `/memory`, off by default):
+  - First signed-in turn: `GET /memory?q=<first message, masked>` once; the result stays in the session.
+  - After `done`, in the background: the episode (built in code from the first question, order and products in focus, confirmed actions and outcome; no model call) is upserted when it changed. If the shopper's message might state a preference, the fast model extracts facts from **that message only** (never tool output or assistant text); code drops low-confidence values, PII, and anything about money, deals or rules.
+  - `forget_memory` deletes one fact. Redis `flag:memory_enabled 0` stops reads and writes at once, also for open sessions.
 
 ## 6. Guardrails
 

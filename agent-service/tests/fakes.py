@@ -40,6 +40,7 @@ class FakeLLM:
         self.responses = list(responses)
         self.calls: list[list[Any]] = []
         self.systems: list[list[dict[str, Any]]] = []
+        self.fast_prompts: list[str] = []
 
     async def stream(self, *, system: list[dict[str, Any]], messages: list[Any],
                      on_text: Callable[[str], None], **_: Any) -> Message:
@@ -53,6 +54,12 @@ class FakeLLM:
 
     async def summarise(self, previous: str | None, messages: list[Any]) -> str:
         return ""
+
+    fast_reply = '{"facts": []}'
+
+    async def complete_fast(self, prompt: str, max_tokens: int = 256) -> str:
+        self.fast_prompts.append(prompt)
+        return self.fast_reply
 
 
 Route = Callable[[httpx.Request], httpx.Response]

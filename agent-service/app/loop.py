@@ -1,8 +1,9 @@
 """The agent loop (AGENT.md §4): tool rounds, confirm gate, budgets, follow-ups, transcripts."""
 
+import asyncio
 import logging
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Coroutine
+from dataclasses import dataclass, field
 from datetime import date
 from functools import cache
 from pathlib import Path
@@ -18,6 +19,7 @@ from app.commerce_client import CommerceClient
 from app.config import Settings
 from app.guardrails import TokenBudget, suspect_facts, wrap_tool_result
 from app.llm import LLM
+from app.memory import Memory
 from app.sessions import Session, SessionStore, TranscriptStore
 from app.sse import Emit
 from app.tools.registry import Registry, Tool, ToolContext, ToolOutput
@@ -128,6 +130,19 @@ class Agent:
     transcripts: TranscriptStore | None = None  # None in unit tests and evals
     on_tool_call: OnToolCall | None = None  # evals record calls here
     cache: ToolCache | None = None  # None in unit tests unless a test sets it
+    memory: Memory | None = None  # long-term memory; None when MEMORY_ENABLED is off
+    # Work that runs after `done` (memory writes); drain() waits for it.
+    _background: set[asyncio.Task[None]] = field(default_factory=set, repr=False)
+
+    def _spawn(self, work: Coroutine[Any, Any, None]) -> None:
+        task = asyncio.create_task(work)
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    async def drain(self) -> None:
+        """Wait for background work (tests, evals, shutdown)."""
+        while self._background:
+            await asyncio.gather(*list(self._background), return_exceptions=True)
 
     def _ctx(self, auth: Auth, conversation_id: str, idem_key: str | None = None) -> ToolContext:
         return ToolContext(
@@ -139,6 +154,9 @@ class Agent:
     ) -> None:
         if user_msg is not None:
             session.append_user(user_msg)
+            session.state.note_topic(user_msg)
+        if self.memory is not None:
+            await self.memory.load(session, auth, user_msg)
         telemetry.annotate(**{"conversation.id": session.id, "user.guest": auth.is_guest})
         tools = self.registry.schemas(auth)
         usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0}
@@ -200,8 +218,11 @@ class Agent:
         # Before summarising, so messages are saved before they can be folded away.
         await self._record(session, auth, usage)
         await self.sessions.maybe_summarise(session, self.llm.summarise)
+        episode = self.memory.pending_episode(session) if self.memory else None
         await self.sessions.save(session)
         emit("done", {"usage": usage})
+        if self.memory is not None and session.memory_enabled and (episode or user_msg):
+            self._spawn(self.memory.write(session.id, auth, episode, user_msg, self.llm))
 
     async def _handle_call(
         self, name: str, raw: Any, session: Session, auth: Auth, emit: Emit
@@ -214,6 +235,8 @@ class Agent:
         if not tool.confirm:
             out = await run_tool(tool, raw, self._ctx(auth, session.id))
             session.state.note_tool(tool.name, raw, out)
+            if tool.name == "forget_memory" and not out.is_error:
+                session.forget_fact(str(out.for_model.get("forgotten")))
             if out.card:
                 emit("card", out.card)
             return out
@@ -262,6 +285,8 @@ class Agent:
             session.outcome = "handoff"
         session.state.pending_action = None
         session.state.note_tool(action.tool, action.args, out)
+        if not out.is_error:
+            session.state.note_completed(action.tool, action.summary)
         session.append_event(
             f"Shopper pressed Confirm for {action.tool}. Result: {wrap_tool_result(out.for_model)}"
         )

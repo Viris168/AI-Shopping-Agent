@@ -21,6 +21,7 @@ from app.guardrails import RateLimiter, TokenBudget, check_message
 from app.llm import LLM
 from app.loop import Agent
 from app.masking import MaskingFilter
+from app.memory import Memory
 from app.sessions import SessionStore, TranscriptStore
 from app.sse import Emit, sse_response
 from app.tools.registry import build_registry
@@ -44,13 +45,14 @@ async def services(settings: Settings, redis: Redis) -> AsyncIterator[Agent]:
         yield Agent(
             settings=settings,
             llm=LLM(settings),
-            registry=build_registry(),
+            registry=build_registry(memory=settings.memory_enabled),
             sessions=SessionStore(redis, settings.session_ttl_s, settings.window_messages),
             actions=ActionStore(redis, settings.action_ttl_s),
             budget=TokenBudget(redis, settings.token_budget, settings.session_ttl_s),
             client=client,
             transcripts=TranscriptStore(client),
             cache=ToolCache(redis, settings.cache_enabled),
+            memory=Memory(settings, client, redis) if settings.memory_enabled else None,
         )
     finally:
         await client.aclose()
@@ -78,6 +80,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state.redis = redis
             app.state.limiter = RateLimiter(redis, settings.rate_limit_per_min)
             yield
+            await agent.drain()  # finish memory writes before the client closes
     finally:
         await redis.aclose()
         shutdown_telemetry()
