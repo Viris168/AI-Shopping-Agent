@@ -294,6 +294,14 @@ Cancel deletes the action and appends `User cancelled {tool}` to the session.
   - Every model call gets a `<memory>` block in the per-request prompt (after `<session_state>`, never in the cached static block): preferences with their ids, then earlier conversations (latest 3, then similar older ones) up to ~400 tokens. It is labelled as data and says to call tools for prices, stock, order status, discounts and policies. `<memory>` is a service tag: shopper text and stored values can't open or close it.
   - `forget_memory` deletes one fact; it leaves the prompt on the next model call. Redis `flag:memory_enabled 0` stops reads and writes at once, also for open sessions.
 
+### Playbooks (procedural memory)
+
+With `PLAYBOOKS_ENABLED` (off by default), the per-request prompt gets a short "## Playbook" section for the task at hand: `app/prompts/playbooks/{returns,order_status,product_compare,handoff}.md`, each ≤ 150 words and changed only through PRs with evals.
+
+- **Which one:** chosen in code from the shopper's message (keywords; at most 2; handoff first; returns replaces order status). It stays for follow-ups ("the blue one") until another is asked for. Tool output never selects one.
+- **Which step:** worked out from session state, not the model: e.g. returns 1 find the order → 2 once `get_order` succeeded → 4 while the Confirm card is open → 5 for the reply after Confirm, then it's dropped.
+- Playbooks add steps; the rules in `system.md` still apply.
+
 ## 6. Guardrails
 
 | Stage | Check | Action |

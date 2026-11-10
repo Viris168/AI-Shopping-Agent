@@ -159,6 +159,7 @@ agent-service/
 │   ├── guardrails.py        # input limits, budget, output checks
 │   ├── commerce_client.py   # httpx client for commerce-api
 │   ├── prompts/system.md
+│   ├── prompts/playbooks/   # returns, order_status, product_compare, handoff (PLAYBOOKS_ENABLED)
 │   └── tools/
 │       ├── registry.py      # Tool dataclass, schema export, guest filtering
 │       ├── catalog.py       # search_products, get_product, get_recommendations, list_categories
@@ -358,6 +359,7 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `AGENT_ENABLED` | `true` | Kill switch (Redis `flag:agent_enabled` can also turn it off) |
 | `ROLLOUT_PERCENT` | `100` | Share of browsers that see the widget (Redis `flag:rollout_percent` overrides) |
 | `CACHE_ENABLED` | `true` | Redis cache for public tool results (Redis `flag:cache_enabled` can also turn it off) |
+| `PLAYBOOKS_ENABLED` | `false` | Task playbooks in the prompt (PLAN-18 M7); switch on after golden + red-team pass with it |
 | `MEMORY_ENABLED` | `false` | Long-term memory (PLAN-18); shoppers must also opt in. Redis `flag:memory_enabled 0` turns it off at runtime |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `_HEADERS` | — | Traces and metrics over OTLP/HTTP; empty → off |
 | `DEPLOY_ENV` | `staging` | Environment name in traces and metrics |

@@ -11,7 +11,7 @@ from typing import Any, cast
 
 from anthropic.types import MessageParam
 
-from app import telemetry
+from app import playbooks, telemetry
 from app.actions import ActionStore, PendingAction
 from app.auth import Auth
 from app.cache import ToolCache
@@ -45,7 +45,8 @@ def _prompt_parts() -> tuple[str, str]:
 
 
 def build_system(
-    settings: Settings, auth: Auth, summary: str | None, state: str = "", memory: str = ""
+    settings: Settings, auth: Auth, summary: str | None, state: str = "", memory: str = "",
+    playbook: str = "",
 ) -> list[dict[str, Any]]:
     """Static block first (cached with the tools), per-request block after it."""
     static, dynamic = _prompt_parts()
@@ -73,6 +74,7 @@ def build_system(
         "{summary}": summary_text,
         "{session_state}": state_text,
         "{memory}": memory,
+        "{playbook}": playbook,
     }
     for key, value in values.items():
         dynamic = dynamic.replace(key, value)
@@ -156,6 +158,8 @@ class Agent:
         if user_msg is not None:
             session.append_user(user_msg)
             session.state.note_topic(user_msg)
+            if self.settings.playbooks_enabled:
+                playbooks.select(session.state, user_msg)
         if self.memory is not None and session.memory_enabled is None:
             await self.memory.load(session, auth, user_msg)
             if notice := self.memory.notice(session):
@@ -185,6 +189,7 @@ class Agent:
                 system=build_system(
                     self.settings, auth, session.summary, session.state.render(),
                     render_memory(session.memory),
+                    playbooks.render(session.state) if self.settings.playbooks_enabled else "",
                 ),
                 messages=cast(list[MessageParam], session.window(self.settings.window_messages)),
                 tools=tools,
@@ -291,6 +296,7 @@ class Agent:
         session.state.note_tool(action.tool, action.args, out)
         if not out.is_error:
             session.state.note_completed(action.tool, action.summary)
+            playbooks.finish(session.state, action.tool)
         session.append_event(
             f"Shopper pressed Confirm for {action.tool}. Result: {wrap_tool_result(out.for_model)}"
         )

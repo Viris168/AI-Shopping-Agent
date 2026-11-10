@@ -56,6 +56,10 @@ class SessionState:
     topic: str | None = None
     # Confirmed actions, e.g. "create_return: Return 1 item from ORD-1001 (Too small)"
     completed: list[str] = field(default_factory=list)
+    # Active playbooks (app/playbooks.py), chosen in code from the shopper's messages.
+    playbooks: list[str] = field(default_factory=list)
+    # Playbooks whose task a confirmed action just completed (dropped on the next message).
+    playbooks_done: list[str] = field(default_factory=list)
 
     def note_topic(self, text: str) -> None:
         if self.topic is None:

@@ -69,3 +69,5 @@ Today is {today}. Return window: {return_window_days} days after delivery.
 {summary}
 {session_state}
 {memory}
+
+{playbook}

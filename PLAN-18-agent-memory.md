@@ -227,9 +227,13 @@ New files are marked **(new)**; everything else is an edit.
 - Not "a fact was used" (the service can't tell): the note shows once per conversation when memory
   has content. Privacy notice wording still needs PRD sign-off before phase C rollout
 
-**M7 · Playbooks** (step 6, phase D)
-- `agent-service/app/prompts/playbooks/*.md` **(new)**, `app/loop.py`, `app/sessions.py`,
-  `app/prompts/system.md`
+**M7 · Playbooks** (step 6, phase D) — done, branch `agent-memory-m7-playbooks`
+- `agent-service/app/prompts/playbooks/*.md` **(new, 4)**, `app/playbooks.py` **(new)**,
+  `app/loop.py`, `app/sessions.py`, `app/config.py`, `app/prompts/system.md`, `pyproject.toml`
+- `agent-service/tests/test_playbooks.py` **(new)**
+- Behind `PLAYBOOKS_ENABLED` (default off): a prompt change, so on only after evals pass with it
+- The step is derived from session state on each call (`playbooks.step`), not stored; only the
+  active playbook names are stored
 
 **M8 · Evals + docs** (step 8, runs alongside M1–M7)
 - `agent-service/evals/golden/memory.yaml` **(new)**, `evals/redteam/memory.yaml` **(new)**,
