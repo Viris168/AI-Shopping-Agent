@@ -48,6 +48,28 @@ describe('widget', () => {
     expect(root.activeElement).toBe(bubble);
   });
 
+  it('shows the loading screen on the first open only, with the composer usable', async () => {
+    // The previous test made the first open.
+    expect($<HTMLElement>('.loading').hidden).toBe(false);
+    expect($<HTMLElement>('.messages').hidden).toBe(true);
+    await vi.waitFor(() => expect($<HTMLElement>('.loading').hidden).toBe(true));
+    expect($<HTMLElement>('.messages').hidden).toBe(false);
+
+    window.ShopChat?.open?.();
+    expect($<HTMLElement>('.loading').hidden).toBe(true);
+    window.ShopChat?.close?.();
+  });
+
+  it('returns focus to the host page control that opened it', () => {
+    const askAi = document.createElement('button');
+    document.body.append(askAi);
+    askAi.focus();
+    window.ShopChat?.open?.();
+    $('.panel').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.activeElement).toBe(askAi);
+    askAi.remove();
+  });
+
   it('renders model output as text, never as HTML, and shows cards', async () => {
     mockFetch(
       sseResponse(

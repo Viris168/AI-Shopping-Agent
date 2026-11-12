@@ -19,6 +19,13 @@ export function createPanel(
     privacyUrl && el('a', { href: privacyUrl, target: '_blank', rel: 'noopener noreferrer' }, t('privacyLink')),
   );
   const announcer = el('div', { class: 'sr-only', 'aria-live': 'polite', 'aria-atomic': 'true' });
+  // Shown in place of the messages while the chat connects; the composer stays usable.
+  const loading = el('div', { class: 'loading', role: 'status', hidden: true },
+    el('div', { class: 'loading-orb', 'aria-hidden': 'true' },
+      el('span'), el('span'), el('span'),
+    ),
+    el('p', { class: 'loading-text' }, t('loading')),
+  );
   const panel = el('div', {
     id: PANEL_ID,
     class: 'panel',
@@ -33,6 +40,7 @@ export function createPanel(
       button('icon-btn', '↺', handlers.reset, t('newChat')),
       button('icon-btn', '✕', handlers.close, t('close')),
     ),
+    loading,
     parts.list,
     parts.composer,
     notice,
@@ -48,6 +56,10 @@ export function createPanel(
     element: panel,
     setOpen(open: boolean) {
       panel.hidden = !open;
+    },
+    setLoading(on: boolean) {
+      loading.hidden = !on;
+      parts.list.hidden = on;
     },
     announce(text: string) {
       announcer.textContent = '';

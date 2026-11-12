@@ -62,6 +62,16 @@ export class ChatApi {
     private readonly retries = 2,
   ) {}
 
+  /** Fetches the shopper's token ahead of the first message, so opening the chat does the slow
+   *  part. Errors are ignored: the first real request asks again. */
+  async warmUp(): Promise<void> {
+    try {
+      await this.getToken();
+    } catch {
+      // Chat as a guest; request() reports real failures.
+    }
+  }
+
   chat(body: { conversationId: string | null; message: string; locale: string }) {
     const { conversationId, ...rest } = body;
     return this.stream('/v1/chat', conversationId ? body : rest);

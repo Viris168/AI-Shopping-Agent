@@ -275,6 +275,24 @@ textarea {
 .btn-block {
   width: 100%;
 }
+/* The chat widget's docked panel (ChatWidget.tsx). On wide screens the page moves over to make
+   room, so the shop stays usable beside the chat; narrower screens let the panel cover it. */
+:root {
+  --shopchat-dock-width: 400px;
+}
+@media (min-width: 900px) {
+  body {
+    transition: padding-right 0.2s ease-out;
+  }
+  body.chat-docked {
+    padding-right: var(--shopchat-dock-width);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body {
+    transition: none;
+  }
+}
 .link-button {
   background: none;
   border: 0;

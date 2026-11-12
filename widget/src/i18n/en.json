@@ -2,6 +2,7 @@
   "title": "Shopping assistant",
   "open": "Open shopping assistant",
   "close": "Close chat",
+  "loading": "Getting things ready…",
   "newChat": "Start a new chat",
   "storageNotice": "This chat is kept in this browser tab, and we store it for 90 days to improve our help. Please don't share card numbers or passwords.",
   "privacyLink": "Privacy policy",

@@ -92,4 +92,17 @@ describe('chat widget', () => {
     act(() => auth.logout());
     expect(reset).toHaveBeenCalledOnce();
   });
+
+  it('docks the panel, and the page makes room while it is open', () => {
+    mockApi({});
+    renderApp(<Harness />);
+    expect(document.querySelector<HTMLScriptElement>('#shopchat-script')!.dataset.layout).toBe('docked');
+    act(() => void window.dispatchEvent(new CustomEvent('shopchat:ready', { detail: { open: true } })));
+    expect(document.body.classList.contains('chat-docked')).toBe(true);
+    act(() => void window.dispatchEvent(new CustomEvent('shopchat:close')));
+    expect(document.body.classList.contains('chat-docked')).toBe(false);
+    act(() => void window.dispatchEvent(new CustomEvent('shopchat:open')));
+    expect(document.body.classList.contains('chat-docked')).toBe(true);
+    act(() => void window.dispatchEvent(new CustomEvent('shopchat:close')));
+  });
 });
