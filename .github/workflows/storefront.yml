@@ -1,0 +1,36 @@
+name: storefront
+
+on:
+  push:
+    branches: [main]
+    paths: ["storefront/**", ".github/workflows/storefront.yml"]
+  pull_request:
+    paths: ["storefront/**", ".github/workflows/storefront.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: storefront
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: storefront/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # The chat widget is its own build (widget.yml); without it this only warns.
+      - run: npx vite build
