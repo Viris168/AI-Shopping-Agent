@@ -60,6 +60,18 @@ def test_cart_adds_keep_the_name_already_known() -> None:
     assert state.focus_products == [{"id": "p1", "name": "Rain Jacket"}, {"id": "p9"}]
 
 
+def test_search_results_come_into_focus_top_hit_last() -> None:
+    # The gaiter search came after the backpack, so "that one" must not resolve to the backpack.
+    state = SessionState()
+    state.note_tool("add_to_cart", {"productId": "bag"}, ok({"itemCount": 1}))
+    found = {"total": 2, "items": [{"id": "g1", "name": "Gaiters"}, {"id": "g2", "name": "Socks"}]}
+    state.note_tool("search_products", {"q": "gaiters"}, ok(found))
+    assert [p["id"] for p in state.focus_products] == ["bag", "g2", "g1"]
+    recs = {"basedOn": "g1", "items": [{"id": "r1", "name": "Poles"}]}
+    state.note_tool("get_recommendations", {"idOrSlug": "g1"}, ok(recs))
+    assert state.focus_products[-1] == {"id": "r1", "name": "Poles"}
+
+
 def test_state_holds_no_prices_or_stock() -> None:
     state = SessionState()
     state.note_tool("get_product", {}, ok({**JACKET, "stock": 4, "inStock": True}))
