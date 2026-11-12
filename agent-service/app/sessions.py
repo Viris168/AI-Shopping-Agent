@@ -79,8 +79,16 @@ class SessionState:
             order = result.get("orderNumber") or args.get("orderNumber")
             if isinstance(order, str):
                 self.focus_order = order[:40]
-        elif tool in ("get_product", "get_recommendations") and isinstance(result.get("id"), str):
+        elif tool == "get_product" and isinstance(result.get("id"), str):
             self._focus_product(result["id"], result.get("name"))
+        elif tool in ("search_products", "get_recommendations"):
+            # The shopper saw these cards, so "that one" may mean any of them; the first card
+            # is focused last so it reads as the most recent.
+            items = result.get("items")
+            shown = [p for p in items if isinstance(p, dict)] if isinstance(items, list) else []
+            for p in reversed(shown[:MAX_FOCUS_PRODUCTS]):
+                if isinstance(p.get("id"), str):
+                    self._focus_product(p["id"], p.get("name"))
         elif tool in ("add_to_cart", "update_cart_item") and isinstance(args.get("productId"), str):
             self._focus_product(args["productId"], None)
 
