@@ -17,6 +17,13 @@ const LINK_DOMAINS = 'ups.com,fedex.com,usps.com,dhl.com';
 // Fetch a fresh chat token this long before the current one expires.
 const REFRESH_EARLY_MS = 60_000;
 
+// The docked panel needs the page to make room while it's open (styles.css). `ready` carries the
+// open state restored from the last page.
+const dock = (open: boolean) => document.body.classList.toggle('chat-docked', open);
+window.addEventListener('shopchat:ready', (e) => dock(Boolean((e as CustomEvent<{ open?: boolean }>).detail?.open)));
+window.addEventListener('shopchat:open', () => dock(true));
+window.addEventListener('shopchat:close', () => dock(false));
+
 /**
  * Chat tokens for the signed-in shopper, cached until shortly before they expire. The token only
  * works for agent-service (commerce-api also needs its service token), so it is fine in page JS.
@@ -75,6 +82,7 @@ export function ChatWidget() {
     script.dataset.api = AGENT_URL || location.origin;
     script.dataset.helpUrl = `${location.origin}/help`;
     script.dataset.linkDomains = LINK_DOMAINS;
+    script.dataset.layout = 'docked';
     document.body.append(script);
     // No cleanup: the widget mounts once per page and survives route changes on purpose.
   }, []);

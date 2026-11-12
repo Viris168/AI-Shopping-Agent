@@ -9,7 +9,12 @@
 // Optional data-* attributes: data-api (agent-service origin; default: the script's origin),
 // data-locale, data-link-domains (extra allowed link hosts, comma-separated, e.g. carriers),
 // data-help-url (fallback "track an order / contact us" page), data-privacy-url (linked from the
-// storage notice), data-max-chars.
+// storage notice), data-max-chars, data-layout ("docked": a full-height panel on the right instead
+// of a popup; the host page makes room for it on `shopchat:open`/`close`, width
+// --shopchat-dock-width).
+//
+// Events on window: shopchat:ready ({ open }) once mounted, shopchat:open, shopchat:close,
+// shopchat:cart-updated.
 //
 // Before mounting it asks agent-service whether it's switched on and inside the rollout
 // (src/rollout.ts); otherwise nothing is added to the page.
@@ -25,6 +30,9 @@ import { createBubble } from './ui/bubble';
 import { createComposer } from './ui/composer';
 import { createMessageList } from './ui/message-list';
 import { createPanel, PANEL_ID } from './ui/panel';
+
+// The loading screen stays at least this long, so a fast connection doesn't make it flash.
+const LOADING_MIN_MS = 500;
 
 interface ShopChatGlobal {
   getToken?: () => Promise<string | null> | string | null;
@@ -66,6 +74,7 @@ function mount(script: HTMLScriptElement | null): void {
   ]);
 
   const host = el('div', { id: 'shopchat-root' });
+  if (data.layout === 'docked') host.setAttribute('data-layout', 'docked');
   const shadow = host.attachShadow({ mode: 'open' });
   const style = document.createElement('style');
   style.textContent = styles;
@@ -101,12 +110,34 @@ function mount(script: HTMLScriptElement | null): void {
   );
   const composer = createComposer(i18n, maxChars, (text) => void controller.send(text));
 
+  // First open on this page: show the loading screen while the shopper's token is fetched.
+  let warmed = false;
+  const warmUp = () => {
+    if (warmed) return;
+    warmed = true;
+    panel.setLoading(true);
+    const minimum = new Promise((r) => setTimeout(r, LOADING_MIN_MS));
+    void Promise.all([api.warmUp(), minimum]).then(() => panel.setLoading(false));
+  };
+
+  // Focus goes back to whatever opened the chat (e.g. the host's "Ask AI" button), else the bubble.
+  let opener: HTMLElement | null = null;
   const setOpen = (open: boolean) => {
     if (open === state.state.open) return;
+    const active = document.activeElement;
+    if (open) {
+      const fromPage = active instanceof HTMLElement && active !== host && active !== document.body;
+      opener = fromPage ? active : null;
+    }
     state.set({ open });
     emit(open ? 'open' : 'close');
-    if (open) composer.focus();
-    else bubble.element.focus();
+    if (open) {
+      warmUp();
+      composer.focus();
+    } else {
+      (opener?.isConnected ? opener : bubble.element).focus();
+      opener = null;
+    }
   };
   const bubble = createBubble(i18n, PANEL_ID, () => setOpen(!state.state.open));
   panel = createPanel(i18n, { list: list.element, composer: composer.element }, {
@@ -119,6 +150,7 @@ function mount(script: HTMLScriptElement | null): void {
     bubble.setOpen(s.open);
     panel.setOpen(s.open);
     composer.setBusy(s.busy);
+    if (s.busy) panel.setLoading(false); // the shopper sent a message: show it
     list.render(s);
   };
   state.subscribe(render);
@@ -133,6 +165,8 @@ function mount(script: HTMLScriptElement | null): void {
     toggle: () => setOpen(!state.state.open),
     reset: () => controller.reset(),
   });
+  if (state.state.open) warmUp(); // reopened from the saved conversation
+  emit('ready', { open: state.state.open });
 }
 
 const script = findScript(); // only readable synchronously, before the first await
