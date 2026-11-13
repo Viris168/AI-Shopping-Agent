@@ -2,6 +2,7 @@
 caching, streaming. All model calls go through here."""
 
 import json
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -13,6 +14,8 @@ from opentelemetry.trace import Span
 from app import telemetry, usage
 from app.config import ModelPrice, Settings
 from app.masking import mask_text
+
+log = logging.getLogger(__name__)
 
 SUMMARY_PROMPT = (
     "Summarise this shopping-assistant conversation for the assistant's own memory. "
@@ -27,7 +30,20 @@ NO_THINKING: ThinkingConfigDisabledParam = {"type": "disabled"}
 
 
 class ModelUnavailable(Exception):
-    """The model API failed after the SDK's own retries. The widget shows its fallback card."""
+    """The model API failed after the SDK's own retries. The widget shows its fallback card.
+    `transient`: worth trying another model (overload, rate limit, 5xx, network), unlike a
+    bad key, an empty balance or a bad request, which another model on the same account
+    won't fix."""
+
+    def __init__(self, error: str, transient: bool = False) -> None:
+        super().__init__(error)
+        self.transient = transient
+
+
+def _transient(exc: APIError) -> bool:
+    if isinstance(exc, APIStatusError):
+        return exc.status_code in (408, 409, 429) or exc.status_code >= 500
+    return True  # connection error or timeout
 
 
 def _error_type(exc: APIError) -> str:
@@ -49,7 +65,7 @@ async def _observed(operation: str, model: str) -> AsyncIterator[Span]:
             telemetry.mark_error(span, error)
             telemetry.model_calls.add(1, {**attrs, "status": "error", "error.type": error})
             telemetry.model_duration.record(watch.elapsed, {**attrs, "status": "error"})
-            raise ModelUnavailable(error) from exc
+            raise ModelUnavailable(error, _transient(exc)) from exc
         telemetry.model_calls.add(1, {**attrs, "status": "ok"})
         telemetry.model_duration.record(watch.elapsed, {**attrs, "status": "ok"})
 
@@ -106,14 +122,40 @@ class LLM:
         tools: list[dict[str, Any]],
         on_text: Callable[[str], None],
     ) -> Message:
-        """One main-model call, streaming text deltas. Returns the complete message.
+        """One chat call, streaming text deltas. Returns the complete message.
 
-        Caching: tools render before system, so the breakpoint on the static system
-        block caches tools + static prompt. Put per-request text after it. DeepSeek ignores
-        cache_control and caches prompt prefixes on its own.
+        On MODEL_MAIN; if that fails for a transient reason before any text was sent, the same
+        call once on MODEL_FAST, so a provider hiccup costs a slower or plainer reply instead
+        of the fallback card. After text has streamed, a retry would repeat it, so it raises.
         """
+        sent = False
+
+        def watch(text: str) -> None:
+            nonlocal sent
+            sent = True
+            on_text(text)
+
+        try:
+            return await self._stream(self._s.model_main, system, messages, tools, watch)
+        except ModelUnavailable as exc:
+            fast = self._s.model_fast
+            if sent or not exc.transient or fast == self._s.model_main:
+                raise
+            log.warning("model_fallback %s -> %s after %s", self._s.model_main, fast, exc)
+            telemetry.model_fallbacks.add(1, {
+                "gen_ai.request.model": self._s.model_main, "error.type": str(exc),
+            })
+            return await self._stream(fast, system, messages, tools, on_text)
+
+    async def _stream(
+        self, model: str, system: list[dict[str, Any]], messages: list[MessageParam],
+        tools: list[dict[str, Any]], on_text: Callable[[str], None],
+    ) -> Message:
+        """Caching: tools render before system, so the breakpoint on the static system
+        block caches tools + static prompt. Put per-request text after it. DeepSeek ignores
+        cache_control and caches prompt prefixes on its own."""
         kwargs: dict[str, Any] = {
-            "model": self._s.model_main,
+            "model": model,
             "max_tokens": self._s.max_output_tokens,
             "system": system,
             "messages": messages,
@@ -122,14 +164,13 @@ class LLM:
         }
         if self._s.claude_effort:
             kwargs["output_config"] = {"effort": self._s.claude_effort}
-        async with _observed("chat", self._s.model_main) as span:
+        async with _observed("chat", model) as span:
             async with self._client.messages.stream(**kwargs) as stream:
                 async for event in stream:
                     if event.type == "text":
                         on_text(event.text)
                 message = await stream.get_final_message()
-            _record_usage(span, "chat", "chat", message,
-                          self._price(self._s.model_main, message))
+            _record_usage(span, "chat", "chat", message, self._price(model, message))
             return message
 
     async def summarise(self, previous: str | None, messages: list[dict[str, Any]]) -> str:

@@ -48,6 +48,7 @@ are text in development and JSON (with `request_id` and `trace_id`) when `APP_EN
 | `agent_turn_errors_total` | `route`, `error_type` | `model_unavailable` (fallback card), `timeout`, `internal` |
 | `agent_streams_active` | `route` | Open SSE streams |
 | `agent_model_calls_total`, `agent_model_duration_seconds` | `gen_ai_operation_name`, `gen_ai_request_model`, `status`, `error_type` | One model API call (after the SDK's 2 retries) |
+| `agent_model_fallbacks_total` | `gen_ai_request_model`, `error_type` | Chat calls retried on `MODEL_FAST` after `MODEL_MAIN` failed (transient errors only) |
 | `agent_model_tokens_total` | `gen_ai_token_type` (input, output, cache_read), `gen_ai_operation_name`, `gen_ai_request_model`, `agent_purpose` (chat, summarise, memory_extract, eval_grade, complete) | Tokens |
 | `agent_model_cost_USD_total` | `gen_ai_operation_name`, `gen_ai_request_model`, `agent_purpose` | Estimated cost from `MODEL_PRICES`; models without a price are left out |
 | `agent_tool_calls_total`, `agent_tool_duration_seconds` | `tool`, `status` | `ok`; `rejected` (login, not found, bad input: expected); `error` (store 5xx/429/unreachable) |
@@ -144,7 +145,10 @@ call before the first reply).
 `AgentModelErrorSpike`: over 10% of model calls fail after retries; shoppers see the fallback
 card. `error_type` tells you which: `401`/`403` → key revoked or wrong (`ANTHROPIC_API_KEY`);
 `429` → rate or spend limit; `5xx`/`529` → provider outage (status page);
-`APIConnectionError`/`APITimeoutError` → network. Long outage: switch the assistant off.
+`APIConnectionError`/`APITimeoutError` → network. Transient failures before any text are
+retried once on `MODEL_FAST` (`agent_model_fallbacks_total`), so shoppers may get plainer
+replies rather than the card; if both models fail, both count here. Long outage: switch the
+assistant off.
 
 ### Failing turns
 

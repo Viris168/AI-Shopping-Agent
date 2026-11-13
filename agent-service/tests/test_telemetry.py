@@ -1,5 +1,6 @@
 """Request IDs, spans, metrics, the model-failure fallback and the kill switch."""
 
+import json
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
@@ -154,7 +155,73 @@ async def test_model_api_errors_become_model_unavailable() -> None:
     before = count("agent.model.calls", status="error")
     with pytest.raises(ModelUnavailable):
         await llm.stream(system=[], messages=[], tools=[], on_text=lambda _: None)
-    assert count("agent.model.calls", status="error") == before + 1
+    assert count("agent.model.calls", status="error") == before + 2  # main, then the fallback
+
+
+def _model_api(status_by_model: dict[str, int]) -> tuple[AsyncAnthropic, list[str]]:
+    """A model API that answers per requested model: an error status, or a short reply."""
+    asked: list[str] = []
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        model = json.loads(request.content)["model"]
+        asked.append(model)
+        status = status_by_model.get(model, 200)
+        if status != 200:
+            return httpx2.Response(status, json={"type": "error", "error": {
+                "type": "api_error", "message": "nope"}})
+        body = (
+            "event: message_start\ndata: " + json.dumps({"type": "message_start", "message": {
+                "id": "m", "type": "message", "role": "assistant", "model": model, "content": [],
+                "stop_reason": None, "usage": {"input_tokens": 1, "output_tokens": 0}}}) + "\n\n"
+            "event: content_block_start\ndata: " + json.dumps({"type": "content_block_start",
+                "index": 0, "content_block": {"type": "text", "text": ""}}) + "\n\n"
+            "event: content_block_delta\ndata: " + json.dumps({"type": "content_block_delta",
+                "index": 0, "delta": {"type": "text_delta", "text": "hi"}}) + "\n\n"
+            "event: content_block_stop\ndata: " + json.dumps({"type": "content_block_stop",
+                "index": 0}) + "\n\n"
+            "event: message_delta\ndata: " + json.dumps({"type": "message_delta",
+                "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 1}}) + "\n\n"
+            "event: message_stop\ndata: " + json.dumps({"type": "message_stop"}) + "\n\n"
+        )
+        return httpx2.Response(200, text=body, headers={"content-type": "text/event-stream"})
+
+    client = AsyncAnthropic(api_key="k", base_url="http://model", max_retries=0,
+                            http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)))
+    return client, asked
+
+
+async def test_main_model_outage_falls_back_to_the_fast_model() -> None:
+    client, asked = _model_api({"main": 529})
+    llm = LLM(settings(model_main="main", model_fast="fast"), client)
+    before = count("agent.model.fallbacks")
+    text: list[str] = []
+    msg = await llm.stream(system=[], messages=[], tools=[], on_text=text.append)
+    assert asked == ["main", "fast"] and text == ["hi"] and msg.model == "fast"
+    assert count("agent.model.fallbacks") == before + 1
+
+
+async def test_no_fallback_when_another_model_wont_help() -> None:
+    client, asked = _model_api({"main": 402})  # empty balance: same account for both
+    llm = LLM(settings(model_main="main", model_fast="fast"), client)
+    with pytest.raises(ModelUnavailable):
+        await llm.stream(system=[], messages=[], tools=[], on_text=lambda _: None)
+    assert asked == ["main"]
+
+
+async def test_no_fallback_once_text_has_streamed() -> None:
+    llm = LLM(settings(model_main="main", model_fast="fast"),
+              AsyncAnthropic(api_key="k", base_url="http://model"))
+    calls: list[str] = []
+
+    async def half_then_fail(model: str, *_: Any) -> Any:
+        calls.append(model)
+        _[-1]("The jacket is")  # on_text
+        raise ModelUnavailable("APIConnectionError", transient=True)
+
+    llm._stream = half_then_fail  # type: ignore[method-assign,assignment]
+    with pytest.raises(ModelUnavailable):
+        await llm.stream(system=[], messages=[], tools=[], on_text=lambda _: None)
+    assert calls == ["main"]  # a retry would repeat "The jacket is"
 
 
 async def test_model_tokens_and_cost_carry_the_call_purpose() -> None:

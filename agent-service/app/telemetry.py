@@ -59,6 +59,9 @@ feedback = _meter.create_counter("agent.feedback", description="Thumbs up/down")
 kill_switch_rejections = _meter.create_counter(
     "agent.disabled.rejections", description="Requests refused by the kill switch"
 )
+model_fallbacks = _meter.create_counter(
+    "agent.model.fallbacks", description="Chat calls retried on MODEL_FAST after MODEL_MAIN failed"
+)
 suspect_replies = _meter.create_counter(
     "agent.output.suspect_replies",
     description="Replies with a price or percentage no tool or shopper message gave this turn",
