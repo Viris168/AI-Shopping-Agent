@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import datetime
 from functools import cache
 from pathlib import Path
 from typing import Any, cast
@@ -38,6 +38,8 @@ FALLBACK_HANDOFF_TEXT = (
 BUDGET_TEXT = (
     "This conversation has reached its limit. I can connect you with a person to continue."
 )
+# The reply hit MAX_OUTPUT_TOKENS mid-text: say so, rather than leave half a sentence.
+CUT_OFF_TEXT = "… (That reply was cut short. Ask me to continue.)"
 DAILY_BUDGET_TEXT = (
     "You've reached today's limit for the assistant. Please come back tomorrow, or I can "
     "connect you with a person."
@@ -73,7 +75,7 @@ def build_system(settings: Settings, auth: Auth) -> list[dict[str, Any]]:
     )
     values = {
         "{auth_state}": auth_state,
-        "{today}": date.today().isoformat(),
+        "{today}": datetime.now(settings.tz).date().isoformat(),
         "{return_window_days}": str(settings.return_window_days),
     }
     for key, value in values.items():
@@ -291,6 +293,9 @@ class Agent:
                 break
             session.append_assistant(content)
             if not calls:
+                if resp.stop_reason == "max_tokens":
+                    log.warning("reply_cut_off at %s tokens", resp.usage.output_tokens)
+                    send(CUT_OFF_TEXT)
                 break
 
             results = []

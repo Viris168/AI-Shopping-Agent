@@ -23,7 +23,11 @@ export function pickLocale(...candidates: (string | null | undefined)[]): string
   return 'en';
 }
 
-export function createI18n(locale: string): I18n {
+/**
+ * `timeZone`: the store's (from /v1/config). Calendar dates (return deadlines, delivery) use it,
+ * so a card shows the same date the assistant says; times of day stay in the shopper's zone.
+ */
+export function createI18n(locale: string, timeZone?: string): I18n {
   const strings = LOCALES[locale] ?? en;
   const format = (fn: (d: Date) => string) => (iso: unknown) => {
     const d = typeof iso === 'string' ? new Date(iso) : null;
@@ -40,7 +44,9 @@ export function createI18n(locale: string): I18n {
       const map = strings.status as Record<string, string>;
       return typeof code === 'string' ? (map[code] ?? code) : '';
     },
-    date: format((d) => d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })),
+    date: format((d) =>
+      d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone }),
+    ),
     time: format((d) => d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })),
   };
 }

@@ -30,6 +30,10 @@ SPANS = InMemorySpanExporter()
 METRICS = InMemoryMetricReader()
 
 
+CONFIG_ON_5 = {"enabled": True, "rolloutPercent": 5, "timeZone": "UTC"}
+CONFIG_OFF = {"enabled": False, "rolloutPercent": 0, "timeZone": "UTC"}
+
+
 @pytest.fixture(scope="module", autouse=True)
 def providers() -> None:
     # Global providers can be set once per process; the module's proxies pick them up.
@@ -268,7 +272,7 @@ async def test_kill_switch_env_turns_chat_off(redis: FakeAsyncRedis, api: FakeAp
         assert (await http.post("/v1/actions/a1/confirm")).status_code == 503
         await redis.set(FLAG_ENABLED, "1")  # Redis can't override an env kill
         config = await http.get("/v1/config")
-    assert config.json() == {"enabled": False, "rolloutPercent": 0}
+    assert config.json() == CONFIG_OFF
     assert config.headers["Cache-Control"] == "public, max-age=60"
 
 
@@ -277,7 +281,7 @@ async def test_redis_flags_switch_off_and_move_the_rollout(redis: FakeAsyncRedis
     use_settings(rollout_percent=5)
     agent = make_agent(redis, api, FakeLLM(message(text("Hi!"))))
     async with await http_client(agent, redis) as http:
-        assert (await http.get("/v1/config")).json() == {"enabled": True, "rolloutPercent": 5}
+        assert (await http.get("/v1/config")).json() == CONFIG_ON_5
         await redis.set(FLAG_ROLLOUT, "25")
         assert (await http.get("/v1/config")).json()["rolloutPercent"] == 25
         await redis.set(FLAG_ROLLOUT, "nonsense")
@@ -285,7 +289,7 @@ async def test_redis_flags_switch_off_and_move_the_rollout(redis: FakeAsyncRedis
 
         await redis.set(FLAG_ENABLED, "0")
         assert (await http.post("/v1/chat", json={"message": "hi"})).status_code == 503
-        assert (await http.get("/v1/config")).json() == {"enabled": False, "rolloutPercent": 0}
+        assert (await http.get("/v1/config")).json() == CONFIG_OFF
 
         await redis.delete(FLAG_ENABLED)
         assert (await http.post("/v1/chat", json={"message": "hi"})).status_code == 200
@@ -299,5 +303,5 @@ async def test_flags_fall_back_to_env_when_redis_is_down(api: FakeApi) -> None:
     redis = DownRedis(decode_responses=True)
     use_settings(rollout_percent=5)
     async with await http_client(make_agent(redis, api, FakeLLM()), redis) as http:
-        assert (await http.get("/v1/config")).json() == {"enabled": True, "rolloutPercent": 5}
+        assert (await http.get("/v1/config")).json() == CONFIG_ON_5
 

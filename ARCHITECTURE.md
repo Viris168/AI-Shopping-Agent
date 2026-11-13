@@ -360,6 +360,7 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `TOKEN_BUDGET` | `300000` | Tokens per conversation |
 | `DAILY_TOKEN_BUDGET` | `1000000` | Tokens per user (per IP for guests) per UTC day, across conversations; `0` = off |
 | `LOCK_WAIT_S` | `10` | How long Confirm/Cancel wait for a running turn on the same conversation |
+| `STORE_TZ` | `UTC` | The store's IANA zone: "today" in the prompt, order dates given to the model, and card dates in the widget (via `/v1/config`). Set the storefront's `VITE_STORE_TZ` to the same zone |
 | `LINK_HOSTS` | — | Hosts replies may link to besides `STOREFRONT_URL`'s; other links (and unconfirmed coupon codes) are removed from replies |
 | `CORS_ORIGINS` | `https://yourstore.com` | Widget host origins |
 | `AGENT_ENABLED` | `true` | Kill switch (Redis `flag:agent_enabled` can also turn it off) |

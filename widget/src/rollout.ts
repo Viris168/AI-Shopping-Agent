@@ -12,6 +12,19 @@ const OPT_IN_KEY = 'shopchat:optin';
 export interface RolloutConfig {
   enabled: boolean;
   rolloutPercent: number;
+  /** The store's IANA zone (agent-service STORE_TZ); card dates are shown in it. */
+  timeZone?: string;
+}
+
+/** `zone` if the browser knows it, else undefined (the shopper's own zone). */
+export function knownTimeZone(zone: unknown): string | undefined {
+  if (typeof zone !== 'string' || !zone) return undefined;
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: zone });
+    return zone;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function fetchConfig(apiBase: string): Promise<RolloutConfig | null> {
@@ -19,7 +32,11 @@ export async function fetchConfig(apiBase: string): Promise<RolloutConfig | null
     const res = await fetch(`${apiBase}/v1/config`, { credentials: 'omit' });
     if (!res.ok) return null;
     const body = await res.json();
-    return { enabled: body?.enabled === true, rolloutPercent: Number(body?.rolloutPercent) || 0 };
+    return {
+      enabled: body?.enabled === true,
+      rolloutPercent: Number(body?.rolloutPercent) || 0,
+      timeZone: knownTimeZone(body?.timeZone),
+    };
   } catch {
     return null;
   }
