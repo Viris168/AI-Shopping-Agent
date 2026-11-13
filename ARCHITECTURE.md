@@ -272,6 +272,8 @@ writes return 403.
 | `action:{actionId}` | tool, args, userId, conversationId, idemKey | 10 min |
 | `rl:user:{id}` / `rl:ip:{ip}` | counters | 60 s |
 | `budget:{conversationId}` | tokens used | 24 h |
+| `budget:day:{YYYY-MM-DD}:user:{id}` / `…:ip:{ip}` | tokens used that UTC day | 25 h |
+| `lock:{conversationId}` | token of the turn running on it (one at a time; a second chat gets 429) | turn timeout + 15 s |
 | `cache:tool:{gen}:{tool}:{argsHash}` | public tool result (products, categories, FAQ) | 60 s products, 10 min FAQ/categories |
 | `cache:tool:gen` | cache generation; `INCR` drops every cached result | — |
 
@@ -355,6 +357,9 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `TURN_TIMEOUT_S` | `45` | Turn cap |
 | `MAX_MESSAGE_CHARS` | `2000` | Input cap |
 | `RATE_LIMIT_PER_MIN` | `20` | Messages per user/IP |
+| `TOKEN_BUDGET` | `300000` | Tokens per conversation |
+| `DAILY_TOKEN_BUDGET` | `1000000` | Tokens per user (per IP for guests) per UTC day, across conversations; `0` = off |
+| `LOCK_WAIT_S` | `10` | How long Confirm/Cancel wait for a running turn on the same conversation |
 | `LINK_HOSTS` | — | Hosts replies may link to besides `STOREFRONT_URL`'s; other links (and unconfirmed coupon codes) are removed from replies |
 | `CORS_ORIGINS` | `https://yourstore.com` | Widget host origins |
 | `AGENT_ENABLED` | `true` | Kill switch (Redis `flag:agent_enabled` can also turn it off) |

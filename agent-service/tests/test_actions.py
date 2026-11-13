@@ -209,6 +209,55 @@ async def test_cancel_route_never_runs_the_action(redis: FakeAsyncRedis, api: Ap
     )
 
 
+async def test_busy_conversation_rejects_a_second_turn(redis: FakeAsyncRedis, api: Api,
+                                                      caller: Caller) -> None:
+    agent = agent_with_transcripts(redis, api, FakeLLM(message(text("Hi!")), message(text("Ok."))))
+    session, _ = await turn(agent, "hello")
+    token = await agent.sessions.lock(session.id)  # a turn is still running
+    assert token is not None
+    body = {"conversationId": session.id, "message": "and another thing"}
+
+    async with await http_client(agent, redis) as http:
+        busy = await http.post("/v1/chat", json=body)
+        assert busy.status_code == 429
+        assert busy.json()["detail"].startswith("I'm still answering")
+
+        await agent.sessions.unlock(session.id, token)
+        resp = await http.post("/v1/chat", json=body)
+        assert resp.status_code == 200 and "Ok." in resp.text
+        # The finished turn released its lock.
+        assert await redis.get(f"lock:{session.id}") is None
+
+
+async def test_confirm_on_a_busy_conversation_keeps_the_action(
+    redis: FakeAsyncRedis, api: Api, caller: Caller
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: settings(lock_wait_s=0.2)
+    llm = FakeLLM(message(tool_use("create_return", RETURN_ARGS)), message(text("Confirm?")),
+                  message(text("Return RET-1 started.")))
+    agent = agent_with_transcripts(redis, api, llm)
+    session, action_id = await pending_return(agent)
+    token = await agent.sessions.lock(session.id)
+    assert token is not None
+
+    async with await http_client(agent, redis) as http:
+        busy = await http.post(f"/v1/actions/{action_id}/confirm")
+        assert busy.status_code == 429  # the widget keeps the card pressable
+        assert "POST returns" not in api.calls
+
+        await agent.sessions.unlock(session.id, token)
+        resp = await http.post(f"/v1/actions/{action_id}/confirm")
+        assert resp.status_code == 200
+        streamed = "".join(d["text"] for e, d in sse_events(resp.text) if e == "text_delta")
+        assert streamed == "Return RET-1 started."
+
+    assert api.calls.count("POST returns") == 1
+    assert await redis.get(f"lock:{session.id}") is None
+    saved = await agent.sessions.get(session.id)
+    assert saved is not None
+    assert "Shopper pressed Confirm" in json.dumps(saved.messages)
+
+
 async def test_model_text_cannot_confirm(redis: FakeAsyncRedis, api: Api) -> None:
     # Even if the model "decides" the shopper agreed, only the route can run the action.
     llm = FakeLLM(message(tool_use("create_return", RETURN_ARGS)),

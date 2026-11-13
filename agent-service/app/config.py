@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     max_message_chars: int = 2000
     rate_limit_per_min: int = 20
     token_budget: int = 300_000
+    # Per shopper (per IP for guests) per UTC day, across conversations, so a new conversation
+    # doesn't reset spending. Guests behind one IP share it. 0 turns it off.
+    daily_token_budget: int = Field(1_000_000, ge=0)
+    # How long a confirm/cancel waits for a running turn on the same conversation to finish.
+    lock_wait_s: float = 10
     # History: past 2× this many messages, the oldest half folds into the summary. The model
     # gets every message since the last fold (so between this and 2× this).
     window_messages: int = 20

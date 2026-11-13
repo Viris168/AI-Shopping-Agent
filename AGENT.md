@@ -273,7 +273,10 @@ async def run_turn(session, user_msg, auth, emit):
     emit("done", {"usage": resp.usage})
 ```
 
-Whole turn wrapped in a 45 s timeout. Budget checked before each model call.
+Whole turn wrapped in a 45 s timeout. Budgets (per conversation, and per shopper or guest IP per
+UTC day) checked before each model call. One turn per conversation at a time: the route holds
+`lock:{conversationId}` from loading the session until the turn ends, so two turns can't
+overwrite each other's save.
 
 ### Confirm endpoint
 
@@ -318,7 +321,8 @@ With `PLAYBOOKS_ENABLED` (off by default), the `<context>` block gets a short "#
 |---|---|---|
 | Input | > 2,000 chars | 413, widget shows limit |
 | Input | rate limit (20/min user or IP) | 429 |
-| Input | token budget exhausted | offer handoff |
+| Input | token budget exhausted (conversation or daily) | offer handoff |
+| Input | another turn running on the conversation | 429; Confirm/Cancel wait up to 10 s first, without using up the action |
 | Tool args | schema validation (Pydantic) | error result to model |
 | Tool args | login-only tool as guest | `login_required` result |
 | Tool output | wrap in `<tool_result>`; strip HTML | — |

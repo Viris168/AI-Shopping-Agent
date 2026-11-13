@@ -2,6 +2,7 @@
 rolling summaries and structured state, and masked transcripts in commerce-api's `conversations`
 table (ARCHITECTURE.md §5.2)."""
 
+import asyncio
 import json
 import logging
 import time
@@ -12,6 +13,7 @@ from typing import Any, Literal
 
 from anthropic.types import ContentBlock
 from redis.asyncio import Redis
+from redis.exceptions import WatchError
 
 from app.auth import Auth
 from app.commerce_client import ApiError, CommerceClient, seg
@@ -223,10 +225,41 @@ Summarise = Callable[[str | None, list[Message]], Awaitable[str]]
 
 
 class SessionStore:
-    def __init__(self, redis: Redis, ttl_s: int, window: int) -> None:
+    def __init__(self, redis: Redis, ttl_s: int, window: int, lock_ttl_s: int = 60) -> None:
         self._redis = redis
         self._ttl = ttl_s
         self._window = window
+        # Longer than a turn can run (TURN_TIMEOUT_S), so a lock that's never released (a
+        # crashed replica, a stream dropped before it started) only blocks until it expires.
+        self._lock_ttl = lock_ttl_s
+
+    async def lock(self, conversation_id: str, wait_s: float = 0) -> str | None:
+        """Claim `lock:{conversationId}` for one turn. A turn loads the session, works for
+        seconds, then saves all of it, so two at once (two tabs, Confirm during a reply) would
+        overwrite each other's messages. Returns the token for `unlock`, or None if another
+        turn still holds it after `wait_s`."""
+        token = uuid.uuid4().hex
+        deadline = time.monotonic() + wait_s
+        while not await self._redis.set(
+            f"lock:{conversation_id}", token, nx=True, ex=self._lock_ttl
+        ):
+            if time.monotonic() >= deadline:
+                return None
+            await asyncio.sleep(0.2)
+        return token
+
+    async def unlock(self, conversation_id: str, token: str) -> None:
+        """Release only our own claim: after a TTL expiry the key may be another turn's."""
+        key = f"lock:{conversation_id}"
+        try:
+            async with self._redis.pipeline(transaction=True) as pipe:
+                await pipe.watch(key)
+                if await pipe.get(key) == token:
+                    pipe.multi()  # type: ignore[no-untyped-call]
+                    pipe.delete(key)
+                    await pipe.execute()
+        except WatchError:
+            pass  # changed under us: no longer ours
 
     async def load(self, conversation_id: str | None, auth: Auth) -> Session:
         """Existing session for this shopper, or a fresh one. Never another user's."""
