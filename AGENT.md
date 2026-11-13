@@ -328,7 +328,7 @@ With `PLAYBOOKS_ENABLED` (off by default), the `<context>` block gets a short "#
 | Tool output | wrap in `<tool_result>`; strip HTML | — |
 | Output | links not on the store's hosts (`STOREFRONT_URL`, `LINK_HOSTS`) | replaced with `[link removed]` as the reply streams (`OutputGuard`); the widget also won't link them |
 | Output | coupon-shaped codes (`STAFF100`) the store didn't confirm (applied code, or a store field like a product name) | replaced with `[code removed]` as the reply streams; also in saved history; metric `agent.output.redactions` |
-| Output | price/percent mentioned that wasn't in any tool result this turn | logged as `suspect_fact`, sampled for review |
+| Output | price/percent mentioned that wasn't in any tool result (or the shopper's message) this turn | logged as `suspect_fact`, counted (`agent.output.suspect_replies`), `AgentSuspectFacts` alert at > 5% of replies |
 
 ## 7. Handoff triggers
 

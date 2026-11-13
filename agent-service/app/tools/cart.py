@@ -90,7 +90,7 @@ async def checkout_link(_: NoInput, ctx: ToolContext) -> ToolOutput:
 
 TOOLS = [
     Tool("view_cart", "The shopper's current cart with items, coupon and totals.",
-         NoInput, view_cart, requires_auth=True),
+         NoInput, view_cart, requires_auth=True, read_only=True),
     Tool("add_to_cart",
          "Add a product to the cart. Use the product id from a search or product result.",
          AddToCart, add_to_cart, requires_auth=True),
@@ -102,5 +102,5 @@ TOOLS = [
          ApplyCoupon, apply_coupon, requires_auth=True),
     Tool("checkout_link",
          "Get the link to the storefront checkout page so the shopper can review and pay.",
-         NoInput, checkout_link, requires_auth=True),
+         NoInput, checkout_link, requires_auth=True, read_only=True),
 ]

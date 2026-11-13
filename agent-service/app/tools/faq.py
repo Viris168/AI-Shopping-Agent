@@ -42,6 +42,5 @@ TOOLS = [
         "search_faq",
         "Search store policies and FAQ. Call before answering any policy question. "
         "The FAQ is in English: search in English.",
-        SearchFaq, search_faq, cache_ttl_s=FAQ_CACHE_S,
-    ),
+        SearchFaq, search_faq, cache_ttl_s=FAQ_CACHE_S, read_only=True),
 ]

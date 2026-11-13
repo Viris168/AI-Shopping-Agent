@@ -298,7 +298,7 @@ writes return 403.
 - Timeouts: 10 s per commerce-api call, 30 s per model call, 45 s per turn.
 - Retries: 2 with exponential backoff on 429/5xx; mutations only with idempotency key.
 - Limits: 6 tool rounds per turn.
-- Degradation: model failure → `error` event with code `model_unavailable` → fallback card; commerce-api failure → tool error result, model apologises and offers handoff.
+- Degradation: model failure (overload, rate limit, 5xx, network) before any text → the same call once on `MODEL_FAST`; if that fails too, or the error isn't transient (bad key, no balance) → `error` event with code `model_unavailable` → fallback card; commerce-api failure → tool error result, model apologises and offers handoff.
 - Kill switch: `GET /v1/config` tells the widget whether to mount (`enabled`, `rolloutPercent`); chat and confirm return `503` when disabled. `AGENT_ENABLED` or, instantly, the Redis flag `flag:agent_enabled` ([runbook](./infra/monitoring/README.md#kill-switch)).
 - Stateless replicas (≥ 2); state in Redis/Postgres.
 

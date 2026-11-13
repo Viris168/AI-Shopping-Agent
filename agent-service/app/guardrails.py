@@ -124,12 +124,16 @@ def defang_control_tags(text: str) -> str:
     return _CONTROL_TAG.sub(r"&lt;\1\2", text)
 
 
-def suspect_facts(reply: str, tool_texts: list[str]) -> list[str]:
-    """Prices or percentages in the reply that no tool returned this turn."""
-    seen = " ".join(tool_texts).replace(" ", "")
+def suspect_facts(reply: str, tool_texts: list[str], shopper_text: str = "") -> list[str]:
+    """Prices or percentages in the reply that no tool returned this turn (rule 5). Ones the
+    shopper wrote themselves ("is there 50% off?") don't count. Logged and counted for the
+    AgentSuspectFacts alert. The reply has already streamed by then, so this measures; it
+    doesn't block."""
+    seen = " ".join([*tool_texts, shopper_text]).replace(" ", "")
     suspects = [m for m in _MONEY_OR_PERCENT.findall(reply) if m.replace(" ", "") not in seen]
     if suspects:
         log.warning("suspect_fact: %s", suspects)
+        telemetry.suspect_replies.add(1)
     return suspects
 
 
