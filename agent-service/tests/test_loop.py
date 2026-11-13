@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from app.actions import ActionStore
 from app.auth import GUEST, Auth
 from app.commerce_client import CommerceClient
-from app.guardrails import TokenBudget
+from app.guardrails import TokenBudget, suspect_facts, wrap_tool_result
 from app.loop import (
     BUDGET_TEXT,
     DAILY_BUDGET_TEXT,
@@ -565,3 +565,11 @@ async def test_a_read_after_a_write_waits_for_it(redis: FakeAsyncRedis, api: Fak
     agent.registry = _probe_tools(log, gate)
     await turn(agent, "x")
     assert log[:2] == ["write start", "write end"]
+
+
+def test_suspect_facts_ignore_what_the_shopper_wrote() -> None:
+    tools = [wrap_tool_result({"price": "$79.00"})]
+    reply = "It's $79.00, and 20% off isn't available."
+    assert suspect_facts(reply, tools, "is there 20% off?") == []
+    assert suspect_facts("It's $79.00, now $59.00 with 25% off.", tools, "any deals?") == [
+        "$59.00", "25%"]

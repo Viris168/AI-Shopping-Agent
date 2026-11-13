@@ -66,3 +66,19 @@ groups:
         annotations:
           summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of turns time out or crash"
           runbook: infra/monitoring/README.md#failing-turns
+
+      - alert: AgentSuspectFacts
+        # Replies quoting a price or percentage that no tool (or the shopper) gave that turn
+        # (CLAUDE.md rule 5). Some are harmless (a price from an earlier turn); a rise usually
+        # means a prompt or model change. Hourly window: it's a trend, not an outage.
+        expr: |
+          (
+            sum by (job) (increase(agent_output_suspect_replies_total[1h]))
+              / sum by (job) (increase(agent_turn_duration_seconds_count{route="chat"}[1h]))
+          ) > 0.05
+          and sum by (job) (increase(agent_turn_duration_seconds_count{route="chat"}[1h])) >= 50
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of replies state unsourced prices"
+          runbook: infra/monitoring/README.md#suspect-facts

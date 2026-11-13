@@ -56,6 +56,8 @@ are text in development and JSON (with `request_id` and `trace_id`) when `APP_EN
 | `agent_actions_total` | `tool`, `result` | Confirm cards: requested, confirmed, failed, cancelled, expired |
 | `agent_feedback_total` | `rating` | Thumbs up/down |
 | `agent_disabled_rejections_total` | — | Requests refused by the kill switch |
+| `agent_output_suspect_replies_total` | — | Replies with a price or % no tool or shopper message gave that turn |
+| `agent_output_redactions_total` | `kind` (code, link) | Unconfirmed coupon codes and off-store links removed from replies |
 
 **Cost row** (dashboard): spend, cost per conversation and cache hit ratio for the selected
 range, then cost per hour by purpose and by model, tokens by purpose, and the cache hit ratio over
@@ -148,6 +150,14 @@ card. `error_type` tells you which: `401`/`403` → key revoked or wrong (`ANTHR
 
 `AgentTurnsFailing`: timeouts or crashes. `internal` → the traceback is in agent-service's logs
 (`turn failed`). `timeout` → a turn hit `TURN_TIMEOUT_S`; check model and tool durations.
+
+### Suspect facts
+
+`AgentSuspectFacts`: over 5% of replies in an hour quote a price or percentage that no tool
+result (or the shopper's own message) gave that turn. Search agent-service logs for
+`suspect_fact` to see the values. A few are harmless (a price from an earlier turn). A jump
+right after a deploy usually means a prompt or model change: run the golden and red-team evals
+on it, and roll back if prices look invented.
 
 ### Audit insert failures
 

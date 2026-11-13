@@ -306,7 +306,7 @@ class Agent:
         else:
             emit("text_delta", {"text": FALLBACK_HANDOFF_TEXT})
 
-        suspect_facts("".join(reply), tool_texts)
+        suspect_facts("".join(reply), tool_texts, user_msg or "")
         if guard.removed:
             log.warning("output_redacted: %s", sorted(guard.removed))
         # Before summarising, so messages are saved before they can be folded away.
