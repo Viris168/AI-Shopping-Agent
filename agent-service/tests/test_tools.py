@@ -1,12 +1,14 @@
 """Tools, registry and commerce-api client, against an in-process commerce-api."""
 
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
 
 from app.auth import GUEST, Auth
 from app.commerce_client import ApiError, CommerceClient
+from app.tools.orders import local_dates
 from app.tools.registry import LOGIN_REQUIRED, Registry, ToolContext, build_registry
 from tests.fakes import FakeApi, settings
 
@@ -307,3 +309,23 @@ async def test_validation_error_lists_are_joined() -> None:
     out = await run("apply_coupon", {"code": "X"}, api)
     assert out.for_model["error"]["message"] == "code must be shorter; code is required"
 
+
+
+# --- store time zone -------------------------------------------------------------
+
+def test_order_dates_are_the_stores_calendar_dates() -> None:
+    order = {"orderNumber": "ORD-1", "deliveredAt": "2026-11-01T18:00:00.000Z",
+             "returnDeadline": "2026-12-01T18:00:00.000Z", "placedAt": None,
+             "status": "DELIVERED"}
+    # 18:00 UTC is already the next day in Bangkok (UTC+7), still the same day in New York.
+    assert local_dates(order, ZoneInfo("Asia/Bangkok"))["returnDeadline"] == "2026-12-02"
+    ny = local_dates(order, ZoneInfo("America/New_York"))
+    assert ny["returnDeadline"] == "2026-12-01" and ny["deliveredAt"] == "2026-11-01"
+    assert ny["placedAt"] is None and ny["status"] == "DELIVERED"
+    assert local_dates({"shippedAt": "soon"}, ZoneInfo("UTC")) == {"shippedAt": "soon"}
+
+
+def test_store_tz_must_be_a_real_zone() -> None:
+    assert settings(store_tz="Asia/Bangkok").tz == ZoneInfo("Asia/Bangkok")
+    with pytest.raises(ValueError, match="STORE_TZ"):
+        settings(store_tz="Mars/Olympus")

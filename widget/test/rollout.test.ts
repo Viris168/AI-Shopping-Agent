@@ -16,6 +16,15 @@ describe('rollout', () => {
     expect(await fetchConfig('https://chat.test')).toEqual({ enabled: false, rolloutPercent: 0 });
   });
 
+  it("passes on the store's time zone only if the browser knows it", async () => {
+    mockFetch(
+      jsonResponse(200, { enabled: true, rolloutPercent: 25, timeZone: 'Asia/Bangkok' }),
+      jsonResponse(200, { enabled: true, rolloutPercent: 25, timeZone: 'Mars/Olympus' }),
+    );
+    expect((await fetchConfig('https://chat.test'))?.timeZone).toBe('Asia/Bangkok');
+    expect((await fetchConfig('https://chat.test'))?.timeZone).toBeUndefined();
+  });
+
   it('fails closed and lets the kill switch beat everything', () => {
     const storage = new MemoryStorage();
     expect(shouldMount(null, '', storage)).toBe(false);

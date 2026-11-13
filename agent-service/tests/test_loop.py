@@ -3,7 +3,9 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator, Iterable
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -16,6 +18,7 @@ from app.commerce_client import CommerceClient
 from app.guardrails import TokenBudget, suspect_facts, wrap_tool_result
 from app.loop import (
     BUDGET_TEXT,
+    CUT_OFF_TEXT,
     DAILY_BUDGET_TEXT,
     FALLBACK_HANDOFF_TEXT,
     TYPED_TAG_NOTE,
@@ -573,3 +576,17 @@ def test_suspect_facts_ignore_what_the_shopper_wrote() -> None:
     assert suspect_facts(reply, tools, "is there 20% off?") == []
     assert suspect_facts("It's $79.00, now $59.00 with 25% off.", tools, "any deals?") == [
         "$59.00", "25%"]
+
+
+
+async def test_a_reply_cut_off_at_max_tokens_says_so(redis: FakeAsyncRedis, api: FakeApi) -> None:
+    llm = FakeLLM(message(text("The Rain Jacket is waterproof and"), stop_reason="max_tokens"))
+    _, events = await turn(make_agent(redis, api, llm), "tell me about the jacket")
+    assert events.text == "The Rain Jacket is waterproof and" + CUT_OFF_TEXT
+    assert events.names == ["text_delta", "done"]
+
+
+def test_today_is_the_stores_date() -> None:
+    s = settings(store_tz="Pacific/Kiritimati")  # UTC+14: often a day ahead of UTC
+    system = build_system(s, ALICE)[1]["text"]
+    assert f"Today is {datetime.now(ZoneInfo('Pacific/Kiritimati')).date().isoformat()}." in system

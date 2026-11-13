@@ -290,7 +290,7 @@ async def widget_config(
     enabled, rollout = await read_flags(request, settings)
     # Short cache: a kill switch reaches every page within a minute.
     response.headers["Cache-Control"] = "public, max-age=60"
-    return {"enabled": enabled, "rolloutPercent": rollout}
+    return {"enabled": enabled, "rolloutPercent": rollout, "timeZone": settings.store_tz}
 
 
 @app.get("/health")

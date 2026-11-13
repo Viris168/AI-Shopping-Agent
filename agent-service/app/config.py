@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -61,6 +62,10 @@ class Settings(BaseSettings):
     # Any other link the model writes is removed (app/guardrails.py OutputGuard).
     link_hosts: str = ""
     return_window_days: int = 30
+    # IANA zone the store runs in (e.g. "America/New_York"). "Today" in the prompt and the order
+    # dates the model sees are in it, and the widget formats card dates in it, so the reply and
+    # the card agree on a deadline's date.
+    store_tz: str = "UTC"
 
     # Limits (AGENT.md §6)
     max_tool_rounds: int = 6
@@ -94,6 +99,10 @@ class Settings(BaseSettings):
     trace_sample_ratio: float = Field(1.0, ge=0, le=1)
 
     @property
+    def tz(self) -> ZoneInfo:
+        return ZoneInfo(self.store_tz)
+
+    @property
     def link_host_list(self) -> list[str]:
         store = urlsplit(self.storefront_url).hostname
         extra = [h.strip().lower() for h in self.link_hosts.split(",") if h.strip()]
@@ -102,6 +111,14 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @model_validator(mode="after")
+    def _known_time_zone(self) -> "Settings":
+        try:
+            ZoneInfo(self.store_tz)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"STORE_TZ {self.store_tz!r} is not an IANA time zone") from exc
+        return self
 
     @model_validator(mode="after")
     def _production_secrets(self) -> "Settings":

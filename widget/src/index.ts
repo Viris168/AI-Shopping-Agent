@@ -60,13 +60,16 @@ function apiBaseOf(script: HTMLScriptElement | null): string {
   return (script?.dataset.api ?? scriptOrigin).replace(/\/$/, '');
 }
 
-function mount(script: HTMLScriptElement | null): void {
+function mount(script: HTMLScriptElement | null, timeZone?: string): void {
   if (document.getElementById('shopchat-root')) return; // loaded twice
   const data = script?.dataset ?? {};
   const apiBase = apiBaseOf(script);
   const store = data.store ?? 'main';
   const maxChars = Number(data.maxChars) || 2000;
-  const i18n = createI18n(pickLocale(data.locale, document.documentElement.lang, navigator.language));
+  const i18n = createI18n(
+    pickLocale(data.locale, document.documentElement.lang, navigator.language),
+    timeZone,
+  );
   const links = new LinkPolicy([
     location.hostname,
     new URL(apiBase).hostname,
@@ -172,6 +175,6 @@ function mount(script: HTMLScriptElement | null): void {
 const script = findScript(); // only readable synchronously, before the first await
 void fetchConfig(apiBaseOf(script)).then((config) => {
   if (!shouldMount(config, location.search)) return;
-  if (document.body) mount(script);
-  else document.addEventListener('DOMContentLoaded', () => mount(script), { once: true });
+  if (document.body) mount(script, config?.timeZone);
+  else document.addEventListener('DOMContentLoaded', () => mount(script, config?.timeZone), { once: true });
 });

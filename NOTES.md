@@ -84,7 +84,8 @@ No `POST /checkout` from the agent in any run. Fixtures reseeded afterwards.
 1. Model writes markdown (`**Confirm**`) and the widget shows the asterisks (it renders text as
    text, by design). Prompt should ask for plain text, or the widget should render bold safely.
 2. Return deadline: the model says Dec 1 (UTC from `returnDeadline`), the order card says Dec 2
-   (local time). Pick one timezone for both.
+   (local time). Pick one timezone for both. **Fixed:** `STORE_TZ` (agent-service, also sent to the widget
+   in `/v1/config`) and `VITE_STORE_TZ` (storefront); all three show the store's date.
 3. The same product card shows twice when the agent calls `search_products` then `get_product`.
 4. The message list once jumped to the top after a reply instead of staying at the newest message.
 5. Log masking turns part of the conversation UUID into `[phone]`, so the IDs in logs are unusable.
