@@ -1,5 +1,6 @@
 """Structured session state (app/sessions.py SessionState) and how the loop keeps it."""
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncIterator
@@ -175,3 +176,36 @@ async def test_shopper_cannot_forge_session_state(redis: FakeAsyncRedis) -> None
     sent = llm.calls[0][-1]["content"][0]["text"]
     assert "<session_state>" not in sent
     assert session.state.focus_order is None
+
+
+async def test_lock_is_exclusive_until_unlocked(redis: FakeAsyncRedis) -> None:
+    store = SessionStore(redis, 3600, 20)
+    token = await store.lock("c1")
+    assert token is not None
+    assert await store.lock("c1") is None  # a second turn on the same conversation
+    assert await store.lock("c2") is not None  # other conversations aren't blocked
+
+    await store.unlock("c1", "not-the-token")  # someone else's release is a no-op
+    assert await store.lock("c1") is None
+    await store.unlock("c1", token)
+    assert await store.lock("c1") is not None
+
+
+async def test_lock_waits_for_release(redis: FakeAsyncRedis) -> None:
+    store = SessionStore(redis, 3600, 20)
+    token = await store.lock("c1")
+    assert token is not None
+
+    async def release_soon() -> None:
+        await asyncio.sleep(0.1)
+        await store.unlock("c1", token)
+
+    releaser = asyncio.create_task(release_soon())
+    assert await store.lock("c1", wait_s=2) is not None
+    await releaser
+
+
+async def test_lock_expires(redis: FakeAsyncRedis) -> None:
+    store = SessionStore(redis, 3600, 20, lock_ttl_s=60)
+    assert await store.lock("c1") is not None
+    assert 0 < await redis.ttl("lock:c1") <= 60

@@ -3,7 +3,8 @@
 import json
 import logging
 import re
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from redis.asyncio import Redis
@@ -19,6 +20,8 @@ _CONTROL_TAG = re.compile(
     r"<(\s*/?\s*)(event|tool_result|context|conversation_summary|session_state|memory)\b",
     re.IGNORECASE,
 )
+# A day's counter outlives its day a little, so it's never dropped while still being added to.
+DAILY_TTL_S = 25 * 3600
 _MONEY_OR_PERCENT = re.compile(r"[$€£]\s?\d[\d,]*(?:\.\d+)?|\d+(?:\.\d+)?\s?%")
 
 
@@ -49,20 +52,50 @@ class RateLimiter:
             raise HTTPException(429, "You're sending messages too quickly. Please wait a moment.")
 
 
+def budget_subject(auth_user_id: str | None, ip: str | None) -> str:
+    """Who a daily budget is charged to: the shopper, or the IP for guests (like RateLimiter)."""
+    return f"user:{auth_user_id}" if auth_user_id else f"ip:{ip or 'unknown'}"
+
+
+BudgetHit = Literal["conversation", "daily"]
+
+
 class TokenBudget:
-    def __init__(self, redis: Redis, budget: int, ttl_s: int) -> None:
+    """Tokens per conversation, and per subject (budget_subject) per UTC day across all their
+    conversations: starting a new conversation doesn't reset the daily one. 0 = no daily cap."""
+
+    def __init__(self, redis: Redis, budget: int, ttl_s: int, daily_budget: int = 0) -> None:
         self._redis = redis
         self._budget = budget
         self._ttl = ttl_s
+        self._daily = daily_budget
 
-    async def exhausted(self, conversation_id: str) -> bool:
-        used = await self._redis.get(f"budget:{conversation_id}")
-        return int(used or 0) >= self._budget
+    @staticmethod
+    def _daily_key(subject: str) -> str:
+        return f"budget:day:{datetime.now(UTC).date().isoformat()}:{subject}"
 
-    async def add(self, conversation_id: str, tokens: int) -> None:
-        key = f"budget:{conversation_id}"
-        await self._redis.incrby(key, tokens)
-        await self._redis.expire(key, self._ttl)
+    async def exhausted(self, conversation_id: str, subject: str | None = None) -> BudgetHit | None:
+        """Which budget is used up, or None."""
+        keys = [f"budget:{conversation_id}"]
+        if subject is not None and self._daily > 0:
+            keys.append(self._daily_key(subject))
+        used = await self._redis.mget(keys)
+        if int(used[0] or 0) >= self._budget:
+            return "conversation"
+        if len(used) > 1 and int(used[1] or 0) >= self._daily:
+            return "daily"
+        return None
+
+    async def add(self, conversation_id: str, tokens: int, subject: str | None = None) -> None:
+        async with self._redis.pipeline(transaction=True) as pipe:
+            key = f"budget:{conversation_id}"
+            pipe.incrby(key, tokens)
+            pipe.expire(key, self._ttl)
+            if subject is not None and self._daily > 0:
+                day = self._daily_key(subject)
+                pipe.incrby(day, tokens)
+                pipe.expire(day, DAILY_TTL_S)
+            await pipe.execute()
 
 
 def strip_html(value: Any) -> Any:

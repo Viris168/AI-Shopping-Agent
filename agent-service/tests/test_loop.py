@@ -14,6 +14,7 @@ from app.commerce_client import CommerceClient
 from app.guardrails import TokenBudget
 from app.loop import (
     BUDGET_TEXT,
+    DAILY_BUDGET_TEXT,
     FALLBACK_HANDOFF_TEXT,
     Agent,
     build_context,
@@ -74,7 +75,7 @@ def make_agent(redis: FakeAsyncRedis, api: FakeApi, llm: FakeLLM, **overrides: A
         registry=build_registry(),
         sessions=SessionStore(redis, s.session_ttl_s, s.window_messages),
         actions=ActionStore(redis, s.action_ttl_s),
-        budget=TokenBudget(redis, s.token_budget, s.session_ttl_s),
+        budget=TokenBudget(redis, s.token_budget, s.session_ttl_s, s.daily_token_budget),
         client=CommerceClient(s, api.http()),
     )
 
@@ -436,6 +437,31 @@ async def test_usage_counts_toward_the_budget(redis: FakeAsyncRedis, api: FakeAp
     agent = make_agent(redis, api, llm, token_budget=4)
     session, _ = await turn(agent, "x")
     assert await agent.budget.exhausted(session.id)
+
+
+async def test_daily_budget_spans_conversations(redis: FakeAsyncRedis, api: FakeApi) -> None:
+    llm = FakeLLM(message(text("one")), message(text("two")))
+    agent = make_agent(redis, api, llm, daily_token_budget=4)
+    first = await agent.sessions.load(None, ALICE)
+    events = Events()
+    await agent.run_turn(first, "x", ALICE, events, "user:u-alice")
+    await agent.run_turn(first, "y", ALICE, events, "user:u-alice")  # 4 tokens used now
+
+    # A fresh conversation doesn't reset the day's spending.
+    fresh = await agent.sessions.load(None, ALICE)
+    events = Events()
+    await agent.run_turn(fresh, "z", ALICE, events, "user:u-alice")
+    assert events.text == DAILY_BUDGET_TEXT and len(llm.calls) == 2
+    assert await agent.budget.exhausted(fresh.id, "user:u-alice") == "daily"
+    # Someone else, and calls without a subject (evals), aren't charged to it.
+    assert await agent.budget.exhausted(fresh.id, "user:u-bob") is None
+    assert await agent.budget.exhausted(fresh.id) is None
+
+
+async def test_daily_budget_zero_is_off(redis: FakeAsyncRedis, api: FakeApi) -> None:
+    agent = make_agent(redis, api, FakeLLM(), daily_token_budget=0)
+    await agent.budget.add("c1", 10**9, "ip:1.2.3.4")
+    assert await agent.budget.exhausted("c2", "ip:1.2.3.4") is None
 
 
 async def test_history_window_starts_on_a_shopper_message(redis: FakeAsyncRedis,
