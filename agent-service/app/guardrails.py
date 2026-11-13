@@ -47,9 +47,12 @@ class RateLimiter:
 
     async def hit(self, user_id: str | None, ip: str | None) -> None:
         key = f"rl:user:{user_id}" if user_id else f"rl:ip:{ip or 'unknown'}"
-        count = await self._redis.incr(key)
-        if count == 1:
-            await self._redis.expire(key, 60)
+        # One MULTI: the key is created with its TTL before it's counted, so a crash between
+        # commands can't leave a counter that never expires (and blocks that user for good).
+        async with self._redis.pipeline(transaction=True) as pipe:
+            pipe.set(key, 0, ex=60, nx=True)
+            pipe.incr(key)
+            _, count = await pipe.execute()
         if count > self._limit:
             raise HTTPException(429, "You're sending messages too quickly. Please wait a moment.")
 
