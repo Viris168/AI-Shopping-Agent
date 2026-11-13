@@ -17,7 +17,13 @@ from app.auth import Auth
 from app.cache import ToolCache
 from app.commerce_client import CommerceClient
 from app.config import Settings
-from app.guardrails import TokenBudget, defang_control_tags, suspect_facts, wrap_tool_result
+from app.guardrails import (
+    OutputGuard,
+    TokenBudget,
+    defang_control_tags,
+    suspect_facts,
+    wrap_tool_result,
+)
 from app.llm import LLM
 from app.memory import Memory, render_memory
 from app.sessions import Session, SessionStore, TranscriptStore
@@ -218,6 +224,12 @@ class Agent:
         reply: list[str] = []
         tool_texts: list[str] = []
         new_round = False
+        guard = OutputGuard(self.settings.link_host_list, session.state.known_codes)
+
+        def send(text: str) -> None:
+            if text:
+                reply.append(text)
+                emit("text_delta", {"text": text})
 
         def on_text(text: str) -> None:
             nonlocal new_round
@@ -225,8 +237,7 @@ class Agent:
                 # Text from separate model rounds would otherwise run together ("...it.The").
                 text = "\n\n" + text
             new_round = False
-            reply.append(text)
-            emit("text_delta", {"text": text})
+            send(guard.feed(text))
 
         for _ in range(self.settings.max_tool_rounds):
             new_round = True
@@ -249,6 +260,14 @@ class Agent:
                 tools=tools,
                 on_text=on_text,
             )
+            send(guard.flush())
+            # History and transcripts keep what the shopper saw, so a removed code or link
+            # isn't fed back to the model next turn.
+            content = [
+                b.model_copy(update={"text": guard.redact(b.text, count=False)})
+                if b.type == "text" else b
+                for b in resp.content
+            ]
             usage["input_tokens"] += resp.usage.input_tokens
             usage["output_tokens"] += resp.usage.output_tokens
             usage["cache_read_input_tokens"] += resp.usage.cache_read_input_tokens or 0
@@ -257,12 +276,12 @@ class Agent:
             calls = [b for b in resp.content if b.type == "tool_use"]
             if calls and resp.stop_reason in ("max_tokens", "refusal"):
                 # Tool input may be cut off: don't run it, and keep history valid.
-                kept = [b for b in resp.content if b.type != "tool_use"]
+                kept = [b for b in content if b.type != "tool_use"]
                 if kept:
                     session.append_assistant(kept)
                 emit("text_delta", {"text": FALLBACK_HANDOFF_TEXT})
                 break
-            session.append_assistant(resp.content)
+            session.append_assistant(content)
             if not calls:
                 break
 
@@ -271,6 +290,7 @@ class Agent:
                 if self.on_tool_call:
                     self.on_tool_call(call.name, call.input)
                 out = await self._handle_call(call.name, call.input, session, auth, emit)
+                session.state.note_codes(call.name, call.input, out)
                 tool_texts.append(wrap_tool_result(out.for_model))
                 results.append(tool_result(call.id, out))
             session.append_tool_results(results)
@@ -278,6 +298,8 @@ class Agent:
             emit("text_delta", {"text": FALLBACK_HANDOFF_TEXT})
 
         suspect_facts("".join(reply), tool_texts)
+        if guard.removed:
+            log.warning("output_redacted: %s", sorted(guard.removed))
         # Before summarising, so messages are saved before they can be folded away.
         await self._record(session, auth, spent.take())
         await self.sessions.maybe_summarise(session, self.llm.summarise)

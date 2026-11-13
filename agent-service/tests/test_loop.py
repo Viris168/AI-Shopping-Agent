@@ -1,7 +1,7 @@
 """The agent loop with a scripted model, in-memory Redis and an in-process commerce-api."""
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 from typing import Any
 
 import httpx
@@ -32,13 +32,23 @@ RETURN_ARGS = {"orderNumber": "ORD-1001", "reason": "Too small",
                "items": [{"orderItemId": "oi1", "quantity": 1}]}
 
 
+def kinds(names: Iterable[str]) -> list[str]:
+    """Event names with runs of text_delta merged: the output guard may split one model
+    delta in two (it holds back a word that could be a link or code)."""
+    out: list[str] = []
+    for name in names:
+        if not (name == "text_delta" and out and out[-1] == name):
+            out.append(name)
+    return out
+
+
 class Events(list[tuple[EventName, dict[str, Any]]]):
     def __call__(self, event: EventName, data: dict[str, Any]) -> None:
         self.append((event, data))
 
     @property
     def names(self) -> list[str]:
-        return [e for e, _ in self]
+        return kinds(e for e, _ in self)
 
     @property
     def text(self) -> str:

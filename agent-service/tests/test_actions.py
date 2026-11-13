@@ -19,7 +19,7 @@ from app.loop import Agent
 from app.main import app
 from app.sessions import Session, TranscriptStore, usage_body
 from tests.fakes import FakeApi, FakeLLM, message, settings, text, tool_use
-from tests.test_loop import ALICE, BOB, RETURN_ARGS, Events, make_agent, turn
+from tests.test_loop import ALICE, BOB, RETURN_ARGS, Events, kinds, make_agent, turn
 
 CONVERSATION_PATH = re.compile(r"^conversations/([^/]+)/(turns|feedback)$")
 
@@ -182,7 +182,7 @@ async def test_confirm_route_runs_the_action_once(redis: FakeAsyncRedis, api: Ap
         resp = await http.post(f"/v1/actions/{action_id}/confirm")
         assert resp.status_code == 200
         events = sse_events(resp.text)
-        assert [e for e, _ in events] == ["meta", "card", "text_delta", "done"]
+        assert kinds(e for e, _ in events) == ["meta", "card", "text_delta", "done"]
         assert events[1][1]["type"] == "return_created"
 
         again = await http.post(f"/v1/actions/{action_id}/confirm")

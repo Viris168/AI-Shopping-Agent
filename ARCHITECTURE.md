@@ -355,6 +355,7 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `TURN_TIMEOUT_S` | `45` | Turn cap |
 | `MAX_MESSAGE_CHARS` | `2000` | Input cap |
 | `RATE_LIMIT_PER_MIN` | `20` | Messages per user/IP |
+| `LINK_HOSTS` | — | Hosts replies may link to besides `STOREFRONT_URL`'s; other links (and unconfirmed coupon codes) are removed from replies |
 | `CORS_ORIGINS` | `https://yourstore.com` | Widget host origins |
 | `AGENT_ENABLED` | `true` | Kill switch (Redis `flag:agent_enabled` can also turn it off) |
 | `ROLLOUT_PERCENT` | `100` | Share of browsers that see the widget (Redis `flag:rollout_percent` overrides) |

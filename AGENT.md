@@ -322,7 +322,8 @@ With `PLAYBOOKS_ENABLED` (off by default), the `<context>` block gets a short "#
 | Tool args | schema validation (Pydantic) | error result to model |
 | Tool args | login-only tool as guest | `login_required` result |
 | Tool output | wrap in `<tool_result>`; strip HTML | — |
-| Output | URLs not on store domains | removed by widget |
+| Output | links not on the store's hosts (`STOREFRONT_URL`, `LINK_HOSTS`) | replaced with `[link removed]` as the reply streams (`OutputGuard`); the widget also won't link them |
+| Output | coupon-shaped codes (`STAFF100`) the store didn't confirm (applied code, or a store field like a product name) | replaced with `[code removed]` as the reply streams; also in saved history; metric `agent.output.redactions` |
 | Output | price/percent mentioned that wasn't in any tool result this turn | logged as `suspect_fact`, sampled for review |
 
 ## 7. Handoff triggers
