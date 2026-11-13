@@ -32,6 +32,10 @@ FALLBACK_HANDOFF_TEXT = (
 BUDGET_TEXT = (
     "This conversation has reached its limit. I can connect you with a person to continue."
 )
+DAILY_BUDGET_TEXT = (
+    "You've reached today's limit for the assistant. Please come back tomorrow, or I can "
+    "connect you with a person."
+)
 DYNAMIC_MARKER = "<!-- dynamic"
 
 OnToolCall = Callable[[str, Any], None]
@@ -182,15 +186,17 @@ class Agent:
         )
 
     async def run_turn(
-        self, session: Session, user_msg: str | None, auth: Auth, emit: Emit
+        self, session: Session, user_msg: str | None, auth: Auth, emit: Emit,
+        subject: str | None = None,
     ) -> None:
+        """`subject` (guardrails.budget_subject) is charged the daily budget; None skips it."""
         # Every model call of the turn, for the conversation's token and cost totals.
         with usage.tracking() as spent:
-            await self._turn(session, user_msg, auth, emit, spent)
+            await self._turn(session, user_msg, auth, emit, spent, subject)
 
     async def _turn(
         self, session: Session, user_msg: str | None, auth: Auth, emit: Emit,
-        spent: usage.UsageTally,
+        spent: usage.UsageTally, subject: str | None,
     ) -> None:
         if user_msg is not None:
             session.append_user(user_msg)
@@ -222,8 +228,8 @@ class Agent:
 
         for _ in range(self.settings.max_tool_rounds):
             new_round = True
-            if await self.budget.exhausted(session.id):
-                emit("text_delta", {"text": BUDGET_TEXT})
+            if hit := await self.budget.exhausted(session.id, subject):
+                emit("text_delta", {"text": DAILY_BUDGET_TEXT if hit == "daily" else BUDGET_TEXT})
                 break
             # Rendered every round, so a tool result's effect on state (an order in focus, a
             # pending Confirm, a forgotten fact) shows in the next round. Only the anchor
@@ -241,7 +247,9 @@ class Agent:
             usage["input_tokens"] += resp.usage.input_tokens
             usage["output_tokens"] += resp.usage.output_tokens
             usage["cache_read_input_tokens"] += resp.usage.cache_read_input_tokens or 0
-            await self.budget.add(session.id, resp.usage.input_tokens + resp.usage.output_tokens)
+            await self.budget.add(
+                session.id, resp.usage.input_tokens + resp.usage.output_tokens, subject
+            )
 
             calls = [b for b in resp.content if b.type == "tool_use"]
             if calls and resp.stop_reason in ("max_tokens", "refusal"):
@@ -311,7 +319,9 @@ class Agent:
         telemetry.actions.add(1, {"tool": tool.name, "result": "requested"})
         return ToolOutput({"status": "awaiting_user_confirmation"})
 
-    async def confirm(self, action: PendingAction, auth: Auth, emit: Emit) -> None:
+    async def confirm(
+        self, action: PendingAction, auth: Auth, emit: Emit, subject: str | None = None
+    ) -> None:
         """Run a claimed action (already single-use and owner-checked), then a short follow-up."""
         tool = self.registry.get(action.tool)
         if tool is None:
@@ -345,7 +355,7 @@ class Agent:
         session.append_event(
             f"Shopper pressed Confirm for {action.tool}. Result: {wrap_tool_result(out.for_model)}"
         )
-        await self.run_turn(session, None, auth, emit)
+        await self.run_turn(session, None, auth, emit, subject)
 
     async def cancel(self, action: PendingAction, auth: Auth) -> None:
         telemetry.actions.add(1, {"tool": action.tool, "result": "cancelled"})

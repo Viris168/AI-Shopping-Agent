@@ -12,12 +12,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
 
 from app import telemetry
-from app.actions import ActionStore
+from app.actions import ActionStore, PendingAction
 from app.auth import Auth, get_auth
 from app.cache import ToolCache
 from app.commerce_client import ApiError, CommerceClient
 from app.config import Settings, get_settings
-from app.guardrails import RateLimiter, TokenBudget, check_message
+from app.guardrails import RateLimiter, TokenBudget, budget_subject, check_message
 from app.llm import LLM
 from app.loop import Agent
 from app.masking import MaskingFilter
@@ -46,9 +46,14 @@ async def services(settings: Settings, redis: Redis) -> AsyncIterator[Agent]:
             settings=settings,
             llm=LLM(settings),
             registry=build_registry(memory=settings.memory_enabled),
-            sessions=SessionStore(redis, settings.session_ttl_s, settings.window_messages),
+            sessions=SessionStore(
+                redis, settings.session_ttl_s, settings.window_messages,
+                lock_ttl_s=int(settings.turn_timeout_s) + 15,
+            ),
             actions=ActionStore(redis, settings.action_ttl_s),
-            budget=TokenBudget(redis, settings.token_budget, settings.session_ttl_s),
+            budget=TokenBudget(
+                redis, settings.token_budget, settings.session_ttl_s, settings.daily_token_budget
+            ),
             client=client,
             transcripts=TranscriptStore(client),
             cache=ToolCache(redis, settings.cache_enabled),
@@ -149,9 +154,41 @@ class FeedbackRequest(BaseModel):
     comment: str | None = Field(None, max_length=1000)
 
 
+BUSY = "I'm still answering in this conversation. Please wait for that reply, then try again."
+
+
+def _ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
+def _subject(request: Request, auth: Auth) -> str:
+    return budget_subject(auth.user_id, _ip(request))
+
+
 async def _rate_limit(request: Request, auth: Auth) -> None:
-    ip = request.client.host if request.client else None
-    await request.app.state.limiter.hit(auth.user_id, ip)
+    await request.app.state.limiter.hit(auth.user_id, _ip(request))
+
+
+async def _lock_for_action(
+    agent: Agent, action_id: str, auth: Auth, wait_s: float
+) -> tuple[PendingAction, str] | None:
+    """Wait for any turn running on the action's conversation, then claim the action.
+
+    The lock comes first, so a Confirm pressed while a reply is still streaming isn't used up
+    when it can't run. None when the action is missing, expired, used or not this shopper's;
+    429 (the widget keeps the card, so it can be pressed again) when the conversation stays busy.
+    """
+    peek = await agent.actions.get(action_id)
+    if peek is None or not peek.owned_by(auth):
+        return None
+    token = await agent.sessions.lock(peek.conversation_id, wait_s)
+    if token is None:
+        raise HTTPException(429, BUSY)
+    action = await agent.actions.take(action_id, auth)
+    if action is None:
+        await agent.sessions.unlock(peek.conversation_id, token)
+        return None
+    return action, token
 
 
 @app.post("/v1/chat", dependencies=[Depends(require_enabled)])
@@ -160,14 +197,31 @@ async def chat(
 ) -> StreamingResponse:
     message = check_message(body.message, settings)
     await _rate_limit(request, auth)
-    session = await agent.sessions.load(body.conversationId, auth)
+    # A new conversation's ID is made here and nobody else has it yet, so it needs no lock.
+    lock: tuple[str, str] | None = None
+    if body.conversationId:
+        token = await agent.sessions.lock(body.conversationId)
+        if token is None:
+            raise HTTPException(429, BUSY)
+        lock = (body.conversationId, token)
+    try:
+        session = await agent.sessions.load(body.conversationId, auth)
+    except BaseException:
+        if lock:
+            await agent.sessions.unlock(*lock)
+        raise
     if not session.messages:
         telemetry.conversations.add(1)
+    subject = _subject(request, auth)
 
     async def run(emit: Emit) -> None:
-        message_id = f"{session.id}:{len(session.messages)}"
-        emit("meta", {"conversationId": session.id, "messageId": message_id})
-        await agent.run_turn(session, message, auth, emit)
+        try:
+            message_id = f"{session.id}:{len(session.messages)}"
+            emit("meta", {"conversationId": session.id, "messageId": message_id})
+            await agent.run_turn(session, message, auth, emit, subject)
+        finally:
+            if lock:
+                await agent.sessions.unlock(*lock)
 
     return sse_response(run, timeout_s=settings.turn_timeout_s, route="chat")
 
@@ -177,23 +231,34 @@ async def confirm_action(
     action_id: ActionId, request: Request, auth: AuthDep, agent: AgentDep, settings: SettingsDep
 ) -> StreamingResponse:
     await _rate_limit(request, auth)
-    action = await agent.actions.take(action_id, auth)
-    if action is None:
+    claimed = await _lock_for_action(agent, action_id, auth, settings.lock_wait_s)
+    if claimed is None:
         telemetry.actions.add(1, {"tool": "unknown", "result": "expired"})
         raise HTTPException(409, "This action has expired or was already handled.")
+    action, token = claimed
+    subject = _subject(request, auth)
 
     async def run(emit: Emit) -> None:
-        emit("meta", {"conversationId": action.conversation_id, "messageId": action.id})
-        await agent.confirm(action, auth, emit)
+        try:
+            emit("meta", {"conversationId": action.conversation_id, "messageId": action.id})
+            await agent.confirm(action, auth, emit, subject)
+        finally:
+            await agent.sessions.unlock(action.conversation_id, token)
 
     return sse_response(run, timeout_s=settings.turn_timeout_s, route="confirm")
 
 
 @app.post("/v1/actions/{action_id}/cancel", status_code=204)
-async def cancel_action(action_id: ActionId, auth: AuthDep, agent: AgentDep) -> Response:
-    action = await agent.actions.take(action_id, auth)
-    if action is not None:
-        await agent.cancel(action, auth)
+async def cancel_action(
+    action_id: ActionId, auth: AuthDep, agent: AgentDep, settings: SettingsDep
+) -> Response:
+    claimed = await _lock_for_action(agent, action_id, auth, settings.lock_wait_s)
+    if claimed is not None:
+        action, token = claimed
+        try:
+            await agent.cancel(action, auth)
+        finally:
+            await agent.sessions.unlock(action.conversation_id, token)
     return Response(status_code=204)
 
 
