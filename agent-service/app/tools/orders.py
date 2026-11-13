@@ -75,10 +75,10 @@ def _describe_return(args: CreateReturn) -> str:
 
 TOOLS = [
     Tool("list_orders", "The shopper's 20 most recent orders with status and totals.",
-         NoInput, list_orders, requires_auth=True),
+         NoInput, list_orders, requires_auth=True, read_only=True),
     Tool("get_order",
          "One order with items (including orderItemId), tracking, return eligibility and deadline.",
-         GetOrder, get_order, requires_auth=True),
+         GetOrder, get_order, requires_auth=True, read_only=True),
     Tool("create_return",
          "Request a return. Requires shopper confirmation. Call get_order first to get "
          "orderItemIds and check returnEligible. An item named without a count (\"the "

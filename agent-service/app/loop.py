@@ -9,7 +9,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any, cast
 
-from anthropic.types import MessageParam
+from anthropic.types import MessageParam, ToolUseBlock
 
 from app import playbooks, telemetry, usage
 from app.actions import ActionStore, PendingAction
@@ -294,10 +294,11 @@ class Agent:
                 break
 
             results = []
-            for call in calls:
-                if self.on_tool_call:
+            if self.on_tool_call:
+                for call in calls:
                     self.on_tool_call(call.name, call.input)
-                out = await self._handle_call(call.name, call.input, session, auth, emit)
+            outs = await self._run_calls(calls, session, auth, emit)
+            for call, out in zip(calls, outs, strict=True):
                 session.state.note_codes(call.name, call.input, out)
                 tool_texts.append(wrap_tool_result(out.for_model))
                 results.append(tool_result(call.id, out))
@@ -319,16 +320,44 @@ class Agent:
         if self.memory is not None and session.memory_enabled and (episode or user_msg):
             self._spawn(self._write_memory(session.id, auth, episode, user_msg))
 
+    async def _run_calls(
+        self, calls: list[ToolUseBlock], session: Session, auth: Auth, emit: Emit
+    ) -> list[ToolOutput]:
+        """Run the round's calls in order, except that consecutive read-only ones (e.g.
+        get_order + search_faq) are fetched at the same time. A read after a write still waits
+        for it (add_to_cart, then view_cart). Effects (state, cards) apply in call order."""
+        outs: list[ToolOutput] = []
+        i = 0
+        while i < len(calls):
+            j = i
+            while j < len(calls) and (t := self.registry.get(calls[j].name)) and t.read_only:
+                j += 1
+            batch = calls[i:j] if j - i > 1 else calls[i:i + 1]
+            ready: list[ToolOutput | None] = [None] * len(batch)
+            if len(batch) > 1:
+                ctx = self._ctx(auth, session.id)
+                ready = list(await asyncio.gather(*(
+                    run_tool(cast(Tool, self.registry.get(c.name)), c.input, ctx) for c in batch
+                )))
+            for call, done in zip(batch, ready, strict=True):
+                outs.append(
+                    await self._handle_call(call.name, call.input, session, auth, emit, done)
+                )
+            i += len(batch)
+        return outs
+
     async def _handle_call(
-        self, name: str, raw: Any, session: Session, auth: Auth, emit: Emit
+        self, name: str, raw: Any, session: Session, auth: Auth, emit: Emit,
+        ready: ToolOutput | None = None,
     ) -> ToolOutput:
+        """Run one call and apply its effects. `ready`: its result, already fetched."""
         tool = self.registry.get(name)
         if tool is None:
             telemetry.tool_calls.add(1, {"tool": "unknown", "status": "rejected"})
             return ToolOutput({"error": f"unknown tool {name}"}, is_error=True)
         # Guests never see login-only tools; if called anyway, prepare() returns login_required.
         if not tool.confirm:
-            out = await run_tool(tool, raw, self._ctx(auth, session.id))
+            out = ready or await run_tool(tool, raw, self._ctx(auth, session.id))
             session.state.note_tool(tool.name, raw, out)
             if tool.name == "forget_memory" and not out.is_error:
                 session.forget_fact(str(out.for_model.get("forgotten")))

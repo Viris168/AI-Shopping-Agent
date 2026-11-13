@@ -59,10 +59,17 @@ class Tool:
     summarize: Callable[[Any], str] | None = field(default=None, compare=False)
     # Seconds to keep a successful result in Redis (app/cache.py). Public, read-only tools only.
     cache_ttl_s: int | None = None
+    # Changes nothing in the store, so several calls in one model round can run at once
+    # (app/loop.py). Cart writes stay one at a time: their order matters.
+    read_only: bool = False
 
     def __post_init__(self) -> None:
         if self.cache_ttl_s is not None and (self.requires_auth or self.confirm):
             raise ValueError(f"{self.name}: only public read-only tools can be cached")
+        if self.cache_ttl_s is not None and not self.read_only:
+            raise ValueError(f"{self.name}: cached tools must be read_only")
+        if self.confirm and self.read_only:
+            raise ValueError(f"{self.name}: confirm-first tools change the store")
 
     def schema(self) -> dict[str, Any]:
         input_schema = self.input_model.model_json_schema()

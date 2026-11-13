@@ -101,20 +101,16 @@ TOOLS = [
         "Search the catalog. Use for any product discovery request. "
         "The catalog is in English: translate the shopper's words into English keywords. "
         "Prices are in cents in filters.",
-        SearchProducts, search_products, cache_ttl_s=PRODUCT_CACHE_S,
-    ),
+        SearchProducts, search_products, cache_ttl_s=PRODUCT_CACHE_S, read_only=True),
     Tool(
         "get_product",
         "Full details for one product: description, attributes, stock, rating.",
-        ProductRef, get_product, cache_ttl_s=PRODUCT_CACHE_S,
-    ),
+        ProductRef, get_product, cache_ttl_s=PRODUCT_CACHE_S, read_only=True),
     Tool(
         "get_recommendations",
         "Similar or complementary products for a given product.",
-        ProductRef, get_recommendations, cache_ttl_s=PRODUCT_CACHE_S,
-    ),
+        ProductRef, get_recommendations, cache_ttl_s=PRODUCT_CACHE_S, read_only=True),
     Tool(
         "list_categories", "All product categories with slugs.", NoInput, list_categories,
-        cache_ttl_s=CATEGORY_CACHE_S,
-    ),
+        cache_ttl_s=CATEGORY_CACHE_S, read_only=True),
 ]

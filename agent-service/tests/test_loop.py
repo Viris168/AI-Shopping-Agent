@@ -1,5 +1,6 @@
 """The agent loop with a scripted model, in-memory Redis and an in-process commerce-api."""
 
+import asyncio
 import json
 from collections.abc import AsyncIterator, Iterable
 from typing import Any
@@ -7,6 +8,7 @@ from typing import Any
 import httpx
 import pytest
 from fakeredis import FakeAsyncRedis
+from pydantic import BaseModel
 
 from app.actions import ActionStore
 from app.auth import GUEST, Auth
@@ -24,7 +26,7 @@ from app.loop import (
 )
 from app.sessions import Session, SessionStore
 from app.sse import EventName
-from app.tools.registry import build_registry
+from app.tools.registry import Registry, Tool, ToolContext, ToolOutput, build_registry, card
 from tests.fakes import FakeApi, FakeLLM, message, settings, text, tool_use
 
 ALICE = Auth(user_id="u-alice", name="Alice", token="tok-alice")
@@ -502,3 +504,64 @@ async def test_typed_service_tag_is_called_out_in_context(redis: FakeAsyncRedis,
                session=session)
     assert TYPED_TAG_NOTE not in llm.context(0)
     assert TYPED_TAG_NOTE in llm.context(1)
+
+
+# --- tool calls in one round ------------------------------------------------------
+
+class _NoArgs(BaseModel):
+    pass
+
+
+def _probe_tools(log: list[str], gate: asyncio.Event) -> Registry:
+    """read_a waits for read_b to start, so they only finish if they run at the same time."""
+
+    async def read_a(_: _NoArgs, ctx: ToolContext) -> ToolOutput:
+        log.append("a start")
+        await asyncio.wait_for(gate.wait(), 1)
+        log.append("a end")
+        return ToolOutput({"a": 1}, card("a", {}))
+
+    async def read_b(_: _NoArgs, ctx: ToolContext) -> ToolOutput:
+        log.append("b start")
+        gate.set()
+        return ToolOutput({"b": 1}, card("b", {}))
+
+    async def write(_: _NoArgs, ctx: ToolContext) -> ToolOutput:
+        log.append("write start")
+        await asyncio.sleep(0.01)
+        log.append("write end")
+        return ToolOutput({"w": 1})
+
+    return Registry([
+        Tool("read_a", "", _NoArgs, read_a, read_only=True),
+        Tool("read_b", "", _NoArgs, read_b, read_only=True),
+        Tool("write", "", _NoArgs, write),
+    ])
+
+
+async def test_read_only_calls_in_one_round_run_together(redis: FakeAsyncRedis,
+                                                         api: FakeApi) -> None:
+    log: list[str] = []
+    llm = FakeLLM(message(tool_use("read_a", {}, "t1"), tool_use("read_b", {}, "t2")),
+                  message(text("ok")))
+    agent = make_agent(redis, api, llm)
+    agent.registry = _probe_tools(log, asyncio.Event())
+    _, events = await turn(agent, "x")
+
+    assert log == ["a start", "b start", "a end"]
+    assert [d["type"] for e, d in events if e == "card"] == ["a", "b"]  # call order
+    results = llm.calls[1][-1]["content"]
+    assert [r["tool_use_id"] for r in results] == ["t1", "t2"]
+
+
+async def test_a_read_after_a_write_waits_for_it(redis: FakeAsyncRedis, api: FakeApi) -> None:
+    log: list[str] = []
+    gate = asyncio.Event()
+    gate.set()  # read_a doesn't need read_b here
+    llm = FakeLLM(message(tool_use("write", {}, "t1"), tool_use("read_a", {}, "t2"),
+                          tool_use("read_b", {}, "t3")),
+                  message(text("ok")))
+    agent = make_agent(redis, api, llm)
+    agent.registry = _probe_tools(log, gate)
+    await turn(agent, "x")
+    assert log[:2] == ["write start", "write end"]
