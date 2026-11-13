@@ -19,7 +19,7 @@ from app.loop import Agent
 from app.main import app
 from app.sessions import Session, TranscriptStore, usage_body
 from tests.fakes import FakeApi, FakeLLM, message, settings, text, tool_use
-from tests.test_loop import ALICE, BOB, RETURN_ARGS, Events, make_agent, turn
+from tests.test_loop import ALICE, BOB, RETURN_ARGS, Events, kinds, make_agent, turn
 
 CONVERSATION_PATH = re.compile(r"^conversations/([^/]+)/(turns|feedback)$")
 
@@ -182,7 +182,7 @@ async def test_confirm_route_runs_the_action_once(redis: FakeAsyncRedis, api: Ap
         resp = await http.post(f"/v1/actions/{action_id}/confirm")
         assert resp.status_code == 200
         events = sse_events(resp.text)
-        assert [e for e, _ in events] == ["meta", "card", "text_delta", "done"]
+        assert kinds(e for e, _ in events) == ["meta", "card", "text_delta", "done"]
         assert events[1][1]["type"] == "return_created"
 
         again = await http.post(f"/v1/actions/{action_id}/confirm")
@@ -247,7 +247,9 @@ async def test_confirm_on_a_busy_conversation_keeps_the_action(
 
         await agent.sessions.unlock(session.id, token)
         resp = await http.post(f"/v1/actions/{action_id}/confirm")
-        assert resp.status_code == 200 and "Return RET-1 started." in resp.text
+        assert resp.status_code == 200
+        streamed = "".join(d["text"] for e, d in sse_events(resp.text) if e == "text_delta")
+        assert streamed == "Return RET-1 started."
 
     assert api.calls.count("POST returns") == 1
     assert await redis.get(f"lock:{session.id}") is None

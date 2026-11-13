@@ -59,6 +59,9 @@ feedback = _meter.create_counter("agent.feedback", description="Thumbs up/down")
 kill_switch_rejections = _meter.create_counter(
     "agent.disabled.rejections", description="Requests refused by the kill switch"
 )
+output_redactions = _meter.create_counter(
+    "agent.output.redactions", description="Codes and links removed from replies, by kind"
+)
 
 
 # --- request IDs -----------------------------------------------------------------

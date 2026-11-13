@@ -17,7 +17,7 @@ from redis.exceptions import WatchError
 
 from app.auth import Auth
 from app.commerce_client import ApiError, CommerceClient, seg
-from app.guardrails import defang_control_tags
+from app.guardrails import code_tokens, defang_control_tags
 from app.masking import mask, mask_text
 from app.tools.registry import ToolOutput
 from app.usage import Counts
@@ -38,9 +38,26 @@ def _is_tool_result_turn(msg: Message) -> bool:
 
 
 MAX_FOCUS_PRODUCTS = 5
+MAX_KNOWN_CODES = 50
+# Tool-result fields the store writes itself (no free text): codes in them are real.
+_CODE_FIELDS = frozenset({
+    "couponCode", "name", "brand", "id", "slug", "productId", "orderNumber", "trackingNumber",
+    "attributes",
+})
 MAX_COMPLETED = 5
 _NAME_CHARS = 60
 _TOPIC_CHARS = 150
+
+
+def _collect_codes(value: Any, found: set[str], trusted: bool = False) -> None:
+    if isinstance(value, dict):
+        for k, v in value.items():
+            _collect_codes(v, found, trusted or k in _CODE_FIELDS)
+    elif isinstance(value, list):
+        for v in value:
+            _collect_codes(v, found, trusted)
+    elif trusted and isinstance(value, str):
+        found |= code_tokens(value)
 
 
 @dataclass
@@ -63,6 +80,9 @@ class SessionState:
     playbooks: list[str] = field(default_factory=list)
     # Playbooks whose task a confirmed action just completed (dropped on the next message).
     playbooks_done: list[str] = field(default_factory=list)
+    # Coupon-shaped words the store vouched for (applied codes, model numbers in product names):
+    # the only ones a reply may contain (guardrails.OutputGuard). Upper-cased.
+    known_codes: list[str] = field(default_factory=list)
 
     def note_topic(self, text: str) -> None:
         if self.topic is None:
@@ -71,6 +91,22 @@ class SessionState:
     def note_completed(self, tool: str, summary: str) -> None:
         entry = f"{tool}: {defang_control_tags(summary)}"[:200]
         self.completed = [*self.completed, entry][-MAX_COMPLETED:]
+
+    def note_codes(self, tool: str, raw: Any, out: ToolOutput) -> None:
+        """Remember codes from fields the store fills in itself, never from free text
+        (descriptions, FAQ answers, carrier notes), which is where planted instructions live.
+        A coupon the store rejected only for the cart's subtotal is a real one."""
+        found: set[str] = set()
+        if tool == "apply_coupon" and isinstance(raw, dict) and isinstance(raw.get("code"), str):
+            error = out.for_model.get("error")
+            message = str(error.get("message", "")) if isinstance(error, dict) else ""
+            if not out.is_error or (message and "invalid" not in message.lower()):
+                found |= code_tokens(raw["code"])
+        if not out.is_error:
+            _collect_codes(out.for_model, found)
+        # In place: a running turn's OutputGuard holds this list.
+        self.known_codes.extend(sorted(found - set(self.known_codes)))
+        del self.known_codes[:-MAX_KNOWN_CODES]
 
     def note_tool(self, tool: str, raw: Any, out: ToolOutput) -> None:
         if out.is_error:

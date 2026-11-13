@@ -63,7 +63,7 @@ jobs:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
           # What the agent sees or does: prompt, tools, loop, model config, evals, seed data.
-          pattern='^(agent-service/(app/prompts/|app/tools/|app/(llm|loop|config|guardrails)\.py|evals/|pyproject\.toml)|commerce-api/src/database/seed|\.github/workflows/agent-service\.yml)'
+          pattern='^(agent-service/(app/prompts/|app/tools/|app/(llm|loop|config|guardrails|memory|playbooks)\.py|evals/|pyproject\.toml)|commerce-api/src/database/seed|\.github/workflows/agent-service\.yml)'
           if [ "$EVENT" = workflow_dispatch ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             evals=true
           elif git diff --name-only "$BASE" HEAD | grep -qE "$pattern"; then

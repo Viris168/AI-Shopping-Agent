@@ -38,7 +38,10 @@ class SearchProducts(_Input):
     brand: str | None = Field(None, max_length=60)
     minPriceCents: int | None = Field(None, ge=0)
     maxPriceCents: int | None = Field(None, ge=0)
-    inStock: bool | None = None
+    inStock: bool | None = Field(
+        None, description="Only when the shopper wants in-stock items only. To check whether a "
+        "product is in stock, leave it out: each result has inStock",
+    )
     sort: Literal["relevance", "price_asc", "price_desc", "rating", "newest"] | None = None
     limit: int = Field(6, ge=1, le=10)
 

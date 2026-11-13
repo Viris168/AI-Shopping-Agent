@@ -360,6 +360,7 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `TOKEN_BUDGET` | `300000` | Tokens per conversation |
 | `DAILY_TOKEN_BUDGET` | `1000000` | Tokens per user (per IP for guests) per UTC day, across conversations; `0` = off |
 | `LOCK_WAIT_S` | `10` | How long Confirm/Cancel wait for a running turn on the same conversation |
+| `LINK_HOSTS` | — | Hosts replies may link to besides `STOREFRONT_URL`'s; other links (and unconfirmed coupon codes) are removed from replies |
 | `CORS_ORIGINS` | `https://yourstore.com` | Widget host origins |
 | `AGENT_ENABLED` | `true` | Kill switch (Redis `flag:agent_enabled` can also turn it off) |
 | `ROLLOUT_PERCENT` | `100` | Share of browsers that see the widget (Redis `flag:rollout_percent` overrides) |

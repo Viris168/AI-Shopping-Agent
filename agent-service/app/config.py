@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -56,6 +57,9 @@ class Settings(BaseSettings):
 
     store_name: str = "our store"
     storefront_url: str = "http://localhost:8080"
+    # Hosts (and their subdomains) replies may link to, besides STOREFRONT_URL's. Comma-separated.
+    # Any other link the model writes is removed (app/guardrails.py OutputGuard).
+    link_hosts: str = ""
     return_window_days: int = 30
 
     # Limits (AGENT.md §6)
@@ -88,6 +92,12 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str | None = None
     otel_exporter_otlp_headers: SecretStr | None = None
     trace_sample_ratio: float = Field(1.0, ge=0, le=1)
+
+    @property
+    def link_host_list(self) -> list[str]:
+        store = urlsplit(self.storefront_url).hostname
+        extra = [h.strip().lower() for h in self.link_hosts.split(",") if h.strip()]
+        return [h for h in (store, *extra) if h]
 
     @property
     def cors_origin_list(self) -> list[str]:
