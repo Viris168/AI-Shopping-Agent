@@ -7,7 +7,7 @@ import { score, type Grade } from './score';
 // lib.dom has no Web Speech types; just what the spike uses.
 interface Alternative { transcript: string }
 interface Result { isFinal: boolean; length: number; [i: number]: Alternative }
-interface ResultEvent extends Event { resultIndex: number; results: { length: number; [i: number]: Result } }
+interface ResultEvent extends Event { results: { length: number; [i: number]: Result } }
 interface ErrorEvent extends Event { error: string; message?: string }
 interface Recognition extends EventTarget {
   lang: string; interimResults: boolean; continuous: boolean; maxAlternatives: number;
@@ -196,17 +196,20 @@ function record(phrase: Phrase, button: HTMLButtonElement) {
   const limit = setTimeout(() => rec.stop(), LIMIT_MS);
 
   rec.onspeechend = () => (speechEnd = performance.now());
+  // Rebuilt from the whole list each time, like the widget (src/voice.ts): Chrome on Android can
+  // send finished results again, and adding them up from resultIndex would double the text.
   rec.onresult = (e) => {
+    let final = '';
     let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
+    for (let i = 0; i < e.results.length; i++) {
       const res = e.results[i];
-      if (res.isFinal) {
-        finalText += res[0].transcript;
-        finalAt = performance.now();
-      } else {
-        interim += res[0].transcript;
-        interimSeen = true;
-      }
+      if (res.isFinal) final += res[0].transcript;
+      else interim += res[0].transcript;
+    }
+    if (interim) interimSeen = true;
+    if (final !== finalText) {
+      finalText = final;
+      finalAt = performance.now();
     }
     firstText ??= performance.now();
     const cell = document.getElementById(`heard-${phrase.id}`);
