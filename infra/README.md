@@ -43,7 +43,8 @@ Variables (not secret): `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_KNOWN_HOSTS`, `API
 `BUNDLED_DATASTORES`. Optional: `AGENT_ENABLED` (default `true`), `ROLLOUT_PERCENT` (default
 production `0`, staging `100`), `IMAGES_ENABLED` (default `false`), `IMAGES_ROLLOUT_PERCENT`
 (default production `0`, staging `100`), `IMAGE_DAILY_LIMIT` / `IMAGE_DAILY_LIMIT_GUEST` (default
-`20` / `5`; [photos](./monitoring/README.md#photos)), `OTEL_EXPORTER_OTLP_ENDPOINT` with the secret
+`20` / `5`; [photos](./monitoring/README.md#photos)), `VOICE_ENABLED` (default `false`),
+`VOICE_ROLLOUT_PERCENT` (default production `0`, staging `100`; the widget's mic, PLAN-21), `OTEL_EXPORTER_OTLP_ENDPOINT` with the secret
 `OTEL_EXPORTER_OTLP_HEADERS` ([monitoring](./monitoring/README.md)), `HELPDESK_URL` with the
 secret `HELPDESK_TOKEN` (support tickets are pushed there; unset → database only).
 

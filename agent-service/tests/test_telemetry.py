@@ -20,7 +20,7 @@ from app.auth import get_auth
 from app.config import get_settings
 from app.llm import LLM, ModelUnavailable
 from app.loop import tool_status
-from app.main import FLAG_ENABLED, FLAG_ROLLOUT, app
+from app.main import FLAG_ENABLED, FLAG_ROLLOUT, FLAG_VOICE, FLAG_VOICE_ROLLOUT, app
 from app.tools.registry import ToolOutput, error_output
 from tests.fakes import FakeApi, FakeLLM, message, settings, text, tool_use
 from tests.test_actions import http_client, sse_events
@@ -31,9 +31,9 @@ METRICS = InMemoryMetricReader()
 
 
 CONFIG_ON_5 = {"enabled": True, "rolloutPercent": 5, "timeZone": "UTC", "imagesEnabled": False,
-               "imagesRolloutPercent": 0}
+               "imagesRolloutPercent": 0, "voiceEnabled": False, "voiceRolloutPercent": 0}
 CONFIG_OFF = {"enabled": False, "rolloutPercent": 0, "timeZone": "UTC", "imagesEnabled": False,
-              "imagesRolloutPercent": 0}
+              "imagesRolloutPercent": 0, "voiceEnabled": False, "voiceRolloutPercent": 0}
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -295,6 +295,35 @@ async def test_redis_flags_switch_off_and_move_the_rollout(redis: FakeAsyncRedis
 
         await redis.delete(FLAG_ENABLED)
         assert (await http.post("/v1/chat", json={"message": "hi"})).status_code == 200
+
+
+async def test_voice_is_off_unless_switched_on(redis: FakeAsyncRedis, api: FakeApi) -> None:
+    agent = make_agent(redis, api, FakeLLM())
+    async with await http_client(agent, redis) as http:
+        config = (await http.get("/v1/config")).json()
+        assert (config["voiceEnabled"], config["voiceRolloutPercent"]) == (False, 0)
+        await redis.set(FLAG_VOICE, "1")  # Redis can't switch on what the env has off
+        assert (await http.get("/v1/config")).json()["voiceEnabled"] is False
+
+
+async def test_voice_flags_from_env_then_redis(redis: FakeAsyncRedis, api: FakeApi) -> None:
+    use_settings(rollout_percent=100, voice_enabled=True, voice_rollout_percent=10)
+    agent = make_agent(redis, api, FakeLLM())
+    async with await http_client(agent, redis) as http:
+        config = (await http.get("/v1/config")).json()
+        assert (config["voiceEnabled"], config["voiceRolloutPercent"]) == (True, 10)
+        await redis.set(FLAG_VOICE_ROLLOUT, "25")
+        assert (await http.get("/v1/config")).json()["voiceRolloutPercent"] == 25
+        assert (await http.get("/v1/config")).json()["imagesEnabled"] is False  # independent
+
+        await redis.set(FLAG_VOICE, "0")  # kill switch: nobody gets the mic
+        config = (await http.get("/v1/config")).json()
+        assert (config["voiceEnabled"], config["voiceRolloutPercent"]) == (False, 0)
+
+        await redis.delete(FLAG_VOICE)
+        await redis.set(FLAG_ENABLED, "0")  # the whole assistant off wins too
+        config = (await http.get("/v1/config")).json()
+        assert (config["voiceEnabled"], config["voiceRolloutPercent"]) == (False, 0)
 
 
 async def test_flags_fall_back_to_env_when_redis_is_down(api: FakeApi) -> None:

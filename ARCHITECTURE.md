@@ -370,6 +370,8 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `IMAGES_ENABLED` | `false` | Photos in chat (PLAN-20): `MODEL_FAST` describes the photo, the main model reads the description. A prompt change: switch on after golden + red-team pass with it. Redis `flag:images_enabled 0` turns it off at runtime |
 | `IMAGES_ROLLOUT_PERCENT` | `100` | Share of browsers (the widget's rollout bucket) shown the photo button; Redis `flag:images_rollout_percent` overrides it. The deploy defaults it to production `0`, staging `100` |
 | `IMAGE_DAILY_LIMIT` / `_GUEST` | `20` / `5` | Photos per shopper (per IP for guests) per UTC day; `0` = off for that group |
+| `VOICE_ENABLED` | `false` | Mic in the widget (PLAN-21): the browser turns speech into text in the input box, so no audio reaches the server and nothing changes in the prompt. Only decides who sees the mic; Redis `flag:voice_enabled 0` turns it off at runtime |
+| `VOICE_ROLLOUT_PERCENT` | `100` | Share of browsers (the widget's rollout bucket) shown the mic; Redis `flag:voice_rollout_percent` overrides it. The deploy defaults it to production `0`, staging `100` |
 | `IMAGE_MAX_BYTES` / `IMAGE_MAX_PIXELS` / `IMAGE_LONG_EDGE` / `IMAGE_TIMEOUT_S` | `1500000` / `25000000` / `1568` / `15` | Upload limits, the re-encoded size sent to the model, and the describe call's timeout |
 | `MEMORY_ENABLED` | `false` | Long-term memory (PLAN-18); shoppers must also opt in. Redis `flag:memory_enabled 0` turns it off at runtime |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `_HEADERS` | — | Traces and metrics over OTLP/HTTP; empty → off |

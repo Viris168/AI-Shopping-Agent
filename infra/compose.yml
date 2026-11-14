@@ -99,6 +99,10 @@ services:
       IMAGES_ROLLOUT_PERCENT: ${IMAGES_ROLLOUT_PERCENT:-0}
       IMAGE_DAILY_LIMIT: ${IMAGE_DAILY_LIMIT:-20}
       IMAGE_DAILY_LIMIT_GUEST: ${IMAGE_DAILY_LIMIT_GUEST:-5}
+      # Mic in the widget (PLAN-21); the server never gets audio. Redis flag:voice_enabled and
+      # flag:voice_rollout_percent override them at runtime.
+      VOICE_ENABLED: ${VOICE_ENABLED:-false}
+      VOICE_ROLLOUT_PERCENT: ${VOICE_ROLLOUT_PERCENT:-0}
       # Traces and metrics over OTLP/HTTP; empty endpoint → no export.
       DEPLOY_ENV: ${DEPLOY_ENV:?}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
