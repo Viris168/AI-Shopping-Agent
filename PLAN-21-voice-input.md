@@ -158,6 +158,24 @@ ruff and mypy clean. The runbook section (`infra/monitoring/README.md#voice`) is
 - Dashboard row *Voice*: voice messages vs. all, and turn outcomes (handoff, feedback) for voice
   vs. typed, to spot recognition problems.
 
+**Status (2026-11-14, branch `voice-m4-metrics`): done, with one change and one gap.**
+- One counter instead of `agent.voice_messages`: `agent.messages` with `via` = `typed` / `voice`,
+  so the share is a single ratio. The turn span gets `chat.via`.
+- `/v1/chat` and `/v1/feedback` accept optional `via: "voice"`; anything else is a `422`. The
+  text is handled exactly like typed text; `via` is not passed to commerce-api. `agent.feedback`
+  gets a `via` label.
+- Widget: the composer remembers whether dictation produced any of the text in the box (still
+  voice after edits; cleared and retyped is typed again) and sends `via`. The user message keeps
+  `via`, so Try again resends it and a rating sends the `via` of the message the reply answered.
+- Dashboard row *Voice*: messages by input, voice share, thumbs-up by input.
+- **Gap:** handoffs aren't split by input. A ticket is created on a later Confirm request, which
+  doesn't know how the original message was entered. Thumbs-up by input is the comparison for M5.
+- **Deploy together:** agent-service refuses unknown fields, so a widget sending `via` to an
+  agent-service from before M4 would get a `422` on voice messages. Both are in this change and
+  the mic only shows when that agent-service turns voice on.
+- Tests: agent-service 271 pass (`test_telemetry.py`, `test_actions.py`), ruff and mypy clean;
+  widget 74 pass, 15.9 KB gzipped.
+
 ### M5 · Rollout
 - Staging with `VOICE_ENABLED=true`, then staff preview, then production at 5 / 25 / 100%.
 - Watch the voice share and whether voice turns get more thumbs-down or "didn't understand"

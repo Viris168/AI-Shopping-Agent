@@ -283,11 +283,15 @@ async def test_feedback_is_stored_for_the_owner(redis: FakeAsyncRedis, api: Api,
         caller.auth = ALICE
         bad = await http.post("/v1/feedback", json=body | {"rating": "meh"})
         assert bad.status_code == 422
+        # Rating a reply to a dictated message (PLAN-21): counted, not sent on to the store.
+        assert (await http.post("/v1/feedback", json=body | {"via": "voice"})).status_code == 204
+        assert (await http.post("/v1/feedback", json=body | {"via": "x"})).status_code == 422
         api.fail = True
         assert (await http.post("/v1/feedback", json=body)).status_code == 503
 
-    assert api.feedback == [{"messageId": f"{session.id}:0", "rating": "down",
-                             "comment": "Wrong size, mail me at [email]"}]
+    stored = {"messageId": f"{session.id}:0", "rating": "down",
+              "comment": "Wrong size, mail me at [email]"}
+    assert api.feedback == [stored, stored]  # the second (via: voice) is stored the same
 
 
 # --- transcripts ---------------------------------------------------------------

@@ -22,6 +22,36 @@ function setup() {
 const CART = { type: 'cart', data: { itemCount: 2, items: [] } };
 
 describe('Controller', () => {
+  it('marks dictated messages, on the chat request, on retry and on the rating (PLAN-21)', async () => {
+    const reply = (id: string) => sseResponse(sse(['meta', { conversationId: 'c1', messageId: id }], ['text_delta', { text: 'Hi' }], ['done', {}]));
+    const fetch = mockFetch(
+      reply('srv-1'),
+      sseResponse(sse(['meta', { conversationId: 'c1', messageId: 'srv-2' }], ['error', { code: 'x', message: 'oops', retryable: true }], ['done', {}])),
+      reply('srv-3'),
+      new Response(null, { status: 204 }),
+      new Response(null, { status: 204 }),
+    );
+    const body = (call: number) =>
+      JSON.parse((fetch.mock.calls[call] as unknown as [string, RequestInit])[1].body as string);
+    const { store, controller } = setup();
+
+    await controller.send('typed question');
+    expect(body(0).via).toBeUndefined();
+    await controller.send('where is my order', undefined, 'voice');
+    expect(body(1).via).toBe('voice');
+    expect(store.state.messages[2]).toMatchObject({ role: 'user', via: 'voice' });
+
+    const failed = store.state.messages[3];
+    await controller.retry(failed.id);
+    expect(body(2)).toMatchObject({ message: 'where is my order', via: 'voice' });
+
+    const [, first, , answer] = store.state.messages;
+    await controller.rate(first.id, 'up');
+    expect(body(3).via).toBeUndefined();
+    await controller.rate(answer.id, 'down');
+    expect(body(4)).toMatchObject({ messageId: 'srv-3', rating: 'down', via: 'voice' });
+  });
+
   it('streams a reply with cards and a confirm request into state', async () => {
     mockFetch(
       sseResponse(

@@ -112,7 +112,7 @@ function mount(script: HTMLScriptElement | null, config: RolloutConfig | null): 
     },
     data.helpUrl ?? null,
   );
-  const composer = createComposer(i18n, maxChars, (text, photo) => void controller.send(text, photo), {
+  const composer = createComposer(i18n, maxChars, (text, photo, via) => void controller.send(text, photo, via), {
     photos: photosOn(config),
     voice: voiceOn(config) ? recognitionCtor(window) : null,
   });

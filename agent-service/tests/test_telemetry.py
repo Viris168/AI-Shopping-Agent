@@ -132,6 +132,23 @@ async def test_turn_tool_and_api_spans_nest(redis: FakeAsyncRedis, api: FakeApi)
     assert turn.attributes is not None and turn.attributes["user.guest"] is False
 
 
+async def test_messages_are_counted_typed_or_voice() -> None:
+    typed, voice = count("agent.messages", via="typed"), count("agent.messages", via="voice")
+    redis = FakeAsyncRedis(decode_responses=True)
+    llm = FakeLLM(message(text("Hi!")), message(text("It's on its way.")))
+    async with await http_client(make_agent(redis, FakeApi(), llm), redis) as http:
+        assert (await http.post("/v1/chat", json={"message": "hi"})).status_code == 200
+        resp = await http.post("/v1/chat", json={"message": "where is my order", "via": "voice"})
+        assert resp.status_code == 200
+        # Only "voice" is accepted; the field is a count, not a way to send other data.
+        bad = await http.post("/v1/chat", json={"message": "hi", "via": "telepathy"})
+        assert bad.status_code == 422
+    assert count("agent.messages", via="typed") == typed + 1
+    assert count("agent.messages", via="voice") == voice + 1
+    turns = [s for s in SPANS.get_finished_spans() if s.name == "turn chat"]
+    assert turns[-1].attributes is not None and turns[-1].attributes["chat.via"] == "voice"
+
+
 async def test_tool_metrics_split_store_failures_from_rejections() -> None:
     before = count("agent.tool.calls", tool="view_cart", status="error")
     redis = FakeAsyncRedis(decode_responses=True)

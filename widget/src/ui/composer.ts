@@ -7,7 +7,7 @@ import { button } from '../cards/product';
 export function createComposer(
   i18n: I18n,
   maxChars: number,
-  onSend: (text: string, photo?: Photo) => void,
+  onSend: (text: string, photo?: Photo, via?: 'voice') => void,
   /** `photos`: show the attach button (agent-service /v1/config imagesEnabled).
    *  `voice`: the browser's recognizer when dictation is on and supported (PLAN-21); else no mic. */
   opts: {
@@ -52,6 +52,8 @@ export function createComposer(
   const Voice = opts.voice ?? null;
   let dictation: Dictation | null = null;
   let quiet = false; // stopped by the widget, not the shopper: don't move focus
+  // Whether the text in the box came (at least partly) from dictation; sent as via: 'voice'.
+  let dictated = false;
   const micBtn = button('icon-btn mic', '🎤', () => (dictation ? dictation.stop() : listen()), t('voiceInput'));
   micBtn.setAttribute('aria-pressed', 'false');
   const hint = el('div', { class: 'count voice-hint', hidden: true }, t('voiceHint'));
@@ -124,6 +126,7 @@ export function createComposer(
     }
     dictation = startDictation(Voice, speechLang(i18n.locale), {
       onText(final, interim) {
+        if (final || interim) dictated = true;
         input.value = (prefix + final + interim).slice(0, maxChars);
         resize();
       },
@@ -146,7 +149,8 @@ export function createComposer(
       return;
     }
     if (send.disabled || preparing || (!input.value.trim() && !photo)) return;
-    onSend(input.value, photo ?? undefined);
+    onSend(input.value, photo ?? undefined, dictated ? 'voice' : undefined);
+    dictated = false;
     clearPhoto(false); // the sent bubble shows it now
     status.textContent = '';
     hint.hidden = true;
@@ -165,7 +169,10 @@ export function createComposer(
   // A hidden tab shouldn't keep the mic open.
   if (Voice) document.addEventListener('visibilitychange', () => document.hidden && stopVoice());
 
-  input.addEventListener('input', resize);
+  input.addEventListener('input', () => {
+    if (!input.value.trim()) dictated = false; // cleared and retyped: a typed message
+    resize();
+  });
   input.style.overflowY = 'hidden';
   input.addEventListener('keydown', (e) => {
     // Enter sends, Shift+Enter adds a line; never while an IME is composing.

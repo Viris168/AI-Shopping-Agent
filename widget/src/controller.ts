@@ -27,8 +27,9 @@ export class Controller {
     private readonly opts: ControllerOptions,
   ) {}
 
-  /** `photo`: from preparePhoto; a photo can be sent without words. */
-  async send(raw: string, photo?: Photo): Promise<void> {
+  /** `photo`: from preparePhoto; a photo can be sent without words. `via`: 'voice' when the
+   *  shopper dictated it (PLAN-21), so agent-service can count voice messages. */
+  async send(raw: string, photo?: Photo, via?: 'voice'): Promise<void> {
     const text = raw.trim();
     if ((!text && !photo) || this.store.state.busy) return;
     if (text.length > this.opts.maxChars) {
@@ -40,8 +41,9 @@ export class Controller {
     if (image) this.keepPhoto(id, image);
     this.store.add({
       id, role: 'user', text, cards: [], status: 'done', ...(photo && { photo: { url: photo.url } }),
+      ...(via && { via }),
     });
-    await this.ask(text, image);
+    await this.ask(text, image, via);
   }
 
   /** Re-asks the user message before a failed reply. Safe: a failed turn isn't saved server-side. */
@@ -56,7 +58,7 @@ export class Controller {
     const image = this.photos.get(question.id);
     if (!question.text && !image) return; // a photo from before a page load: not kept
     this.store.remove(failedId);
-    await this.ask(question.text, image);
+    await this.ask(question.text, image, question.via);
   }
 
   async confirm(actionId: string): Promise<void> {
@@ -78,11 +80,16 @@ export class Controller {
 
   async rate(messageId: string, rating: 'up' | 'down'): Promise<void> {
     const { conversationId, messages } = this.store.state;
-    const message = messages.find((m) => m.id === messageId);
+    const index = messages.findIndex((m) => m.id === messageId);
+    const message = messages[index];
     if (!conversationId || !message?.serverId || message.rating) return;
+    // The shopper message this reply answered, to compare ratings for voice and typed messages.
+    const asked = messages.slice(0, index).reverse().find((m) => m.role === 'user');
     this.store.updateMessage(messageId, (m) => ({ ...m, rating }));
     try {
-      await this.api.feedback({ conversationId, messageId: message.serverId, rating });
+      await this.api.feedback({
+        conversationId, messageId: message.serverId, rating, ...(asked?.via && { via: asked.via }),
+      });
     } catch {
       // Feedback is best-effort.
     }
@@ -103,19 +110,20 @@ export class Controller {
     }
   }
 
-  private async ask(text: string, image?: PhotoUpload, allowReset = true): Promise<void> {
+  private async ask(text: string, image?: PhotoUpload, via?: 'voice', allowReset = true): Promise<void> {
     const result = await this.consume(() =>
       this.api.chat({
         conversationId: this.store.state.conversationId,
         message: text,
         locale: this.i18n.locale,
         ...(image && { image }),
+        ...(via && { via }),
       }),
     );
     // 403: the saved conversation belongs to a different login. Start fresh, once.
     if (result === 'forbidden' && allowReset) {
       this.store.set({ conversationId: null });
-      await this.ask(text, image, false);
+      await this.ask(text, image, via, false);
     }
   }
 
