@@ -48,6 +48,9 @@ FLAG_ROLLOUT = "flag:rollout_percent"
 # `SET flag:images_enabled 0` turns photos off without a redeploy (IMAGES_ENABLED turns them on).
 FLAG_IMAGES = "flag:images_enabled"
 FLAG_IMAGES_ROLLOUT = "flag:images_rollout_percent"
+# Voice dictation (PLAN-21) works the same way; it only shows or hides the widget's mic.
+FLAG_VOICE = "flag:voice_enabled"
+FLAG_VOICE_ROLLOUT = "flag:voice_rollout_percent"
 
 
 @asynccontextmanager
@@ -140,27 +143,38 @@ async def read_flags(request: Request, settings: Settings) -> tuple[bool, int]:
     return enabled, rollout if enabled else 0
 
 
-async def images_active(request: Request, settings: Settings) -> bool:
-    """IMAGES_ENABLED, unless Redis `flag:images_enabled 0` turns photos off everywhere."""
-    if not settings.images_enabled:
+async def feature_active(request: Request, configured: bool, flag: str) -> bool:
+    """The env setting, unless Redis `<flag> 0` turns the feature off everywhere. Redis can't turn
+    on what the env has off; if Redis is down, the env value holds."""
+    if not configured:
         return False
     try:
-        raw = await request.app.state.redis.get(FLAG_IMAGES)
+        raw = await request.app.state.redis.get(flag)
     except Exception:
-        log.warning("images flag unreadable from redis; using IMAGES_ENABLED")
+        log.warning("%s unreadable from redis; using the env setting", flag)
         return True
     return not (isinstance(raw, str) and raw.strip().lower() in ("0", "false", "off"))
 
 
-async def images_rollout(request: Request, settings: Settings) -> int:
-    """IMAGES_ROLLOUT_PERCENT, unless Redis flag:images_rollout_percent moves it."""
+async def feature_rollout(request: Request, configured: int, flag: str) -> int:
+    """The env rollout percent, unless Redis `<flag>` moves it."""
     try:
-        raw = await request.app.state.redis.get(FLAG_IMAGES_ROLLOUT)
+        raw = await request.app.state.redis.get(flag)
     except Exception:
-        return settings.images_rollout_percent
+        return configured
     if isinstance(raw, str) and raw.strip().isdigit():
         return min(int(raw), 100)
-    return settings.images_rollout_percent
+    return configured
+
+
+async def images_active(request: Request, settings: Settings) -> bool:
+    """IMAGES_ENABLED, unless Redis `flag:images_enabled 0` turns photos off everywhere."""
+    return await feature_active(request, settings.images_enabled, FLAG_IMAGES)
+
+
+async def images_rollout(request: Request, settings: Settings) -> int:
+    """IMAGES_ROLLOUT_PERCENT, unless Redis flag:images_rollout_percent moves it."""
+    return await feature_rollout(request, settings.images_rollout_percent, FLAG_IMAGES_ROLLOUT)
 
 
 async def require_enabled(
@@ -338,6 +352,7 @@ async def widget_config(
     # Short cache: a kill switch reaches every page within a minute.
     response.headers["Cache-Control"] = "public, max-age=60"
     images = enabled and await images_active(request, settings)
+    voice = enabled and await feature_active(request, settings.voice_enabled, FLAG_VOICE)
     return {
         "enabled": enabled, "rolloutPercent": rollout, "timeZone": settings.store_tz,
         "imagesEnabled": images,
@@ -345,6 +360,13 @@ async def widget_config(
         # still accepts a photo from any browser while photos are on: this is a gradual
         # rollout, not access control.
         "imagesRolloutPercent": await images_rollout(request, settings) if images else 0,
+        # Mic button (PLAN-21). Dictation happens in the browser and arrives as typed text, so
+        # there is nothing to refuse server-side; this only decides who sees the button.
+        "voiceEnabled": voice,
+        "voiceRolloutPercent": (
+            await feature_rollout(request, settings.voice_rollout_percent, FLAG_VOICE_ROLLOUT)
+            if voice else 0
+        ),
     }
 
 

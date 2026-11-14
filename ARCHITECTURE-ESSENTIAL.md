@@ -55,7 +55,7 @@ Browser                      Cloud
 
 ## Limits
 
-10 s per API call · 30 s per model call · 45 s per turn · 6 tool rounds · 2,000 chars per message · 20 messages/min · confirm expires in 10 min · session 24 h · transcripts 90 days.
+10 s per API call · 30 s per model call · 45 s per turn · 6 tool rounds · 2,000 chars per message · 60 s per dictation (mic, PLAN-21) · 20 messages/min · confirm expires in 10 min · session 24 h · transcripts 90 days.
 
 ## Models
 

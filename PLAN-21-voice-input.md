@@ -135,6 +135,16 @@ Widget, shown once under the input the first time the shopper presses the mic (`
 
 ### M3 · Rollout flag
 The widget side was done in M2; what's left is agent-service and deploy.
+
+**Status (2026-11-14, branch `voice-m3-flag`): done.** `VOICE_ENABLED` (default `false`) and
+`VOICE_ROLLOUT_PERCENT` (default `100`) in [config.py](agent-service/app/config.py); Redis
+`flag:voice_enabled` (off only) and `flag:voice_rollout_percent` (moves it), read through
+`feature_active` / `feature_rollout` in [main.py](agent-service/app/main.py), now shared with
+photos. `/v1/config` sends `voiceEnabled` and `voiceRolloutPercent` (0 when off; the whole
+assistant off wins). No `/v1/chat` change: dictated text is ordinary text. Deploy passes both
+(production `0`, staging `100`); `.env.example`, `infra/README.md`, ARCHITECTURE env table and
+the ARCHITECTURE-ESSENTIAL limits line updated. Tests in `tests/test_telemetry.py`; 270 pass,
+ruff and mypy clean. The runbook section (`infra/monitoring/README.md#voice`) is M5.
 - agent-service: `voice_enabled`, `voice_rollout_percent` in config and Redis flags; send
   `voiceEnabled`, `voiceRolloutPercent` in `GET /v1/config`.
 - Widget: extend `RolloutConfig` in [rollout.ts](widget/src/rollout.ts); same bucket as photos;

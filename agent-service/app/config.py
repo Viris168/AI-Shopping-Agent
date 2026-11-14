@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     # Photos per shopper (per IP for guests) per UTC day. 0 turns that group's photos off.
     image_daily_limit: int = Field(20, ge=0)
     image_daily_limit_guest: int = Field(5, ge=0)
+    # Voice dictation in the widget (PLAN-21): the browser turns speech into text in the input box,
+    # so the server never receives audio and these only decide who sees the mic. Off until rolled
+    # out; Redis flag:voice_enabled can turn it off and flag:voice_rollout_percent moves it.
+    voice_enabled: bool = False
+    voice_rollout_percent: int = Field(100, ge=0, le=100)
 
     store_name: str = "our store"
     storefront_url: str = "http://localhost:8080"
