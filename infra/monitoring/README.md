@@ -58,7 +58,7 @@ are text in development and JSON (with `request_id` and `trace_id`) when `APP_EN
 | `agent_feedback_total` | `rating`, `via` (typed, voice) | Thumbs up/down; `via` is how the shopper's message that the reply answered was entered (no `via` before PLAN-21 M4) |
 | `agent_disabled_rejections_total` | — | Requests refused by the kill switch |
 | `agent_output_suspect_replies_total` | — | Replies with a price or % no tool or shopper message gave that turn |
-| `agent_output_redactions_total` | `kind` (code, link) | Unconfirmed coupon codes and off-store links removed from replies |
+| `agent_output_redactions_total` | `kind` (code, link, prompt) | Unconfirmed coupon codes and off-store links removed from replies; `prompt` = a reply that copied the prompt, blocked (`PromptLeakGuard`). Any `prompt` count is worth reading: someone asked for the instructions and the model complied |
 | `agent_images_total` | `outcome` (ok, blurry, dark, cropped, unclear, unparsed, failed) | Photos the fast model described; the describe call itself is `gen_ai_operation_name="describe"` in the model metrics |
 | `agent_images_refused_total` | `reason` (off, too_large, unreadable, daily_cap) | Photos refused before any model call |
 | `agent_messages_total` | `via` (typed, voice) | Shopper messages; `voice` = dictated with the widget's mic (PLAN-21). The *Voice* row shows them by input, the voice share and thumbs-up by input. Handoffs aren't split: a ticket is created on a later Confirm request |
