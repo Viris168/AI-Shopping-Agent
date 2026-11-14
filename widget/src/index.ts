@@ -22,7 +22,7 @@
 import { ChatApi } from './api';
 import { Controller } from './controller';
 import { createI18n, pickLocale } from './i18n';
-import { type RolloutConfig, fetchConfig, photosOn, shouldMount } from './rollout';
+import { type RolloutConfig, fetchConfig, photosOn, shouldMount, voiceOn } from './rollout';
 import { LinkPolicy, el } from './safe';
 import { Store } from './state';
 import styles from './styles.css?inline';
@@ -30,6 +30,7 @@ import { createBubble } from './ui/bubble';
 import { createComposer } from './ui/composer';
 import { createMessageList } from './ui/message-list';
 import { createPanel, PANEL_ID } from './ui/panel';
+import { recognitionCtor } from './voice';
 
 // The loading screen stays at least this long, so a fast connection doesn't make it flash.
 const LOADING_MIN_MS = 500;
@@ -113,6 +114,7 @@ function mount(script: HTMLScriptElement | null, config: RolloutConfig | null): 
   );
   const composer = createComposer(i18n, maxChars, (text, photo) => void controller.send(text, photo), {
     photos: photosOn(config),
+    voice: voiceOn(config) ? recognitionCtor(window) : null,
   });
 
   // First open on this page: show the loading screen while the shopper's token is fetched.
@@ -140,6 +142,7 @@ function mount(script: HTMLScriptElement | null, config: RolloutConfig | null): 
       warmUp();
       composer.focus();
     } else {
+      composer.stopVoice();
       (opener?.isConnected ? opener : bubble.element).focus();
       opener = null;
     }
