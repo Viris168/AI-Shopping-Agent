@@ -61,6 +61,32 @@ agent-service: normal turn (unchanged); counts agent.voice_messages
 - **Result:** go or no-go on the browser approach. If Vietnamese or codes are poor, plan the
   [server version](#later--server-side-speech-to-text) instead.
 
+#### How to run M0
+
+Spike page: [widget/spike/voice.html](widget/spike/voice.html) (dev only, not in `widget.js`).
+Phrases and key terms in [phrases.ts](widget/spike/phrases.ts), grading in
+[score.ts](widget/spike/score.ts) (tested in `widget/test/voice-spike.test.ts`).
+
+1. `cd widget && npm run dev`, then open `http://localhost:5173/spike/voice.html`.
+2. Enter a device label, allow the mic, press Record on each phrase and read it once, normally.
+   The page grades each result (exact / close / wrong, see `score.ts`); fix a grade by hand if
+   it's clearly off.
+3. Download results (JSON) per browser and keep the files for the findings below.
+
+The mic needs a secure page (localhost or HTTPS), so a phone can't use `http://<laptop-ip>:5173`:
+- **Android Chrome:** USB debugging on, `adb reverse tcp:5173 tcp:5173`, then open
+  `http://localhost:5173/spike/voice.html` on the phone.
+- **iPhone Safari:** needs HTTPS, e.g. an HTTPS tunnel to port 5173. Vite refuses unknown hosts,
+  so add the tunnel's host to `server.allowedHosts` locally for the test (don't commit it).
+  Siri & Dictation must be on.
+- The Claude desktop app's built-in browser blocks the mic, so it can't be used for this test.
+
+Grades rate the key terms only (names, codes, sizes); a wrong filler word doesn't matter because
+the shopper sees and edits the text before sending.
+
+**Go if:** in each target browser, at least 8/10 per language are exact or close, and no order
+number or coupon code comes out wrong in more than 1 phrase. Otherwise look at server STT.
+
 ### M1 · Scope and decisions
 - [PRD.md](PRD.md): move dictation out of Non-goals ("speech fills the text box; the shopper
   sends it"); spoken replies stay a non-goal.
