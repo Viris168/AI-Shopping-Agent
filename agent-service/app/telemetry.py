@@ -74,6 +74,9 @@ images_refused = _meter.create_counter(
     "agent.images.refused", description="Photos refused before the model, by reason (off, "
     "too_large, unreadable, daily_cap)"
 )
+messages = _meter.create_counter(
+    "agent.messages", description="Shopper messages by how they were entered (via: typed, voice)"
+)
 output_redactions = _meter.create_counter(
     "agent.output.redactions", description="Codes and links removed from replies, by kind"
 )

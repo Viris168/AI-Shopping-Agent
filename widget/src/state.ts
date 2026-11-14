@@ -21,6 +21,8 @@ export interface Message {
   /** A photo the shopper sent. `url` (an object URL) lives only for this page, so it isn't saved:
    *  after navigation the bubble shows a "Photo" label instead. */
   photo?: { url?: string };
+  /** 'voice': the shopper dictated this message with the mic (PLAN-21). Only for counting. */
+  via?: 'voice';
 }
 
 export interface ChatState {

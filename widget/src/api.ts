@@ -76,7 +76,9 @@ export class ChatApi {
     }
   }
 
-  chat(body: { conversationId: string | null; message: string; locale: string; image?: PhotoUpload }) {
+  chat(body: {
+    conversationId: string | null; message: string; locale: string; image?: PhotoUpload; via?: 'voice';
+  }) {
     const { conversationId, ...rest } = body;
     return this.stream('/v1/chat', conversationId ? body : rest);
   }
@@ -93,6 +95,7 @@ export class ChatApi {
     conversationId: string;
     messageId: string;
     rating: 'up' | 'down';
+    via?: 'voice';
   }): Promise<void> {
     await this.request('/v1/feedback', body);
   }

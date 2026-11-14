@@ -179,10 +179,10 @@ agent-service/
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| POST | `/v1/chat` | `{conversationId?, message, locale?}` | SSE stream |
+| POST | `/v1/chat` | `{conversationId?, message, locale?, image?, via?}`; `image` one photo (PLAN-20), `via: "voice"` when dictated (PLAN-21, counted only) | SSE stream |
 | POST | `/v1/actions/{actionId}/confirm` | — | SSE stream (result + follow-up) |
 | POST | `/v1/actions/{actionId}/cancel` | — | `204` |
-| POST | `/v1/feedback` | `{conversationId, messageId, rating: up\|down, comment?}` | `204` |
+| POST | `/v1/feedback` | `{conversationId, messageId, rating: up\|down, comment?, via?}`; `via` counted only, not stored | `204` |
 | GET | `/v1/config` | — | `{enabled, rolloutPercent}` (widget kill switch and rollout, cached 60 s) |
 | GET | `/health` | — | `{status, redis, commerceApi}` |
 

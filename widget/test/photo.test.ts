@@ -157,7 +157,7 @@ describe('composer with photos', () => {
     expect(q<HTMLImageElement>('.photo-thumb')!.getAttribute('alt')).toBe('Your photo');
     expect(q('[role=status]')!.textContent).toBe('Photo attached');
     q<HTMLElement>('.send')!.closest('form')!.dispatchEvent(new Event('submit'));
-    expect(onSend).toHaveBeenCalledWith('', PHOTO);
+    expect(onSend).toHaveBeenCalledWith('', PHOTO, undefined);
     expect(q<HTMLElement>('.photo-preview')!.hidden).toBe(true);
   });
 

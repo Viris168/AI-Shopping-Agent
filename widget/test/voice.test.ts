@@ -182,7 +182,34 @@ describe('composer with voice', () => {
     expect(rec().stopped).toBe(true);
     expect(onSend).not.toHaveBeenCalled();
     enter();
-    expect(onSend).toHaveBeenCalledWith('track my order', undefined);
+    expect(onSend).toHaveBeenCalledWith('track my order', undefined, 'voice');
+  });
+
+  it('sends dictated text as voice, and typed or cleared-and-retyped text as typed', () => {
+    const { input, mic, enter, onSend } = composer();
+    input.value = 'typed';
+    enter();
+    expect(onSend).toHaveBeenLastCalledWith('typed', undefined, undefined);
+
+    mic().click();
+    rec().say(['track my order', true]);
+    rec().stop();
+    input.value += ' please'; // edited after dictating: still a voice message
+    enter();
+    expect(onSend).toHaveBeenLastCalledWith('track my order please', undefined, 'voice');
+
+    input.value = 'next one'; // the box was emptied by sending: typed again
+    enter();
+    expect(onSend).toHaveBeenLastCalledWith('next one', undefined, undefined);
+
+    mic().click();
+    rec().say(['oops', true]);
+    rec().stop();
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    input.value = 'typed instead';
+    enter();
+    expect(onSend).toHaveBeenLastCalledWith('typed instead', undefined, undefined);
   });
 
   it('keeps dictated text within the character limit', () => {

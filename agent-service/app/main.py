@@ -198,6 +198,9 @@ class ChatRequest(BaseModel):
     message: str = Field(max_length=20_000)  # hard cap; the friendly 413 is in guardrails
     locale: str | None = Field(None, max_length=16)
     image: ImageIn | None = None  # one photo per message (PLAN-20)
+    # "voice": the shopper dictated it with the widget's mic (PLAN-21). Only counted; the text is
+    # handled exactly like typed text.
+    via: Literal["voice"] | None = None
 
 
 class FeedbackRequest(BaseModel):
@@ -206,6 +209,7 @@ class FeedbackRequest(BaseModel):
     messageId: str = Field(max_length=64)
     rating: Literal["up", "down"]
     comment: str | None = Field(None, max_length=1000)
+    via: Literal["voice"] | None = None  # the rated reply answered a dictated message (PLAN-21)
 
 
 BUSY = "I'm still answering in this conversation. Please wait for that reply, then try again."
@@ -273,10 +277,13 @@ async def chat(
         raise
     if not session.messages:
         telemetry.conversations.add(1)
+    via = body.via or "typed"
+    telemetry.messages.add(1, {"via": via})
     subject = _subject(request, auth)
 
     async def run(emit: Emit) -> None:
         try:
+            telemetry.annotate(**{"chat.via": via})
             message_id = f"{session.id}:{len(session.messages)}"
             emit("meta", {"conversationId": session.id, "messageId": message_id})
             await agent.run_turn(session, message, auth, emit, subject, image)
@@ -339,7 +346,7 @@ async def feedback(
             raise HTTPException(404, "We couldn't find that conversation.") from exc
         log.warning("feedback_save_failed %s: %s", body.conversationId, exc.status)
         raise HTTPException(503, "Feedback can't be saved right now.") from exc
-    telemetry.feedback.add(1, {"rating": body.rating})
+    telemetry.feedback.add(1, {"rating": body.rating, "via": body.via or "typed"})
     return Response(status_code=204)
 
 
