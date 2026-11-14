@@ -40,6 +40,15 @@
       "port": 8000
     },
     {
+      "name": "agent-service-all-features",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd agent-service && exec env -u ANTHROPIC_BASE_URL -u CLAUDE_EFFORT IMAGES_ENABLED=true VOICE_ENABLED=true JWT_SECRET=\"$(grep '^JWT_SECRET=' ../commerce-api/.env | cut -d= -f2-)\" SERVICE_TOKEN=\"$(grep '^SERVICE_TOKEN=' ../commerce-api/.env | cut -d= -f2-)\" .venv/bin/uvicorn app.main:app --reload --port 8000"
+      ],
+      "port": 8000
+    },
+    {
       "name": "widget",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
