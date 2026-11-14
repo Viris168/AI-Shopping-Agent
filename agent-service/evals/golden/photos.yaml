@@ -1,0 +1,124 @@
+# Golden · Photos in chat (PLAN-20). The fast model describes the photo; the main model reads the
+# description. Images are drawn by `python -m evals.image_fixtures` (no real photos). The grader
+# can't see them, so each scenario says what's on the photo. Fixtures and conventions: ../README.md.
+
+- id: G-IMG-01
+  smoke: true
+  scenario: >-
+    Shopper sends a screenshot of a shipping email for ORD-1002. The screenshot says UPS and a
+    UPS tracking number; the store's record says FedEx 612999AA10123456.
+  photo: {file: order_shipped.png}
+  turns: ["Where is this order?"]
+  expect:
+    require_args: [{tool: get_order, args: {orderNumber: ORD-1002}}]
+    require_text: [FedEx]
+    grader: >-
+      Says ORD-1002 has shipped with FedEx, taking the carrier from the store's record rather
+      than the screenshot, and does not invent a delivery date.
+
+- id: G-IMG-02
+  scenario: >-
+    Shopper sends a French screenshot saying order ORD-1003 is being prepared, and asks in
+    French where it is.
+  photo: {file: order_fr.png}
+  turns: ["Où en est cette commande ?"]
+  expect:
+    require_args: [{tool: get_order, args: {orderNumber: ORD-1003}}]
+    grader: Answers in French that ORD-1003 is still being processed and hasn't shipped yet.
+
+- id: G-IMG-03
+  scenario: >-
+    Shopper sends a photo of a parcel's shipping label (name, street address, ORDER ORD-1001)
+    and says the box arrived damaged.
+  photo: {file: shipping_label.jpg}
+  turns: ["This box arrived damaged. Can I return what was inside?"]
+  expect:
+    require_args: [{tool: get_order, args: {orderNumber: ORD-1001}}]
+    forbid_text: [Example Lane, Springfield]
+    grader: >-
+      Says the order on the label can still be returned (delivered about a week ago, within
+      the 30-day window; naming ORD-1001 is optional, the order card shows it) and asks which
+      item(s) to return or offers to start the return. Does not repeat the address.
+
+- id: G-IMG-04
+  scenario: >-
+    Shopper sends a screenshot of the checkout page showing "Coupon OLD2023 has expired" and
+    asks why it doesn't work.
+  photo: {file: coupon_error.png}
+  turns: ["Why doesn't this code work?"]
+  expect:
+    require_text: [expired]
+    forbid_text: [WELCOME10, SAVE20]
+    grader: >-
+      Explains that OLD2023 has expired and does not offer another coupon code.
+
+- id: G-IMG-05
+  scenario: >-
+    Guest sends a photo of a shoe's size tag reading "CityWalk Leather Sneakers, SKU SHOE-002,
+    EU 41 / US 8" and asks if the store sells them.
+  user: guest
+  photo: {file: size_tag.png}
+  turns: ["Do you sell these?"]
+  expect:
+    require_text: [CityWalk]
+    grader: >-
+      Looks the product up and says the store sells the CityWalk Leather Sneakers, with the
+      price from the store ($69.99) if it gives one.
+
+- id: G-IMG-06
+  scenario: >-
+    Shopper sends a very blurry screenshot of an order email; no text can be read.
+  photo: {file: blurry.png}
+  turns: ["Can you check this order for me?"]
+  expect:
+    forbid_tools: [get_order]
+    grader: >-
+      Says it couldn't read the photo and asks for a clearer one or the order number. Does not
+      guess an order number or status.
+
+- id: G-IMG-07
+  scenario: Guest sends a photo of random grey noise with no words.
+  user: guest
+  photo: {file: noise.jpg}
+  turns: [""]
+  expect:
+    forbid_tools: [get_order, list_orders, create_support_ticket]
+    grader: >-
+      Says it can't tell what the photo shows and asks what the shopper needs help with.
+
+- id: G-IMG-08
+  scenario: >-
+    Shopper sends a drawing of a crushed cardboard box marked FRAGILE and says their order
+    ORD-1001 arrived like this. The image reader may not recognise the damage.
+  photo: {file: damaged_box.png}
+  turns: ["My order ORD-1001 arrived like this."]
+  expect:
+    require_args: [{tool: get_order, args: {orderNumber: ORD-1001}}]
+    forbid_text: ["no (visible |obvious )?damage", "(doesn't|does not|don't) (look|appear|seem) damaged"]
+    grader: >-
+      Takes the shopper's word that the parcel arrived damaged, does not argue about whether
+      the photo shows damage, and offers a return for ORD-1001 (or asks which items).
+
+- id: G-IMG-09
+  scenario: >-
+    Guest sends a drawing of black over-ear headphones and asks if the store has something
+    like them.
+  user: guest
+  photo: {file: headphones_cracked.png}
+  turns: ["Do you have headphones like these?"]
+  expect:
+    require_tools: [search_products]
+    require_text: [Noise-Cancelling Headphones]
+    grader: Suggests the Noise-Cancelling Headphones from the store's search results.
+
+- id: G-IMG-10
+  scenario: >-
+    Shopper sends the ORD-1002 shipping screenshot in the first turn, then asks a follow-up
+    without the photo.
+  photo: {file: order_shipped.png, turn: 0}
+  turns: ["Is this one of my orders?", "What's in it?"]
+  expect:
+    require_text: [Headphones]
+    grader: >-
+      Says ORD-1002 contains the Noise-Cancelling Headphones (from the store's record), so the
+      earlier photo was remembered.

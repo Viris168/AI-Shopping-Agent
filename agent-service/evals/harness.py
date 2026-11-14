@@ -6,6 +6,7 @@ Chat turns can change the shopper's cart and long-term memory, so both are reset
 """
 
 import asyncio
+import base64
 import dataclasses
 import re
 import time
@@ -19,13 +20,15 @@ from fakeredis import FakeAsyncRedis
 from app.auth import GUEST, Auth, verify_bearer
 from app.commerce_client import CommerceClient
 from app.config import Settings
+from app.images import ImageIn, prepare_image
 from app.llm import LLM
 from app.loop import Agent
 from app.main import services
 from app.memory import Memory
 from app.sse import EventName
-from evals.cases import Case, MemorySetup, Poison, Setup
+from evals.cases import Case, MemorySetup, Photo, Poison, Setup
 from evals.checks import TurnRecord
+from evals.image_fixtures import OUT_DIR as PHOTO_DIR
 
 USERS = {"alice": "alice@example.com", "bob": "bob@example.com"}
 
@@ -179,18 +182,28 @@ async def saved_facts(client: CommerceClient, auth: Auth) -> list[str]:
     return [f"{f['kind']}: {f['value']}" for f in view.get("facts", [])]
 
 
+def load_photo(photo: Photo, settings: Settings) -> bytes:
+    """The fixture checked and re-encoded as the chat route does (images.prepare_image)."""
+    path = PHOTO_DIR / photo.file
+    if not path.exists():
+        raise FileNotFoundError(f"{path} missing; run `python -m evals.image_fixtures`")
+    media = {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp"}[path.suffix]
+    data = base64.b64encode(path.read_bytes()).decode()
+    return prepare_image(ImageIn(mediaType=media, data=data), settings)
+
+
 async def _conversation(
     agent: Agent, auth: Auth, client: "RecordingClient", turns: list[str], emit: Any,
-    records: list[TurnRecord], timeout_s: float,
+    records: list[TurnRecord], timeout_s: float, photos: dict[int, bytes] | None = None,
 ) -> None:
     session = await agent.sessions.load(None, auth)
-    for message in turns:
+    for i, message in enumerate(turns):
         record = TurnRecord()
         records.append(record)
         client.requests = record.requests
         emit.record = record
         async with asyncio.timeout(timeout_s):
-            await agent.run_turn(session, message, auth, emit)
+            await agent.run_turn(session, message, auth, emit, image=(photos or {}).get(i))
         await agent.drain()  # memory writes finish before the next turn or check
 
 
@@ -232,6 +245,13 @@ async def run_case(
     memory = case.setup.memory
     if memory is not None:  # the feature on for this case; the suite's setting covers the rest
         settings = settings.model_copy(update={"memory_enabled": True})
+    photos: dict[int, bytes] = {}
+    if case.photo is not None or case.images:
+        settings = settings.model_copy(update={"images_enabled": True})
+    if case.photo is not None:
+        photos[case.photo.turn % len(case.turns)] = await asyncio.to_thread(
+            load_photo, case.photo, settings
+        )
     redis = FakeAsyncRedis(decode_responses=True)
     client = RecordingClient(settings, case.poison, http)
     try:
@@ -252,7 +272,7 @@ async def run_case(
                 await _conversation(agent, auth, client, case.earlier, emit, records,
                                     settings.turn_timeout_s)
             await _conversation(agent, auth, client, case.turns, emit, records,
-                                settings.turn_timeout_s)
+                                settings.turn_timeout_s, photos)
             if memory is not None and (case.expect.require_memory or case.expect.forbid_memory):
                 client.requests = []
                 records[-1].memory = await saved_facts(client, auth)

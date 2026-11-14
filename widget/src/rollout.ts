@@ -14,6 +14,10 @@ export interface RolloutConfig {
   rolloutPercent: number;
   /** The store's IANA zone (agent-service STORE_TZ); card dates are shown in it. */
   timeZone?: string;
+  /** Photos in chat are on (agent-service IMAGES_ENABLED and flag:images_enabled). */
+  imagesEnabled?: boolean;
+  /** Share of buckets that get the photo button (IMAGES_ROLLOUT_PERCENT). */
+  imagesRolloutPercent?: number;
 }
 
 /** `zone` if the browser knows it, else undefined (the shopper's own zone). */
@@ -36,6 +40,8 @@ export async function fetchConfig(apiBase: string): Promise<RolloutConfig | null
       enabled: body?.enabled === true,
       rolloutPercent: Number(body?.rolloutPercent) || 0,
       timeZone: knownTimeZone(body?.timeZone),
+      imagesEnabled: body?.imagesEnabled === true,
+      imagesRolloutPercent: Number(body?.imagesRolloutPercent) || 0,
     };
   } catch {
     return null;
@@ -59,6 +65,23 @@ export function shouldMount(
     // Storage blocked: no staff preview, the percentage still applies.
   }
   return bucket(storage, random) < config.rolloutPercent;
+}
+
+/** Whether this browser gets the photo button: photos on, and its bucket inside the photo
+ *  rollout. Staff who opted in with ?shopchat=on get it too. Same bucket as the widget's, so
+ *  raising the percentage only adds shoppers. */
+export function photosOn(
+  config: RolloutConfig | null,
+  storage: Storage | null = safeLocalStorage(),
+  random: () => number = Math.random,
+): boolean {
+  if (!config?.imagesEnabled) return false;
+  try {
+    if (storage?.getItem(OPT_IN_KEY) === '1') return true;
+  } catch {
+    // Storage blocked: the percentage still applies.
+  }
+  return bucket(storage, random) < (config.imagesRolloutPercent ?? 0);
 }
 
 function bucket(storage: Storage | null, random: () => number): number {

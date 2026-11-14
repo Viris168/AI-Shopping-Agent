@@ -31,6 +31,13 @@ export function createMessageList(ctx: CardContext, actions: ListActions, helpUr
     const root = el('div', { class: `msg msg-${m.role}`, 'aria-busy': String(m.status === 'streaming') },
       el('span', { class: 'sr-only' }, `${who}: `),
     );
+    if (m.photo) {
+      // Only an object URL this page made; after navigation there's none, so show a label.
+      const url = m.photo.url?.startsWith('blob:') ? m.photo.url : null;
+      root.append(url
+        ? el('img', { class: 'msg-photo', src: url, alt: t('photoAlt') })
+        : el('div', { class: 'bubble-text msg-photo-label' }, `📷 ${t('photo')}`));
+    }
     if (m.text) root.append(el('div', { class: 'bubble-text' }, linkify(m.text, ctx.links)));
     if (m.status === 'streaming' && !m.text) {
       root.append(el('div', { class: 'typing', role: 'status', 'aria-label': t('typing') }, el('span'), el('span'), el('span')));

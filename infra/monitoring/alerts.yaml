@@ -82,3 +82,19 @@ groups:
         annotations:
           summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of replies state unsourced prices"
           runbook: infra/monitoring/README.md#suspect-facts
+
+      - alert: AgentPhotoDescribeFailing
+        # Photos (PLAN-20) the fast model couldn't describe: the call failed or its reply wasn't
+        # JSON. The shopper is asked to describe the photo in words, so it's not an outage, but a
+        # rise means MODEL_FAST stopped reading images (provider change, timeout, prompt drift).
+        expr: |
+          (
+            sum by (job) (increase(agent_images_total{outcome=~"failed|unparsed"}[30m]))
+              / sum by (job) (increase(agent_images_total[30m]))
+          ) > 0.20
+          and sum by (job) (increase(agent_images_total[30m])) >= 10
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of photos couldn't be described"
+          runbook: infra/monitoring/README.md#photos

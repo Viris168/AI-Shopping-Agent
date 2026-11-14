@@ -2,6 +2,7 @@
 
 import { ApiError, type ChatApi, type SseEvent } from './api';
 import type { I18n } from './i18n';
+import type { Photo, PhotoUpload } from './photo';
 import { uid } from './safe';
 import type { Message, Store } from './state';
 
@@ -13,7 +14,12 @@ export interface ControllerOptions {
   announce: (text: string) => void;
 }
 
+// Photos kept for Try again: the last few, in memory only (never in sessionStorage).
+const KEPT_PHOTOS = 3;
+
 export class Controller {
+  private readonly photos = new Map<string, PhotoUpload>();
+
   constructor(
     private readonly store: Store,
     private readonly api: ChatApi,
@@ -21,15 +27,21 @@ export class Controller {
     private readonly opts: ControllerOptions,
   ) {}
 
-  async send(raw: string): Promise<void> {
+  /** `photo`: from preparePhoto; a photo can be sent without words. */
+  async send(raw: string, photo?: Photo): Promise<void> {
     const text = raw.trim();
-    if (!text || this.store.state.busy) return;
+    if ((!text && !photo) || this.store.state.busy) return;
     if (text.length > this.opts.maxChars) {
       this.addError(this.i18n.t('errTooLong', { max: this.opts.maxChars }), false);
       return;
     }
-    this.store.add({ id: uid(), role: 'user', text, cards: [], status: 'done' });
-    await this.ask(text);
+    const id = uid();
+    const image = photo && { mediaType: photo.mediaType, data: photo.data };
+    if (image) this.keepPhoto(id, image);
+    this.store.add({
+      id, role: 'user', text, cards: [], status: 'done', ...(photo && { photo: { url: photo.url } }),
+    });
+    await this.ask(text, image);
   }
 
   /** Re-asks the user message before a failed reply. Safe: a failed turn isn't saved server-side. */
@@ -41,8 +53,10 @@ export class Controller {
       .reverse()
       .find((m) => m.role === 'user');
     if (!question || this.store.state.busy) return;
+    const image = this.photos.get(question.id);
+    if (!question.text && !image) return; // a photo from before a page load: not kept
     this.store.remove(failedId);
-    await this.ask(question.text);
+    await this.ask(question.text, image);
   }
 
   async confirm(actionId: string): Promise<void> {
@@ -76,21 +90,32 @@ export class Controller {
 
   reset(): void {
     if (this.store.state.busy) return;
+    for (const m of this.store.state.messages) if (m.photo?.url) URL.revokeObjectURL(m.photo.url);
+    this.photos.clear();
     this.store.set({ conversationId: null, messages: [] });
   }
 
-  private async ask(text: string, allowReset = true): Promise<void> {
+  private keepPhoto(id: string, image: PhotoUpload): void {
+    this.photos.set(id, image);
+    for (const old of this.photos.keys()) {
+      if (this.photos.size <= KEPT_PHOTOS) break;
+      this.photos.delete(old);
+    }
+  }
+
+  private async ask(text: string, image?: PhotoUpload, allowReset = true): Promise<void> {
     const result = await this.consume(() =>
       this.api.chat({
         conversationId: this.store.state.conversationId,
         message: text,
         locale: this.i18n.locale,
+        ...(image && { image }),
       }),
     );
     // 403: the saved conversation belongs to a different login. Start fresh, once.
     if (result === 'forbidden' && allowReset) {
       this.store.set({ conversationId: null });
-      await this.ask(text, false);
+      await this.ask(text, image, false);
     }
   }
 
@@ -156,6 +181,17 @@ export class Controller {
 
   private fail(id: string, err: unknown): 'forbidden' | 'expired' | 'error' {
     const status = err instanceof ApiError ? err.status : 0;
+    if (err instanceof ApiError && err.limit === 'images') {
+      // The photo was refused, not the chat: no login reset, no rate-limit retry.
+      const t = this.i18n.t;
+      const message =
+        status === 403 ? t('errPhotoOff')
+          : status === 429 ? t('errPhotoLimit')
+            : status === 413 ? t('errPhotoTooBig')
+              : t('errPhotoRead');
+      this.store.updateMessage(id, (m) => ({ ...m, status: 'error', error: { message, retryable: false } }));
+      return 'error';
+    }
     if (status === 403) return 'forbidden';
     if (status === 409) {
       this.store.remove(id);

@@ -22,7 +22,7 @@
 import { ChatApi } from './api';
 import { Controller } from './controller';
 import { createI18n, pickLocale } from './i18n';
-import { fetchConfig, shouldMount } from './rollout';
+import { type RolloutConfig, fetchConfig, photosOn, shouldMount } from './rollout';
 import { LinkPolicy, el } from './safe';
 import { Store } from './state';
 import styles from './styles.css?inline';
@@ -60,7 +60,7 @@ function apiBaseOf(script: HTMLScriptElement | null): string {
   return (script?.dataset.api ?? scriptOrigin).replace(/\/$/, '');
 }
 
-function mount(script: HTMLScriptElement | null, timeZone?: string): void {
+function mount(script: HTMLScriptElement | null, config: RolloutConfig | null): void {
   if (document.getElementById('shopchat-root')) return; // loaded twice
   const data = script?.dataset ?? {};
   const apiBase = apiBaseOf(script);
@@ -68,7 +68,7 @@ function mount(script: HTMLScriptElement | null, timeZone?: string): void {
   const maxChars = Number(data.maxChars) || 2000;
   const i18n = createI18n(
     pickLocale(data.locale, document.documentElement.lang, navigator.language),
-    timeZone,
+    config?.timeZone,
   );
   const links = new LinkPolicy([
     location.hostname,
@@ -111,7 +111,9 @@ function mount(script: HTMLScriptElement | null, timeZone?: string): void {
     },
     data.helpUrl ?? null,
   );
-  const composer = createComposer(i18n, maxChars, (text) => void controller.send(text));
+  const composer = createComposer(i18n, maxChars, (text, photo) => void controller.send(text, photo), {
+    photos: photosOn(config),
+  });
 
   // First open on this page: show the loading screen while the shopper's token is fetched.
   let warmed = false;
@@ -147,6 +149,7 @@ function mount(script: HTMLScriptElement | null, timeZone?: string): void {
     close: () => setOpen(false),
     reset: () => controller.reset(),
   }, { links, url: data.privacyUrl ?? null });
+  composer.acceptDrops(panel.element);
 
   const render = () => {
     const s = state.state;
@@ -175,6 +178,6 @@ function mount(script: HTMLScriptElement | null, timeZone?: string): void {
 const script = findScript(); // only readable synchronously, before the first await
 void fetchConfig(apiBaseOf(script)).then((config) => {
   if (!shouldMount(config, location.search)) return;
-  if (document.body) mount(script, config?.timeZone);
-  else document.addEventListener('DOMContentLoaded', () => mount(script, config?.timeZone), { once: true });
+  if (document.body) mount(script, config);
+  else document.addEventListener('DOMContentLoaded', () => mount(script, config), { once: true });
 });

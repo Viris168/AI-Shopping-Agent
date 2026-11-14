@@ -1,5 +1,6 @@
 """FastAPI app and routes (ARCHITECTURE.md §4.2)."""
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -17,7 +18,16 @@ from app.auth import Auth, get_auth
 from app.cache import ToolCache
 from app.commerce_client import ApiError, CommerceClient
 from app.config import Settings, get_settings
-from app.guardrails import RateLimiter, TokenBudget, budget_subject, check_message
+from app.guardrails import (
+    PHOTOS_OFF,
+    ImageLimiter,
+    RateLimiter,
+    TokenBudget,
+    budget_subject,
+    check_message,
+    photo_error,
+)
+from app.images import ImageIn, prepare_image
 from app.llm import LLM
 from app.loop import Agent
 from app.masking import MaskingFilter
@@ -35,6 +45,9 @@ ACTION_ID = r"^[A-Za-z0-9_-]{1,64}$"
 # assistant off on every replica at once; `SET flag:rollout_percent 25` moves the rollout.
 FLAG_ENABLED = "flag:agent_enabled"
 FLAG_ROLLOUT = "flag:rollout_percent"
+# `SET flag:images_enabled 0` turns photos off without a redeploy (IMAGES_ENABLED turns them on).
+FLAG_IMAGES = "flag:images_enabled"
+FLAG_IMAGES_ROLLOUT = "flag:images_rollout_percent"
 
 
 @asynccontextmanager
@@ -84,6 +97,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state.agent = agent
             app.state.redis = redis
             app.state.limiter = RateLimiter(redis, settings.rate_limit_per_min)
+            app.state.images = ImageLimiter(
+                redis, settings.image_daily_limit, settings.image_daily_limit_guest
+            )
             yield
             await agent.drain()  # finish memory writes before the client closes
     finally:
@@ -98,7 +114,7 @@ app.add_middleware(
     allow_origins=_settings.cors_origin_list,
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type"],
-    expose_headers=["X-Request-Id"],
+    expose_headers=["X-Request-Id", "X-Limit"],
 )
 app.add_middleware(telemetry.RequestIdMiddleware)  # outermost: wraps CORS and every route
 
@@ -124,6 +140,29 @@ async def read_flags(request: Request, settings: Settings) -> tuple[bool, int]:
     return enabled, rollout if enabled else 0
 
 
+async def images_active(request: Request, settings: Settings) -> bool:
+    """IMAGES_ENABLED, unless Redis `flag:images_enabled 0` turns photos off everywhere."""
+    if not settings.images_enabled:
+        return False
+    try:
+        raw = await request.app.state.redis.get(FLAG_IMAGES)
+    except Exception:
+        log.warning("images flag unreadable from redis; using IMAGES_ENABLED")
+        return True
+    return not (isinstance(raw, str) and raw.strip().lower() in ("0", "false", "off"))
+
+
+async def images_rollout(request: Request, settings: Settings) -> int:
+    """IMAGES_ROLLOUT_PERCENT, unless Redis flag:images_rollout_percent moves it."""
+    try:
+        raw = await request.app.state.redis.get(FLAG_IMAGES_ROLLOUT)
+    except Exception:
+        return settings.images_rollout_percent
+    if isinstance(raw, str) and raw.strip().isdigit():
+        return min(int(raw), 100)
+    return settings.images_rollout_percent
+
+
 async def require_enabled(
     request: Request, settings: Annotated[Settings, Depends(get_settings)]
 ) -> None:
@@ -144,6 +183,7 @@ class ChatRequest(BaseModel):
     conversationId: str | None = Field(None, pattern=CONVERSATION_ID)
     message: str = Field(max_length=20_000)  # hard cap; the friendly 413 is in guardrails
     locale: str | None = Field(None, max_length=16)
+    image: ImageIn | None = None  # one photo per message (PLAN-20)
 
 
 class FeedbackRequest(BaseModel):
@@ -195,8 +235,15 @@ async def _lock_for_action(
 async def chat(
     body: ChatRequest, request: Request, auth: AuthDep, agent: AgentDep, settings: SettingsDep
 ) -> StreamingResponse:
-    message = check_message(body.message, settings)
+    if body.image is not None and not await images_active(request, settings):
+        raise photo_error(403, PHOTOS_OFF)
+    message = check_message(body.message, settings, allow_empty=body.image is not None)
     await _rate_limit(request, auth)
+    image = None
+    if body.image is not None:
+        # Checked before it counts against the day's photos; re-encoding is CPU work.
+        image = await asyncio.to_thread(prepare_image, body.image, settings)
+        await request.app.state.images.hit(_subject(request, auth), auth.is_guest)
     # A new conversation's ID is made here and nobody else has it yet, so it needs no lock.
     lock: tuple[str, str] | None = None
     if body.conversationId:
@@ -218,7 +265,7 @@ async def chat(
         try:
             message_id = f"{session.id}:{len(session.messages)}"
             emit("meta", {"conversationId": session.id, "messageId": message_id})
-            await agent.run_turn(session, message, auth, emit, subject)
+            await agent.run_turn(session, message, auth, emit, subject, image)
         finally:
             if lock:
                 await agent.sessions.unlock(*lock)
@@ -290,7 +337,15 @@ async def widget_config(
     enabled, rollout = await read_flags(request, settings)
     # Short cache: a kill switch reaches every page within a minute.
     response.headers["Cache-Control"] = "public, max-age=60"
-    return {"enabled": enabled, "rolloutPercent": rollout, "timeZone": settings.store_tz}
+    images = enabled and await images_active(request, settings)
+    return {
+        "enabled": enabled, "rolloutPercent": rollout, "timeZone": settings.store_tz,
+        "imagesEnabled": images,
+        # The widget shows the photo button only in this share of its buckets. The server
+        # still accepts a photo from any browser while photos are on: this is a gradual
+        # rollout, not access control.
+        "imagesRolloutPercent": await images_rollout(request, settings) if images else 0,
+    }
 
 
 @app.get("/health")

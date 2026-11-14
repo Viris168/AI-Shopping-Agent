@@ -13,6 +13,7 @@ dependencies = [
   "pyjwt>=2.8",
   "redis>=5.0",
   "pyyaml>=6.0",
+  "pillow>=11",  # photos in chat: check and re-encode uploads (app/images.py)
   "opentelemetry-api>=1.27",
   "opentelemetry-sdk>=1.27",
   "opentelemetry-exporter-otlp-proto-http>=1.27",
@@ -27,7 +28,6 @@ dev = [
   "ruff>=0.5",
   "mypy>=1.10",
   "types-PyYAML",
-  "pillow>=11",  # PLAN-20 M0: generated test images (a runtime dependency from M1)
 ]
 
 [build-system]

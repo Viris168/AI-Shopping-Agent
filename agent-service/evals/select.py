@@ -21,8 +21,13 @@ TOOL_FILES: dict[str, dict[Suite, set[str]]] = {
     "memory": {"golden": {"memory"}, "redteam": {"memory"}},
 }
 # Other single-area modules, by path from the repo root.
+PHOTO_FILES: dict[Suite, set[str]] = {"golden": {"photos"}, "redteam": {"photos"}}
 MODULE_FILES: dict[str, dict[Suite, set[str]]] = {
     "agent-service/app/memory.py": TOOL_FILES["memory"],
+    "agent-service/app/images.py": PHOTO_FILES,
+    "agent-service/app/prompts/images.md": PHOTO_FILES,
+    "agent-service/app/prompts/image_describe.md": PHOTO_FILES,
+    "agent-service/evals/image_fixtures.py": PHOTO_FILES,
 }
 # Everything else that changes what the agent sees or does (same scope as CI's eval trigger).
 SMOKE_PREFIXES = (

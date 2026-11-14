@@ -93,6 +93,12 @@ services:
       # Kill switch and rollout; Redis flags override them at runtime (infra/monitoring/README.md).
       AGENT_ENABLED: ${AGENT_ENABLED:-true}
       ROLLOUT_PERCENT: ${ROLLOUT_PERCENT:-100}
+      # Photos in chat (PLAN-20). Redis flag:images_enabled and flag:images_rollout_percent
+      # override them at runtime (infra/monitoring/README.md#photos).
+      IMAGES_ENABLED: ${IMAGES_ENABLED:-false}
+      IMAGES_ROLLOUT_PERCENT: ${IMAGES_ROLLOUT_PERCENT:-0}
+      IMAGE_DAILY_LIMIT: ${IMAGE_DAILY_LIMIT:-20}
+      IMAGE_DAILY_LIMIT_GUEST: ${IMAGE_DAILY_LIMIT_GUEST:-5}
       # Traces and metrics over OTLP/HTTP; empty endpoint → no export.
       DEPLOY_ENV: ${DEPLOY_ENV:?}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
