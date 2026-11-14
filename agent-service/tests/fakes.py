@@ -42,6 +42,7 @@ class FakeLLM:
         self.calls: list[list[Any]] = []
         self.systems: list[list[dict[str, Any]]] = []
         self.fast_prompts: list[str] = []
+        self.images: list[bytes] = []
 
     async def stream(self, *, system: list[dict[str, Any]], messages: list[Any],
                      on_text: Callable[[str], None], **_: Any) -> Message:
@@ -65,6 +66,19 @@ class FakeLLM:
 
     async def summarise(self, previous: str | None, messages: list[Any]) -> str:
         return ""
+
+    describe_reply = (
+        '{"summary": "An order email", "visible_text": "Your order ORD-1002 has shipped!", '
+        '"items": [], "condition": "not applicable", "quality": "ok"}'
+    )
+    describe_error: Exception | None = None
+
+    async def describe_image(self, jpeg: bytes) -> tuple[str, int]:
+        self.images.append(jpeg)
+        if self.describe_error is not None:
+            raise self.describe_error
+        usage.record("image_describe", "fake", usage.Counts(calls=1, input=300, output=100))
+        return self.describe_reply, 400
 
     fast_reply = '{"facts": []}'
 

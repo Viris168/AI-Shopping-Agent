@@ -196,8 +196,13 @@ class Session:
         else:
             self.messages.append({"role": "user", "content": blocks})
 
-    def append_user(self, text: str) -> None:
-        self._append_user_blocks([{"type": "text", "text": defang_control_tags(text)}])
+    def append_user(self, text: str, image_note: str | None = None) -> None:
+        """`image_note`: the wrapped description of a photo sent with the message
+        (images.wrap_image_description). It goes first, so the shopper's own words come last."""
+        blocks = [{"type": "text", "text": image_note}] if image_note else []
+        if text or not blocks:
+            blocks.append({"type": "text", "text": defang_control_tags(text)})
+        self._append_user_blocks(blocks)
 
     def append_assistant(self, content: Sequence[ContentBlock]) -> None:
         self.messages.append({

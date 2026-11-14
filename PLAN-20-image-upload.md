@@ -50,7 +50,7 @@ agent-service:
   re-encode server-side (Pillow, in a thread) → strip metadata
   describe_image (flash, purpose=image_describe, own timeout)
      ok    → user turn = typed text + <image_description>{json}</image_description>
-     fails → user turn = typed text + <event>photo could not be read</event>
+     fails → user turn = typed text + <image_description>{"error": ...}</image_description>
   normal loop on v4-pro (unchanged)
 ```
 
@@ -122,6 +122,21 @@ photos (damaged parcels, worn shoes, products) with `--dir`, and adjust the dama
 - **Done when** loop tests with a fake LLM cover: description wrapped and defanged; describe failure
   → the turn continues with the event and the agent asks the shopper to describe it in words;
   no image bytes in `Session.messages`, transcripts, logs or spans.
+
+### M1 + M2 status (2026-11-14, branch `image-m1-m2`)
+Done as planned, behind `IMAGES_ENABLED` (off). Code: [images.py](agent-service/app/images.py)
+(checks, re-encode, parse, wrap), `ImageLimiter` in [guardrails.py](agent-service/app/guardrails.py),
+`LLM.describe_image`, `Agent._describe` in [loop.py](agent-service/app/loop.py), the `image` field
+on `/v1/chat` and `imagesEnabled` in `/v1/config` ([main.py](agent-service/app/main.py)), photo
+rules in [prompts/images.md](agent-service/app/prompts/images.md), added to the system prompt
+only when `IMAGES_ENABLED` is on. Tests in `tests/test_images.py`. Checked on the real model with
+three fixtures. Differences from the plan:
+- A failed or unparsable describe gives `<image_description>{"error": ...}` instead of an
+  `<event>`, because `<event>` means a button press.
+- The description is masked before the main model sees it, not only in transcripts. Side
+  effect: long digit runs such as tracking numbers come out as `[phone]`. The order tool still
+  gives the real one.
+- A photo can be sent without words. The topic then waits for the first typed message.
 
 ### M3 · Widget
 - Composer: attach button (camera icon, `aria-label`), hidden `<input type="file" accept="image/*">`

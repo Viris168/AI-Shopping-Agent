@@ -382,7 +382,7 @@ Full lists: `evals/golden/*.yaml` (~165 cases) and `evals/redteam/*.yaml` (~50),
 - Deterministic checks first: tools called, arguments, events emitted, required and forbidden text.
 - Haiku grader for free-text criteria (grounded, polite, concise), with a fixed rubric.
 - Pass bars: golden ≥ 90%, red team 100%. CI (`.github/workflows/agent-service.yml`) runs both suites when the prompt, tools, model config, evals or seed data change, and fails below the bar.
-- `MEMORY_ENABLED` and `PLAYBOOKS_ENABLED` are off by default. Before switching either on, run both suites with it set (`MEMORY_ENABLED=true python -m evals.run --suite golden`, and the same for redteam and for `PLAYBOOKS_ENABLED`); both bars must hold. Memory cases switch memory on for themselves either way.
+- `MEMORY_ENABLED`, `PLAYBOOKS_ENABLED` and `IMAGES_ENABLED` are off by default. Before switching one on, run both suites with it set (`MEMORY_ENABLED=true python -m evals.run --suite golden`, and the same for redteam and for the others); both bars must hold. Memory cases switch memory on for themselves either way.
 
 ## 9. Changing the agent
 

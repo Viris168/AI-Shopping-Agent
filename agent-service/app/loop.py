@@ -24,7 +24,8 @@ from app.guardrails import (
     suspect_facts,
     wrap_tool_result,
 )
-from app.llm import LLM
+from app.images import parse_description, wrap_image_description
+from app.llm import LLM, ModelUnavailable
 from app.memory import Memory, render_memory
 from app.sessions import Session, SessionStore, TranscriptStore
 from app.sse import Emit
@@ -62,11 +63,18 @@ def _prompt_parts() -> tuple[str, str]:
     return static.strip(), dynamic.split("-->", 1)[1].strip()
 
 
+@cache
+def _image_rules() -> str:
+    return (Path(__file__).parent / "prompts" / "images.md").read_text(encoding="utf-8").strip()
+
+
 def build_system(settings: Settings, auth: Auth) -> list[dict[str, Any]]:
     """Static block first (cached with the tools), then the per-conversation block (login, date).
     Neither changes from one call to the next, so the provider can cache the history after them
     too; what changes per call goes in `build_context`."""
     static, dynamic = _prompt_parts()
+    if settings.images_enabled:  # static config, so the cached block stays the same per process
+        static = f"{static}\n\n{_image_rules()}"
     auth_state = (
         f"The shopper is logged in as {auth.name or 'a customer'}."
         if not auth.is_guest
@@ -201,20 +209,45 @@ class Agent:
 
     async def run_turn(
         self, session: Session, user_msg: str | None, auth: Auth, emit: Emit,
-        subject: str | None = None,
+        subject: str | None = None, image: bytes | None = None,
     ) -> None:
-        """`subject` (guardrails.budget_subject) is charged the daily budget; None skips it."""
+        """`subject` (guardrails.budget_subject) is charged the daily budget; None skips it.
+        `image`: a photo sent with `user_msg`, already checked and re-encoded
+        (images.prepare_image)."""
         # Every model call of the turn, for the conversation's token and cost totals.
         with usage.tracking() as spent:
-            await self._turn(session, user_msg, auth, emit, spent, subject)
+            await self._turn(session, user_msg, auth, emit, spent, subject, image)
+
+    async def _describe(self, jpeg: bytes, conversation_id: str, subject: str | None) -> str:
+        """The photo as an `<image_description>` block. If the fast model fails or its reply
+        can't be parsed, the block says the photo couldn't be read and the turn goes on."""
+        desc = None
+        try:
+            raw, tokens = await self.llm.describe_image(jpeg)
+        except ModelUnavailable as exc:
+            log.warning("image_describe_failed: %s", exc)
+            outcome = "failed"
+        else:
+            await self.budget.add(conversation_id, tokens, subject)
+            desc = parse_description(raw)
+            outcome = desc.quality if desc else "unparsed"
+        telemetry.images.add(1, {"outcome": outcome})
+        return wrap_image_description(desc)
 
     async def _turn(
         self, session: Session, user_msg: str | None, auth: Auth, emit: Emit,
-        spent: usage.UsageTally, subject: str | None,
+        spent: usage.UsageTally, subject: str | None, image: bytes | None = None,
     ) -> None:
+        image_note = None
         if user_msg is not None:
-            session.append_user(user_msg)
-            session.state.note_topic(user_msg)
+            # A used-up budget skips the photo too; the loop below says why.
+            if image is not None and not await self.budget.exhausted(session.id, subject):
+                image_note = await self._describe(image, session.id, subject)
+            session.append_user(user_msg, image_note)
+            # Topic, playbooks and memory see only what the shopper typed: a photo can hold an
+            # address or a card number.
+            if user_msg:
+                session.state.note_topic(user_msg)
             if self.settings.playbooks_enabled:
                 playbooks.select(session.state, user_msg)
         if self.memory is not None and session.memory_enabled is None:
@@ -311,7 +344,8 @@ class Agent:
         else:
             emit("text_delta", {"text": FALLBACK_HANDOFF_TEXT})
 
-        suspect_facts("".join(reply), tool_texts, user_msg or "")
+        # A price on the shopper's photo counts as theirs, like one they typed.
+        suspect_facts("".join(reply), tool_texts, "\n".join(filter(None, (user_msg, image_note))))
         if guard.removed:
             log.warning("output_redacted: %s", sorted(guard.removed))
         # Before summarising, so messages are saved before they can be folded away.

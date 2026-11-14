@@ -66,6 +66,10 @@ suspect_replies = _meter.create_counter(
     "agent.output.suspect_replies",
     description="Replies with a price or percentage no tool or shopper message gave this turn",
 )
+images = _meter.create_counter(
+    "agent.images", description="Photos described, by outcome (ok, blurry, dark, cropped, "
+    "unclear, unparsed, failed)"
+)
 output_redactions = _meter.create_counter(
     "agent.output.redactions", description="Codes and links removed from replies, by kind"
 )

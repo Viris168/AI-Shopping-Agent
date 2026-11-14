@@ -16,10 +16,11 @@ from app.config import Settings
 log = logging.getLogger(__name__)
 
 _TAG = re.compile(r"<[^>]*>")
-# Tags only the service writes: button presses, tool output, the per-call context and what it
-# holds (rolling summary, session state, long-term memory).
+# Tags only the service writes: button presses, tool output, photo descriptions, the per-call
+# context and what it holds (rolling summary, session state, long-term memory).
 _CONTROL_TAG = re.compile(
-    r"<(\s*/?\s*)(event|tool_result|context|conversation_summary|session_state|memory)\b",
+    r"<(\s*/?\s*)(event|tool_result|image_description|context|conversation_summary|"
+    r"session_state|memory)\b",
     re.IGNORECASE,
 )
 # A day's counter outlives its day a little, so it's never dropped while still being added to.
@@ -27,9 +28,10 @@ DAILY_TTL_S = 25 * 3600
 _MONEY_OR_PERCENT = re.compile(r"[$€£]\s?\d[\d,]*(?:\.\d+)?|\d+(?:\.\d+)?\s?%")
 
 
-def check_message(text: str, settings: Settings) -> str:
+def check_message(text: str, settings: Settings, allow_empty: bool = False) -> str:
+    """`allow_empty`: a photo can be sent without words."""
     text = text.strip()
-    if not text:
+    if not text and not allow_empty:
         raise HTTPException(422, "Please type a message.")
     if len(text) > settings.max_message_chars:
         raise HTTPException(
@@ -55,6 +57,28 @@ class RateLimiter:
             _, count = await pipe.execute()
         if count > self._limit:
             raise HTTPException(429, "You're sending messages too quickly. Please wait a moment.")
+
+
+class ImageLimiter:
+    """Photos per subject (budget_subject) per UTC day: each one costs a model call."""
+
+    def __init__(self, redis: Redis, per_user: int, per_guest: int) -> None:
+        self._redis = redis
+        self._per_user = per_user
+        self._per_guest = per_guest
+
+    async def hit(self, subject: str, guest: bool) -> None:
+        limit = self._per_guest if guest else self._per_user
+        if limit <= 0:
+            raise HTTPException(403, "Photos aren't available right now.")
+        key = f"img:day:{datetime.now(UTC).date().isoformat()}:{subject}"
+        async with self._redis.pipeline(transaction=True) as pipe:
+            pipe.set(key, 0, ex=DAILY_TTL_S, nx=True)
+            pipe.incr(key)
+            _, count = await pipe.execute()
+        if count > limit:
+            raise HTTPException(429, "You've sent as many photos as you can for today. "
+                                     "You can still type your question.")
 
 
 def budget_subject(auth_user_id: str | None, ip: str | None) -> str:

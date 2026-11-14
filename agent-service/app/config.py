@@ -55,6 +55,16 @@ class Settings(BaseSettings):
     # Task playbooks in the prompt (app/playbooks.py, PLAN-18 M7). A prompt change: switch on after
     # the golden and red-team suites pass with it.
     playbooks_enabled: bool = False
+    # Photos in chat (app/images.py, PLAN-20). Off until rolled out; Redis flag:images_enabled can
+    # also turn it off at runtime. MODEL_FAST describes the photo, so it must accept images.
+    images_enabled: bool = False
+    image_max_bytes: int = 1_500_000  # decoded upload; the widget resizes before sending
+    image_max_pixels: int = 25_000_000  # width × height, checked before decoding the pixels
+    image_long_edge: int = 1568  # re-encoded size sent to the model
+    image_timeout_s: float = 15
+    # Photos per shopper (per IP for guests) per UTC day. 0 turns that group's photos off.
+    image_daily_limit: int = Field(20, ge=0)
+    image_daily_limit_guest: int = Field(5, ge=0)
 
     store_name: str = "our store"
     storefront_url: str = "http://localhost:8080"

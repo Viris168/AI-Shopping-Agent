@@ -1,10 +1,13 @@
 """Model client (DeepSeek via its Anthropic-compatible API by default): model routing, prompt
 caching, streaming. All model calls go through here."""
 
+import base64
 import json
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from functools import cache
+from pathlib import Path
 from typing import Any
 
 from anthropic import APIError, APIStatusError, AsyncAnthropic
@@ -23,6 +26,12 @@ SUMMARY_PROMPT = (
     "Do not include email addresses, phone numbers or addresses. Max 150 words.\n\n"
     "Previous summary:\n{previous}\n\nConversation:\n{transcript}"
 )
+
+
+@cache
+def _describe_prompt() -> str:
+    return (Path(__file__).parent / "prompts" / "image_describe.md").read_text(encoding="utf-8")
+
 
 # DeepSeek thinks by default, and thinking counts against max_tokens: a short reply budget can
 # be spent before any text (empty replies, empty grader output). Claude is off by default too.
@@ -187,6 +196,30 @@ class LLM:
             _record_usage(span, "summarise", "summarise", resp,
                           self._price(self._s.model_fast, resp))
         return "".join(b.text for b in resp.content if b.type == "text").strip()
+
+    async def describe_image(self, jpeg: bytes) -> tuple[str, int]:
+        """The fast model's description of a shopper's photo (app/images.py): its raw reply and
+        the tokens it used (for the token budget).
+        Only MODEL_FAST: the main model can't see images, so there's no fallback. The photo goes
+        to the provider and nowhere else: not on the span, not in logs."""
+        model = self._s.model_fast
+        async with _observed("describe", model) as span:
+            resp = await self._client.with_options(timeout=self._s.image_timeout_s).messages.create(
+                model=model,
+                max_tokens=700,
+                thinking=NO_THINKING,
+                system=_describe_prompt(),
+                messages=[{"role": "user", "content": [
+                    {"type": "image", "source": {
+                        "type": "base64", "media_type": "image/jpeg",
+                        "data": base64.b64encode(jpeg).decode(),
+                    }},
+                    {"type": "text", "text": "Describe this image."},
+                ]}],
+            )
+            _record_usage(span, "describe", "image_describe", resp, self._price(model, resp))
+        text = "".join(b.text for b in resp.content if b.type == "text")
+        return text, resp.usage.input_tokens + resp.usage.output_tokens
 
     async def complete_fast(
         self, prompt: str, max_tokens: int = 256, purpose: str = "complete"
