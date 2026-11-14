@@ -34,7 +34,7 @@ gzipped; we never receive or store audio.
 | Unsupported browsers | Hide the button (Firefox today) | Progressive enhancement; typing still works |
 | Language | From the widget's locale: `en` → `en-US`, `vi` → `vi-VN` | Setting the language improves accuracy a lot |
 | Live text | **Yes:** words appear in the input as the shopper talks (`interimResults`), then settle; text-at-end where the browser can't (decided in M1) | Shows the mic is hearing them, and they can stop early if it's going wrong |
-| Time limit | 60 s per recording, then stop automatically | Keeps the text under the 2,000-char cap and avoids a forgotten open mic |
+| Listening | **Until the shopper stops it** (tap 🎤, Enter, close the chat), through pauses, like Claude's mic; at most 2 min. Browsers end sessions on their own, so those are restarted and the text carried over (changed after the first test, which stopped at every pause) | Shoppers pause mid-sentence; 2 min is about the 2,000-char cap at speaking speed and stops a forgotten open mic |
 | Audio storage | **None.** We never receive audio; the browser vendor may process it | Privacy notice must say so (M1) |
 | Server signal | Chat request may carry `via: "voice"` (whitelisted, optional) | Lets us count voice messages and compare outcomes without storing anything new |
 | Rollout | `VOICE_ENABLED` + Redis `flag:voice_enabled`, `VOICE_ROLLOUT_PERCENT` / `flag:voice_rollout_percent`; off by default | Same pattern as photos |
@@ -45,7 +45,8 @@ gzipped; we never receive or store audio.
 widget: mic button (supported + flag on + bucket < voiceRolloutPercent)
   tap → browser asks for mic permission → SpeechRecognition(lang from locale)
   listening (pulsing button, aria-live "Listening…") → text into the input box
-  stop: tap again, silence, or 60 s
+  stop: tap again, Enter, closing the chat, 2 min, or long silence with nothing heard
+  (a session the browser ends by itself is restarted; the text carries over)
   shopper edits → Send
   POST /v1/chat {conversationId, message, locale, via: "voice"}
 agent-service: normal turn (unchanged); counts agent.voice_messages
@@ -202,6 +203,19 @@ ruff and mypy clean. The runbook section (`infra/monitoring/README.md#voice`) is
 - Tests: agent-service 271 pass (`test_telemetry.py`, `test_actions.py`), ruff and mypy clean;
   widget 74 pass, 15.9 KB gzipped.
 
+### Follow-up · Keep listening through pauses (2026-11-14)
+
+The first hands-on test found the mic stopped at the first pause (`continuous = false`). Now:
+- `continuous = true`, and a session the browser ends by itself is restarted with the text carried
+  over (Chrome ends after silence or about a minute; Chrome on Android after each phrase).
+- Stops only when the shopper taps 🎤 or presses Enter, the chat closes or the tab is hidden, at
+  `VOICE_LIMIT_MS` (now 2 min, was 60 s), after two silent sessions with nothing heard
+  (`errMicNoSpeech`), or when sessions keep ending at once (`errMicUnavailable`, no restart loop).
+- A recording bar while listening: red dot, `0:12 / 2:00`, "Tap 🎤 or press Enter to stop"
+  (`voiceStopHint`, en/vi). Visual only; screen readers get "Listening…" once.
+- Checked with a fake recognizer (restart and carry-over, bar and timer) and the real one with the
+  mic blocked (one start, "blocked" message). 88 widget tests; 16.7 KB gzipped.
+
 ### M5 · Rollout
 - Staging with `VOICE_ENABLED=true`, then staff preview, then production at 5 / 25 / 100%.
 - Watch the voice share and whether voice turns get more thumbs-down or "didn't understand"
@@ -248,7 +262,7 @@ Needs: a provider choice and account, a new secret, privacy wording updated to n
 ## Docs to update
 
 - [PRD.md](PRD.md): dictation in scope; privacy-notice wording.
-- [ARCHITECTURE-ESSENTIAL.md](ARCHITECTURE-ESSENTIAL.md): voice limit (60 s) and the flag.
+- [ARCHITECTURE-ESSENTIAL.md](ARCHITECTURE-ESSENTIAL.md): voice limit (2 min) and the flag.
 - [ARCHITECTURE.md](ARCHITECTURE.md): `via` field, `/v1/config` fields, rollout.
 - `widget` README: mic button, browser support.
 
