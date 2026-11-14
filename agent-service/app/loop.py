@@ -19,6 +19,7 @@ from app.commerce_client import CommerceClient
 from app.config import Settings
 from app.guardrails import (
     OutputGuard,
+    PromptLeakGuard,
     TokenBudget,
     defang_control_tags,
     suspect_facts,
@@ -63,6 +64,12 @@ def _prompt_parts() -> tuple[str, str]:
     text = (Path(__file__).parent / "prompts" / "system.md").read_text(encoding="utf-8")
     static, _, dynamic = text.partition(DYNAMIC_MARKER)
     return static.strip(), dynamic.split("-->", 1)[1].strip()
+
+
+@cache
+def _playbook_texts() -> tuple[str, ...]:
+    folder = Path(__file__).parent / "prompts" / "playbooks"
+    return tuple(p.read_text(encoding="utf-8") for p in sorted(folder.glob("*.md")))
 
 
 @cache
@@ -274,7 +281,10 @@ class Agent:
         reply: list[str] = []
         tool_texts: list[str] = []
         new_round = False
-        guard = OutputGuard(self.settings.link_host_list, session.state.known_codes)
+        # Instructions the shopper must never see repeated: this turn's system prompt and the
+        # playbooks (PromptLeakGuard).
+        leak = PromptLeakGuard([b["text"] for b in system] + list(_playbook_texts()))
+        guard = OutputGuard(self.settings.link_host_list, session.state.known_codes, leak)
 
         def send(text: str) -> None:
             if text:
@@ -357,7 +367,7 @@ class Agent:
                 break
             session.append_assistant(content)
             if not calls:
-                if resp.stop_reason == "max_tokens":
+                if resp.stop_reason == "max_tokens" and not guard.leak_blocked:
                     log.warning("reply_cut_off at %s tokens", resp.usage.output_tokens)
                     send(CUT_OFF_TEXT)
                 break

@@ -346,6 +346,7 @@ With `PLAYBOOKS_ENABLED` (off by default), the `<context>` block gets a short "#
 | Tool output | wrap in `<tool_result>`; strip HTML | — |
 | Output | links not on the store's hosts (`STOREFRONT_URL`, `LINK_HOSTS`) | replaced with `[link removed]` as the reply streams (`OutputGuard`); the widget also won't link them |
 | Output | coupon-shaped codes (`STAFF100`) the store didn't confirm (applied code, or a store field like a product name) | replaced with `[code removed]` as the reply streams; also in saved history; metric `agent.output.redactions` |
+| Output | the reply copies the system prompt or a playbook (a run of 30+ words matching it in 6-word steps; R-SYS-05) | held back as it streams, then replaced with a short refusal; saved history keeps the refusal; metric `agent.output.redactions{kind=prompt}`. Catches verbatim copies only, not translations |
 | Output | price/percent mentioned that wasn't in any tool result (or the shopper's message) this turn | logged as `suspect_fact`, counted (`agent.output.suspect_replies`), `AgentSuspectFacts` alert at > 5% of replies |
 
 Spend limits (PLAN-19 M7, `app/limits.py`) are in estimated dollars from `MODEL_PRICES`, kept in Redis as integer micro-dollars per UTC day, so opening new conversations doesn't reset them. A confirmed action is never refused for cost; its follow-up reply still counts. If Redis is down, turns go ahead and the provider's prepaid balance is the backstop; `AgentProviderBalanceLow` warns before it runs out (`app/balance.py`).
