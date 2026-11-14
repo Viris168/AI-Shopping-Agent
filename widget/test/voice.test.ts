@@ -10,7 +10,7 @@ import {
   voiceProblem,
 } from '../src/voice';
 
-/** A recognizer the test drives: `say` sends results, `end` finishes, `fail` errors. */
+/** A recognizer the test drives: `say` sends results, `end` ends the session, `fail` errors. */
 class FakeRecognition implements Recognition {
   static last: FakeRecognition | null = null;
   static startThrows = false;
@@ -34,6 +34,10 @@ class FakeRecognition implements Recognition {
   }
   stop() {
     this.stopped = true;
+    this.onend?.();
+  }
+  /** The browser ends the session by itself (a pause, its own time cap, Android per phrase). */
+  end() {
     this.onend?.();
   }
   abort() {
@@ -83,8 +87,8 @@ describe('voice', () => {
   it('asks for live text, one result at a time, and passes final and pending words', () => {
     const onText = vi.fn();
     const onEnd = vi.fn();
-    startDictation(Fake, 'vi-VN', { onText, onEnd });
-    expect(rec()).toMatchObject({ lang: 'vi-VN', interimResults: true, continuous: false, maxAlternatives: 1, started: true });
+    const d = startDictation(Fake, 'vi-VN', { onText, onEnd });
+    expect(rec()).toMatchObject({ lang: 'vi-VN', interimResults: true, continuous: true, maxAlternatives: 1, started: true });
 
     rec().say(['where is', false]);
     expect(onText).toHaveBeenLastCalledWith('', 'where is');
@@ -94,8 +98,63 @@ describe('voice', () => {
     expect(onText).toHaveBeenLastCalledWith('where is my order ORD-1001', '');
     rec().say(['where is my order', true], [' ORD-1001', true]); // sent again (Android)
     expect(onText).toHaveBeenLastCalledWith('where is my order ORD-1001', '');
-    rec().stop();
+    d.stop();
     expect(onEnd).toHaveBeenCalledWith(null);
+  });
+
+  it('keeps listening when the browser ends a session, carrying the text over', () => {
+    const onText = vi.fn();
+    const onEnd = vi.fn();
+    const d = startDictation(Fake, 'en-US', { onText, onEnd });
+    const first = rec();
+    first.say(['where is my order', true]);
+    first.end(); // a pause: the browser stops, the shopper didn't
+    expect(onEnd).not.toHaveBeenCalled();
+    expect(rec()).not.toBe(first);
+    expect(rec().started).toBe(true);
+
+    rec().say(['ORD', false]);
+    expect(onText).toHaveBeenLastCalledWith('where is my order', ' ORD');
+    rec().say(['ORD-1001', true]);
+    expect(onText).toHaveBeenLastCalledWith('where is my order ORD-1001', '');
+    d.stop();
+    expect(onEnd).toHaveBeenCalledWith(null);
+  });
+
+  it('carries on through pauses, but gives up after long silence with nothing heard', () => {
+    const onEnd = vi.fn();
+    startDictation(Fake, 'en-US', { onText: vi.fn(), onEnd });
+    rec().fail('no-speech');
+    expect(onEnd).not.toHaveBeenCalled(); // one quiet stretch: keep listening
+    rec().fail('no-speech');
+    expect(onEnd).toHaveBeenCalledWith('errMicNoSpeech');
+
+    const later = vi.fn();
+    startDictation(Fake, 'en-US', { onText: vi.fn(), onEnd: later });
+    rec().say(['hello', true]);
+    rec().fail('no-speech');
+    rec().fail('no-speech');
+    rec().fail('no-speech');
+    expect(later).not.toHaveBeenCalled(); // they did speak: silence is just a pause
+  });
+
+  it('gives up if the browser keeps ending sessions straight away', () => {
+    let t = 0;
+    const onEnd = vi.fn();
+    startDictation(Fake, 'en-US', { onText: vi.fn(), onEnd }, 120_000, () => t);
+    rec().end();
+    rec().end();
+    expect(onEnd).not.toHaveBeenCalled();
+    rec().end();
+    expect(onEnd).toHaveBeenCalledWith('errMicUnavailable');
+
+    const fine = vi.fn();
+    startDictation(Fake, 'en-US', { onText: vi.fn(), onEnd: fine }, 120_000, () => t);
+    for (let i = 0; i < 5; i++) {
+      t += 5000; // sessions of a few seconds each: normal
+      rec().end();
+    }
+    expect(fine).not.toHaveBeenCalled();
   });
 
   it('stops by itself at the time limit', () => {
@@ -165,7 +224,9 @@ describe('composer with voice', () => {
     rec().say(['where is my', false]);
     expect(input.value).toBe('Hi. where is my');
     rec().say(['where is my order', true]);
-    rec().stop();
+    rec().end(); // a pause doesn't stop it
+    expect(input.readOnly).toBe(true);
+    mic().click(); // the shopper does
 
     expect(input.value).toBe('Hi. where is my order');
     expect(input.readOnly).toBe(false);
@@ -193,7 +254,7 @@ describe('composer with voice', () => {
 
     mic().click();
     rec().say(['track my order', true]);
-    rec().stop();
+    mic().click();
     input.value += ' please'; // edited after dictating: still a voice message
     enter();
     expect(onSend).toHaveBeenLastCalledWith('track my order please', undefined, 'voice');
@@ -204,12 +265,29 @@ describe('composer with voice', () => {
 
     mic().click();
     rec().say(['oops', true]);
-    rec().stop();
+    mic().click();
     input.value = '';
     input.dispatchEvent(new Event('input'));
     input.value = 'typed instead';
     enter();
     expect(onSend).toHaveBeenLastCalledWith('typed instead', undefined, undefined);
+  });
+
+  it('shows a recording bar with the time while listening', () => {
+    vi.useFakeTimers();
+    const { q, mic, status } = composer();
+    const bar = q<HTMLElement>('.voice-bar');
+    expect(bar.hidden).toBe(true);
+    mic().click();
+    expect(bar.hidden).toBe(false);
+    expect(bar.getAttribute('aria-hidden')).toBe('true'); // no ticking clock for screen readers
+    expect(q('.rec-time').textContent).toBe('0:00 / 2:00');
+    vi.advanceTimersByTime(12_000);
+    expect(q('.rec-time').textContent).toBe('0:12 / 2:00');
+    expect(bar.textContent).toContain('Tap 🎤 or press Enter to stop');
+    expect(status()).toBe('Listening…'); // still announced
+    mic().click();
+    expect(bar.hidden).toBe(true);
   });
 
   it('keeps dictated text within the character limit', () => {
@@ -232,7 +310,7 @@ describe('composer with voice', () => {
     first.mic().click();
     expect(first.q<HTMLElement>('.voice-hint').hidden).toBe(false);
     expect(first.q('.voice-hint').textContent).toBe('Your browser turns speech into text. We never get the audio.');
-    rec().stop();
+    first.mic().click();
 
     const later = composer();
     later.mic().click();

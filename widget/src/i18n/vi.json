@@ -25,6 +25,7 @@
   "errPhotoLimit": "Hôm nay bạn đã gửi đủ số ảnh cho phép. Bạn vẫn có thể nhập câu hỏi.",
   "voiceInput": "Nói tin nhắn của bạn",
   "listening": "Đang nghe…",
+  "voiceStopHint": "Nhấn 🎤 hoặc Enter để dừng",
   "voiceDone": "Đã dừng nghe. Hãy kiểm tra nội dung rồi gửi.",
   "voiceHint": "Trình duyệt của bạn chuyển giọng nói thành chữ. Chúng tôi không nhận bản ghi âm.",
   "errMicDenied": "Micrô đang bị chặn. Hãy cho phép trong cài đặt trình duyệt, hoặc nhập câu hỏi.",

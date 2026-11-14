@@ -25,6 +25,7 @@
   "errPhotoLimit": "You've sent as many photos as you can for today. You can still type your question.",
   "voiceInput": "Speak your message",
   "listening": "Listening…",
+  "voiceStopHint": "Tap 🎤 or press Enter to stop",
   "voiceDone": "Stopped listening. Check the text, then send.",
   "voiceHint": "Your browser turns speech into text. We never get the audio.",
   "errMicDenied": "The microphone is blocked. Allow it in your browser settings, or type your question.",

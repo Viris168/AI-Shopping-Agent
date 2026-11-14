@@ -1,8 +1,11 @@
 import type { I18n } from '../i18n';
 import { type Photo, PhotoError, preparePhoto } from '../photo';
-import { type Dictation, type RecognitionCtor, speechLang, startDictation } from '../voice';
+import { type Dictation, type RecognitionCtor, VOICE_LIMIT_MS, speechLang, startDictation } from '../voice';
 import { el } from '../safe';
+import { icon } from './icons';
 import { button } from '../cards/product';
+
+const MAX_INPUT_PX = 180; // grows with the text up to about 8 lines, then scrolls
 
 export function createComposer(
   i18n: I18n,
@@ -21,14 +24,14 @@ export function createComposer(
   const input = el('textarea', {
     id: 'shopchat-input',
     class: 'input',
-    rows: '1',
+    rows: '2',
     placeholder: t('placeholder'),
     maxlength: String(maxChars),
     'aria-describedby': 'shopchat-count',
     enterkeyhint: 'send',
   });
   const count = el('div', { id: 'shopchat-count', class: 'count', 'aria-live': 'polite' });
-  const send = el('button', { type: 'submit', class: 'btn send', 'aria-label': t('send') }, '➤');
+  const send = el('button', { type: 'submit', class: 'send', 'aria-label': t('send') }, icon('send'));
 
   // Photo: a hidden file input opened by the attach button (phones offer the camera too), a
   // preview with a remove button, and a status line screen readers announce.
@@ -37,7 +40,8 @@ export function createComposer(
   const file = el('input', {
     type: 'file', accept: 'image/*', class: 'sr-only', tabindex: '-1', 'aria-hidden': 'true',
   });
-  const attachBtn = button('icon-btn attach', '📷', () => file.click(), t('attachPhoto'));
+  const attachBtn = button('icon-btn attach', '', () => file.click(), t('attachPhoto'));
+  attachBtn.append(icon('camera'));
   const thumb = el('img', { class: 'photo-thumb', alt: t('photoAlt') });
   const preview = el('div', { class: 'photo-preview', hidden: true },
     thumb,
@@ -54,28 +58,46 @@ export function createComposer(
   let quiet = false; // stopped by the widget, not the shopper: don't move focus
   // Whether the text in the box came (at least partly) from dictation; sent as via: 'voice'.
   let dictated = false;
-  const micBtn = button('icon-btn mic', '🎤', () => (dictation ? dictation.stop() : listen()), t('voiceInput'));
+  const micBtn = button('icon-btn mic', '', () => (dictation ? dictation.stop() : listen()), t('voiceInput'));
+  micBtn.append(icon('mic'));
   micBtn.setAttribute('aria-pressed', 'false');
   const hint = el('div', { class: 'count voice-hint', hidden: true }, t('voiceHint'));
+  // While listening: a red dot, the time so far and how to stop. Visual only: screen readers get
+  // "Listening…" once from the status line and the button's aria-pressed, not a ticking clock.
+  const recTime = el('span', { class: 'rec-time' });
+  const recBar = el('div', { class: 'voice-bar', hidden: true, 'aria-hidden': 'true' },
+    el('span', { class: 'rec-dot' }),
+    recTime,
+    el('span', { class: 'muted' }, t('voiceStopHint')),
+  );
+  let ticker: ReturnType<typeof setInterval> | undefined;
 
   const classes = ['composer', opts.photos && 'with-photos', Voice && 'with-voice'].filter(Boolean);
+  // One box like a code-editor prompt: the text on top, a toolbar inside it below (photo on the
+  // left; mic and Send on the right). The box shows the focus ring for the text area.
   const form = el('form', { class: classes.join(' ') },
-    opts.photos && preview,
     el('label', { for: 'shopchat-input', class: 'sr-only' }, t('inputLabel')),
-    opts.photos && attachBtn,
-    opts.photos && file,
-    input,
-    Voice && micBtn,
-    send,
+    el('div', { class: 'composer-box' },
+      opts.photos && preview,
+      input,
+      el('div', { class: 'composer-tools' },
+        opts.photos && attachBtn,
+        opts.photos && file,
+        el('span', { class: 'spacer' }),
+        Voice && micBtn,
+        send,
+      ),
+    ),
     count,
+    Voice && recBar,
     (opts.photos || Voice) && status,
     Voice && hint,
   );
 
   const resize = () => {
     input.style.height = 'auto';
-    input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
-    input.style.overflowY = input.scrollHeight > 120 ? 'auto' : 'hidden';
+    input.style.height = `${Math.min(input.scrollHeight, MAX_INPUT_PX)}px`;
+    input.style.overflowY = input.scrollHeight > MAX_INPUT_PX ? 'auto' : 'hidden';
     const left = maxChars - input.value.length;
     count.textContent = left <= 200 ? t('charsLeft', { n: left }) : '';
   };
@@ -116,6 +138,16 @@ export function createComposer(
     micBtn.setAttribute('aria-pressed', 'true');
     micBtn.classList.add('listening');
     status.textContent = t('listening');
+    status.classList.add('sr-only'); // the bar shows it
+    const started = Date.now();
+    const clock = (ms: number) =>
+      `${Math.floor(ms / 60_000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+    const tick = () => {
+      recTime.textContent = `${clock(Date.now() - started)} / ${clock(VOICE_LIMIT_MS)}`;
+    };
+    tick();
+    ticker = setInterval(tick, 1000);
+    recBar.hidden = false;
     try {
       if (!localStorage.getItem(HINT_KEY)) {
         hint.hidden = false; // the first time only: say who turns speech into text
@@ -132,6 +164,9 @@ export function createComposer(
       },
       onEnd(problem) {
         dictation = null;
+        clearInterval(ticker);
+        recBar.hidden = true;
+        status.classList.remove('sr-only');
         input.readOnly = false;
         micBtn.setAttribute('aria-pressed', 'false');
         micBtn.classList.remove('listening');
