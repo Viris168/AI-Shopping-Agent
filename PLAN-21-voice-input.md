@@ -99,8 +99,8 @@ Widget, shown once under the input the first time the shopper presses the mic (`
   `errMicUnavailable`).
 - UI: mic button only when supported and enabled; pulsing state while listening; live text in
   the input as the shopper talks (the input is read-only while listening, so typing can't clash
-  with it), editable again on stop; text appended
-  to whatever is already in the input; the `voiceHint` line (M1) the first time; respect the 2,000-char cap; never auto-send. Stopping
+  with it), editable again on stop; text appended to whatever is already in the input; the
+  `voiceHint` line (M1) the first time; respect the 2,000-char cap; never auto-send. Stopping
   when the panel closes or the page is hidden.
 - Accessibility: keyboard toggle, `aria-pressed`, `aria-label`, `aria-live` status
   ("Listening…", "Stopped"), visible focus, no reliance on colour alone.
@@ -109,7 +109,32 @@ Widget, shown once under the input the first time the shopper presses the mic (`
 - Tests with a fake `SpeechRecognition`: support detection, language, time limit, errors, no
   auto-send, char cap. Check the gzipped bundle stays under 40 KB.
 
+**Status (2026-11-14, branch `voice-m2-widget`, on top of the photo work in #52): done.**
+- [voice.ts](widget/src/voice.ts): finds the recognizer (`SpeechRecognition` or the `webkit`
+  one; none → no button), `en` → `en-US`, `vi` → `vi-VN`, live text, 60 s limit, browser errors
+  → `errMicDenied` / `errMicNoSpeech` / `errMicUnavailable`. The text is rebuilt from the whole
+  result list on every update, because Chrome on Android can send finished results again and
+  adding them up would double the text.
+- [composer.ts](widget/src/ui/composer.ts): mic between the input and Send (after the photo
+  button when photos are on). Toggle with `aria-pressed`; one status line for photo and voice;
+  input read-only while listening; Enter while listening stops instead of sending; typed text is
+  kept and dictation goes after it; `voiceHint` the first time (remembered in `localStorage`, shown
+  every time if storage is blocked). Stops without moving focus when the panel closes or the tab
+  is hidden.
+- Styles: filled, outlined button while listening (not colour alone); the pulse stops under
+  reduced motion; read-only input greyed.
+- 7 strings in `en.json` / `vi.json`. The Vietnamese is a draft: native check, with M1's hint.
+- Also the **widget half of M3**: `RolloutConfig` reads `voiceEnabled` / `voiceRolloutPercent`,
+  and `voiceOn` uses the same bucket and staff opt-in as photos (shared `featureOn`). agent-service
+  doesn't send these yet, so the mic stays hidden everywhere until M3's server side lands.
+- Tests: `widget/test/voice.test.ts` (14, fake recognizer) and `voiceOn` in `rollout.test.ts`;
+  72 widget tests pass. Bundle 15.8 KB gzipped (+~1 KB).
+- Checked in the browser pane with a stubbed `/v1/config`: mic placement with and without photos,
+  live text, stop, phone width, and the real recognizer with the mic blocked (shows
+  `errMicDenied`). A real spoken test still needs a person (M0 page or the demo store).
+
 ### M3 · Rollout flag
+The widget side was done in M2; what's left is agent-service and deploy.
 - agent-service: `voice_enabled`, `voice_rollout_percent` in config and Redis flags; send
   `voiceEnabled`, `voiceRolloutPercent` in `GET /v1/config`.
 - Widget: extend `RolloutConfig` in [rollout.ts](widget/src/rollout.ts); same bucket as photos;

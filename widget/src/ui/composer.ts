@@ -1,5 +1,6 @@
 import type { I18n } from '../i18n';
 import { type Photo, PhotoError, preparePhoto } from '../photo';
+import { type Dictation, type RecognitionCtor, speechLang, startDictation } from '../voice';
 import { el } from '../safe';
 import { button } from '../cards/product';
 
@@ -7,8 +8,13 @@ export function createComposer(
   i18n: I18n,
   maxChars: number,
   onSend: (text: string, photo?: Photo) => void,
-  /** `photos`: show the attach button (agent-service /v1/config imagesEnabled). */
-  opts: { photos: boolean; prepare?: (file: Blob) => Promise<Photo> } = { photos: false },
+  /** `photos`: show the attach button (agent-service /v1/config imagesEnabled).
+   *  `voice`: the browser's recognizer when dictation is on and supported (PLAN-21); else no mic. */
+  opts: {
+    photos: boolean;
+    prepare?: (file: Blob) => Promise<Photo>;
+    voice?: RecognitionCtor | null;
+  } = { photos: false },
 ) {
   const { t } = i18n;
   const prepare = opts.prepare ?? preparePhoto;
@@ -38,17 +44,30 @@ export function createComposer(
     el('span', { class: 'muted' }, t('photoNotice')),
     button('icon-btn', '✕', () => clearPhoto(true), t('removePhoto')),
   );
-  const photoStatus = el('div', { class: 'count', role: 'status' });
+  // One status line for photo and voice progress, announced to screen readers.
+  const status = el('div', { class: 'count', role: 'status' });
 
-  const form = el('form', { class: `composer${opts.photos ? ' with-photos' : ''}` },
+  // Voice: a toggle mic button. While listening the input shows the words as they come and is
+  // read-only, so typing can't clash with them; it's editable again when listening stops.
+  const Voice = opts.voice ?? null;
+  let dictation: Dictation | null = null;
+  let quiet = false; // stopped by the widget, not the shopper: don't move focus
+  const micBtn = button('icon-btn mic', '🎤', () => (dictation ? dictation.stop() : listen()), t('voiceInput'));
+  micBtn.setAttribute('aria-pressed', 'false');
+  const hint = el('div', { class: 'count voice-hint', hidden: true }, t('voiceHint'));
+
+  const classes = ['composer', opts.photos && 'with-photos', Voice && 'with-voice'].filter(Boolean);
+  const form = el('form', { class: classes.join(' ') },
     opts.photos && preview,
     el('label', { for: 'shopchat-input', class: 'sr-only' }, t('inputLabel')),
     opts.photos && attachBtn,
     opts.photos && file,
     input,
+    Voice && micBtn,
     send,
     count,
-    opts.photos && photoStatus,
+    (opts.photos || Voice) && status,
+    Voice && hint,
   );
 
   const resize = () => {
@@ -69,33 +88,82 @@ export function createComposer(
   async function attach(blob: Blob): Promise<void> {
     if (!opts.photos || preparing || attachBtn.disabled) return;
     preparing = true;
-    photoStatus.textContent = t('preparingPhoto');
+    status.textContent = t('preparingPhoto');
     try {
       const ready = await prepare(blob);
       clearPhoto(true);
       photo = ready;
       thumb.src = ready.url;
       preview.hidden = false;
-      photoStatus.textContent = t('photoReady');
+      status.textContent = t('photoReady');
       input.focus();
     } catch (err) {
-      photoStatus.textContent = t(err instanceof PhotoError ? err.problem : 'errPhotoRead');
+      status.textContent = t(err instanceof PhotoError ? err.problem : 'errPhotoRead');
     } finally {
       preparing = false;
     }
   }
 
+  const HINT_KEY = 'shopchat:voicehint';
+  function listen(): void {
+    if (!Voice || dictation) return;
+    // What's already typed stays; dictated words go after it.
+    const before = input.value.replace(/\s+$/, '');
+    const prefix = before ? `${before} ` : '';
+    input.readOnly = true;
+    micBtn.setAttribute('aria-pressed', 'true');
+    micBtn.classList.add('listening');
+    status.textContent = t('listening');
+    try {
+      if (!localStorage.getItem(HINT_KEY)) {
+        hint.hidden = false; // the first time only: say who turns speech into text
+        localStorage.setItem(HINT_KEY, '1');
+      }
+    } catch {
+      hint.hidden = false; // storage blocked: show it every time rather than never
+    }
+    dictation = startDictation(Voice, speechLang(i18n.locale), {
+      onText(final, interim) {
+        input.value = (prefix + final + interim).slice(0, maxChars);
+        resize();
+      },
+      onEnd(problem) {
+        dictation = null;
+        input.readOnly = false;
+        micBtn.setAttribute('aria-pressed', 'false');
+        micBtn.classList.remove('listening');
+        status.textContent = problem ? t(problem) : input.value.trim() ? t('voiceDone') : '';
+        if (quiet) return;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      },
+    });
+  }
+
   const submit = () => {
+    if (dictation) {
+      dictation.stop(); // Enter while listening ends dictation; the shopper sends after checking
+      return;
+    }
     if (send.disabled || preparing || (!input.value.trim() && !photo)) return;
     onSend(input.value, photo ?? undefined);
     clearPhoto(false); // the sent bubble shows it now
-    photoStatus.textContent = '';
+    status.textContent = '';
+    hint.hidden = true;
     input.value = '';
     resize();
   };
 
   const imageIn = (files: FileList | null | undefined) =>
     [...(files ?? [])].find((f) => f.type.startsWith('image/'));
+
+  function stopVoice(): void {
+    quiet = true;
+    dictation?.abort();
+    quiet = false;
+  }
+  // A hidden tab shouldn't keep the mic open.
+  if (Voice) document.addEventListener('visibilitychange', () => document.hidden && stopVoice());
 
   input.addEventListener('input', resize);
   input.style.overflowY = 'hidden';
@@ -126,6 +194,8 @@ export function createComposer(
   return {
     element: form,
     focus: () => input.focus(),
+    /** Stops listening at once (panel closed); keeps the words heard so far. */
+    stopVoice,
     setBusy(busy: boolean) {
       send.disabled = busy;
       attachBtn.disabled = busy;

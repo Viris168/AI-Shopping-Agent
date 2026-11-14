@@ -18,6 +18,10 @@ export interface RolloutConfig {
   imagesEnabled?: boolean;
   /** Share of buckets that get the photo button (IMAGES_ROLLOUT_PERCENT). */
   imagesRolloutPercent?: number;
+  /** Voice dictation is on (agent-service VOICE_ENABLED and flag:voice_enabled, PLAN-21). */
+  voiceEnabled?: boolean;
+  /** Share of buckets that get the mic button (VOICE_ROLLOUT_PERCENT). */
+  voiceRolloutPercent?: number;
 }
 
 /** `zone` if the browser knows it, else undefined (the shopper's own zone). */
@@ -42,6 +46,8 @@ export async function fetchConfig(apiBase: string): Promise<RolloutConfig | null
       timeZone: knownTimeZone(body?.timeZone),
       imagesEnabled: body?.imagesEnabled === true,
       imagesRolloutPercent: Number(body?.imagesRolloutPercent) || 0,
+      voiceEnabled: body?.voiceEnabled === true,
+      voiceRolloutPercent: Number(body?.voiceRolloutPercent) || 0,
     };
   } catch {
     return null;
@@ -75,13 +81,32 @@ export function photosOn(
   storage: Storage | null = safeLocalStorage(),
   random: () => number = Math.random,
 ): boolean {
-  if (!config?.imagesEnabled) return false;
+  return featureOn(config?.imagesEnabled, config?.imagesRolloutPercent, storage, random);
+}
+
+/** Whether this browser gets the mic button; same rules as photosOn. The widget also hides it
+ *  where the browser has no speech recognition (src/voice.ts). */
+export function voiceOn(
+  config: RolloutConfig | null,
+  storage: Storage | null = safeLocalStorage(),
+  random: () => number = Math.random,
+): boolean {
+  return featureOn(config?.voiceEnabled, config?.voiceRolloutPercent, storage, random);
+}
+
+function featureOn(
+  enabled: boolean | undefined,
+  percent: number | undefined,
+  storage: Storage | null,
+  random: () => number,
+): boolean {
+  if (!enabled) return false;
   try {
     if (storage?.getItem(OPT_IN_KEY) === '1') return true;
   } catch {
     // Storage blocked: the percentage still applies.
   }
-  return bucket(storage, random) < (config.imagesRolloutPercent ?? 0);
+  return bucket(storage, random) < (percent ?? 0);
 }
 
 function bucket(storage: Storage | null, random: () => number): number {

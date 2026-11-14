@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchConfig, photosOn, shouldMount } from '../src/rollout';
+import { fetchConfig, photosOn, shouldMount, voiceOn } from '../src/rollout';
 import { MemoryStorage, jsonResponse, mockFetch } from './helpers';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -26,13 +26,31 @@ describe('rollout', () => {
     expect(photosOn(null, storage)).toBe(false);
   });
 
+  it('reads whether voice is on, with its own percentage over the same buckets', async () => {
+    mockFetch(jsonResponse(200, { enabled: true, rolloutPercent: 5, voiceEnabled: true, voiceRolloutPercent: 40 }),
+      jsonResponse(200, { enabled: true, rolloutPercent: 5, voiceEnabled: 'yes' }));
+    const config = await fetchConfig('https://chat.test');
+    expect([config?.voiceEnabled, config?.voiceRolloutPercent]).toEqual([true, 40]);
+    expect((await fetchConfig('https://chat.test'))?.voiceEnabled).toBe(false);
+
+    const voice = (pct: number, enabled = true) => ({ ...on(100), voiceEnabled: enabled, voiceRolloutPercent: pct });
+    const storage = new MemoryStorage();
+    storage.setItem('shopchat:bucket', '30');
+    expect(voiceOn(voice(30), storage)).toBe(false);
+    expect(voiceOn(voice(31), storage)).toBe(true);
+    expect(voiceOn(voice(100, false), storage)).toBe(false); // off wins
+    expect(voiceOn({ ...on(100), imagesEnabled: true, imagesRolloutPercent: 100 }, storage)).toBe(false); // photos don't turn on voice
+    storage.setItem('shopchat:optin', '1');
+    expect(voiceOn(voice(0), storage)).toBe(true);
+  });
+
   it('reads the config, and treats a failed or odd response as switched off', async () => {
     mockFetch(jsonResponse(200, { enabled: true, rolloutPercent: 25 }), jsonResponse(503), new Error('offline'),
       jsonResponse(200, { enabled: 'yes', rolloutPercent: 'lots' }));
-    expect(await fetchConfig('https://chat.test')).toEqual({ ...on(25), imagesEnabled: false, imagesRolloutPercent: 0 });
+    expect(await fetchConfig('https://chat.test')).toEqual({ ...on(25), imagesEnabled: false, imagesRolloutPercent: 0, voiceEnabled: false, voiceRolloutPercent: 0 });
     expect(await fetchConfig('https://chat.test')).toBeNull();
     expect(await fetchConfig('https://chat.test')).toBeNull();
-    expect(await fetchConfig('https://chat.test')).toEqual({ enabled: false, rolloutPercent: 0, imagesEnabled: false, imagesRolloutPercent: 0 });
+    expect(await fetchConfig('https://chat.test')).toEqual({ enabled: false, rolloutPercent: 0, imagesEnabled: false, imagesRolloutPercent: 0, voiceEnabled: false, voiceRolloutPercent: 0 });
   });
 
   it("passes on the store's time zone only if the browser knows it", async () => {
