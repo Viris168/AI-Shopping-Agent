@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voice spike (PLAN-21 M0)</title>
+    <style>
+      body { margin: 0; font: 15px/1.5 system-ui, sans-serif; color: #222; background: #fafaf8; }
+      main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+      h1 { font-size: 22px; margin: 0 0 4px; }
+      .muted { color: #666; font-size: 13px; }
+      .panel { background: #fff; border: 1px solid #e5e5e0; border-radius: 10px; padding: 12px 16px; margin: 16px 0; }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      button, select, input { font: inherit; }
+      button { padding: 6px 12px; border-radius: 8px; border: 1px solid #bbb; background: #fff; cursor: pointer; }
+      button[aria-pressed='true'] { background: #c62828; color: #fff; border-color: #c62828; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      table { width: 100%; border-collapse: collapse; background: #fff; }
+      th, td { text-align: left; vertical-align: top; padding: 8px; border-bottom: 1px solid #eee; }
+      th { font-size: 13px; color: #555; }
+      .say { font-weight: 600; }
+      .interim { color: #888; font-style: italic; }
+      .err { color: #c62828; }
+      .exact { color: #2e7d32; } .close { color: #b26a00; } .wrong { color: #c62828; }
+      code { background: #eee; padding: 1px 5px; border-radius: 4px; }
+      @media (max-width: 640px) { .hide-sm { display: none; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Voice spike · PLAN-21 M0</h1>
+      <p class="muted">
+        Read each phrase aloud after pressing Record. Speech goes to the browser's own speech service
+        (Google in Chrome/Edge, Apple in Safari), not to us. Results stay in this browser until you export them.
+      </p>
+
+      <section class="panel" aria-labelledby="support-h">
+        <h2 id="support-h" style="font-size:16px;margin:0 0 8px">This browser</h2>
+        <ul id="support" style="margin:0;padding-left:20px"></ul>
+        <p class="row" style="margin:8px 0 0">
+          <label>Device label <input id="device" size="28" placeholder="e.g. iPhone 15 · Safari" /></label>
+          <label>Show
+            <select id="filter">
+              <option value="all">all phrases</option>
+              <option value="en-US">English</option>
+              <option value="vi-VN">Vietnamese</option>
+            </select>
+          </label>
+        </p>
+      </section>
+
+      <div role="status" aria-live="polite" id="status" class="muted"></div>
+
+      <table>
+        <thead>
+          <tr><th>Phrase</th><th></th><th>Heard</th><th>Grade</th><th class="hide-sm">Timing</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+
+      <section class="panel" aria-labelledby="sum-h">
+        <h2 id="sum-h" style="font-size:16px;margin:0 0 8px">Summary</h2>
+        <div id="summary"></div>
+        <p class="row" style="margin:12px 0 0">
+          <button id="export">Download results (JSON)</button>
+          <button id="copy">Copy results</button>
+          <button id="clear">Clear results</button>
+        </p>
+      </section>
+    </main>
+    <script type="module" src="./voice.ts"></script>
+  </body>
+</html>
