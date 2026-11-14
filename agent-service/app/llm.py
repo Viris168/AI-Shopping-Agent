@@ -94,8 +94,8 @@ def _record_usage(
         span.set_attribute("agent.cost_usd", cost)
     if resp.stop_reason:
         span.set_attribute("gen_ai.response.finish_reasons", [resp.stop_reason])
-    attrs = {"gen_ai.operation.name": operation, "gen_ai.request.model": resp.model,
-             "agent.purpose": purpose}
+    attrs = telemetry.grouped({"gen_ai.operation.name": operation,
+                               "gen_ai.request.model": resp.model, "agent.purpose": purpose})
     for kind, n in (("input", u.input_tokens), ("output", u.output_tokens),
                     ("cache_read", cache_read)):
         telemetry.model_tokens.add(n, {**attrs, "gen_ai.token.type": kind})
@@ -130,12 +130,15 @@ class LLM:
         messages: list[MessageParam],
         tools: list[dict[str, Any]],
         on_text: Callable[[str], None],
+        fast: bool = False,
     ) -> Message:
-        """One chat call, streaming text deltas. Returns the complete message.
+        """One chat call, streaming text deltas. Returns the complete message. `fast` uses
+        MODEL_FAST instead of MODEL_MAIN (model routing, app/routing.py).
 
         On MODEL_MAIN; if that fails for a transient reason before any text was sent, the same
         call once on MODEL_FAST, so a provider hiccup costs a slower or plainer reply instead
         of the fallback card. After text has streamed, a retry would repeat it, so it raises.
+        A routed (`fast`) call doesn't fall back here: the loop redoes it on MODEL_MAIN.
         """
         sent = False
 
@@ -144,17 +147,19 @@ class LLM:
             sent = True
             on_text(text)
 
+        if fast:
+            return await self._stream(self._s.model_fast, system, messages, tools, on_text)
         try:
             return await self._stream(self._s.model_main, system, messages, tools, watch)
         except ModelUnavailable as exc:
-            fast = self._s.model_fast
-            if sent or not exc.transient or fast == self._s.model_main:
+            fast_model = self._s.model_fast
+            if sent or not exc.transient or fast_model == self._s.model_main:
                 raise
-            log.warning("model_fallback %s -> %s after %s", self._s.model_main, fast, exc)
+            log.warning("model_fallback %s -> %s after %s", self._s.model_main, fast_model, exc)
             telemetry.model_fallbacks.add(1, {
                 "gen_ai.request.model": self._s.model_main, "error.type": str(exc),
             })
-            return await self._stream(fast, system, messages, tools, on_text)
+            return await self._stream(fast_model, system, messages, tools, on_text)
 
     async def _stream(
         self, model: str, system: list[dict[str, Any]], messages: list[MessageParam],

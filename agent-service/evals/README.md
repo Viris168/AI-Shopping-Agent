@@ -11,6 +11,7 @@ python -m evals.run --suite redteam --case R-PLNT-01 --repeat 5
 python -m evals.run --suite golden --smoke         # the smoke set
 python -m evals.run --suite golden --changed       # cases affected by changes since main
 python -m evals.run --suite golden --max-cost 0.30 # stop once the estimate passes $0.30
+python -m evals.run --suite golden --routing       # model routing on (PLAN-19 M5)
 ```
 
 Each run ends with a usage line (calls, tokens, estimated cost and its split by purpose:
@@ -39,6 +40,16 @@ off-peak), so run the smallest set that covers your change.
   smoke case when you add a case file.
 - **`--max-cost USD`** stops after the case that takes the run's estimate past `USD` and fails
   the run. It needs `MODEL_PRICES`. CI caps red team at $0.50 and golden at $1.00.
+- **`--routing`** turns model routing on. Each turn records its route (`routes`: `fast:simple`,
+  `main:main_only_tool`, …), the run prints the share of turns on the fast model, and
+  `expect.route: fast|main` (the model that finished the last turn) is checked; without
+  `--routing` it is ignored. `golden/routing.yaml` and `redteam/routing.yaml` hold the cases
+  aimed at it.
+- **Balance check (PLAN-19 M1):** with DeepSeek, every run first reads the eval account's prepaid
+  balance and stops before the first case if it can't cover the run's estimate (cases × repeats ×
+  $0.0025, or `--max-cost` if lower); below $2 it warns. `python -m evals.balance redteam golden`
+  checks a full CI run on its own; CI runs it before seeding. Top up the dev/eval account, never
+  production's (infra/README.md).
 - **`--repeat`** reruns every selected case; above 5 it warns. Use it on one `--case`.
 - Prefer DeepSeek's off-peak hours for full runs (half price; check the hours on their pricing
   page).

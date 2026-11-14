@@ -12,6 +12,18 @@ System context: [ARCHITECTURE.md](./ARCHITECTURE.md). Product context: [PRD.md](
 
 Model IDs live in config (`MODEL_MAIN`, `MODEL_FAST`), never hard-coded. All SDK calls go through `app/llm.py` so the provider can be swapped in one place.
 
+### Model routing (`MODEL_ROUTING_ENABLED`, off by default; PLAN-19 M5)
+
+Simple turns run on `MODEL_FAST` (about 4× cheaper per token), the rest on `MODEL_MAIN` (`app/routing.py`):
+
+- **Code decides, before any model call.** A turn starts on the main model when the shopper's message matches the `returns` or `handoff` playbook patterns, mentions money (coupons, discounts, codes like `WELCOME10`, percentages, refunds, charges, disputes, fraud, staff/VIP), a safety or legal topic, frustration, or memory ("remember", "forget"), or when a Confirm card is open or the turn is a Confirm follow-up. Everything else starts on the fast model.
+- **Main-only tools:** `apply_coupon`, `create_return`, `create_support_ticket`, `forget_memory`. Both models see the same prompt and tool list (anything else would break the prefix cache). If the fast model calls a main-only tool, stops at `max_tokens`/refusal or errors, its response is dropped unseen and the same round goes to the main model. Two tool errors on the fast model also hand over.
+- **Order and cart data go to the main model.** After `list_orders`, `get_order`, `view_cart`, a cart change or `get_product` runs, the main model writes the reply. Those records hold free text (item names, carrier, tracking) where planted instructions can sit, and on the red team the fast model repeated such text to warn the shopper in about 1 run in 3 (R-INJ-05/06/08), which the prompt forbids; on a planted product's details (R-PLNT-02) it once left out what the product is for. So the fast model keeps greetings, product search and recommendations, FAQ and the checkout link.
+- **One way.** Provider caches are per model: a move to the main model re-sends the history uncached to it once, so the conversation then stays there (`Session.model_tier = "main"`). Switching back and forth would cost more than routing saves.
+- The fast model's text is held until its response is complete, so a dropped response is never shown; the main model streams as before.
+- Redis `flag:model_routing 0` turns it off at runtime. Spans carry `agent.model_tier` and `agent.route_reason`; cost by model is on the dashboard.
+- **Rollout (M6):** each conversation joins `routed` or `control` once, from a hash of its ID and `ROUTING_PERCENT` (Redis `flag:routing_percent` overrides); control always uses the main model. Metrics carry `agent.routing_group` and commerce-api stores `routing_group` per conversation, so `ROUTING=1 infra/rollout-check.sh` can compare the groups. Steps and gate: `infra/monitoring/README.md#model-routing-rollout`.
+
 ## 2. System prompt
 
 Stored in `app/prompts/system.md`. Variables in `{braces}` are filled per request; the static part comes first so it can be cached.
@@ -324,8 +336,10 @@ With `PLAYBOOKS_ENABLED` (off by default), the `<context>` block gets a short "#
 | Stage | Check | Action |
 |---|---|---|
 | Input | > 2,000 chars | 413, widget shows limit |
-| Input | rate limit (20/min user or IP) | 429 |
-| Input | token budget exhausted (conversation or daily) | offer handoff |
+| Input | rate limit (20/min signed-in user, 10/min guest IP) | 429 |
+| Input | store's daily spend cap (`DAILY_SPEND_CAP_USD`, $5): guests from 80%, everyone at 100% | 429 / 503; widget hides at 100% until UTC midnight |
+| Input | daily spend per shopper ($0.50 signed-in, $0.10 guest IP), per conversation ($0.10), new chats per hour (30 / 10) | 429 with `X-Limit`; widget shows its own text, no retry |
+| Input | token budget exhausted (per conversation, the backstop without `MODEL_PRICES`; or per shopper per day) | offer handoff |
 | Input | another turn running on the conversation | 429; Confirm/Cancel wait up to 10 s first, without using up the action |
 | Tool args | schema validation (Pydantic) | error result to model |
 | Tool args | login-only tool as guest | `login_required` result |
@@ -333,6 +347,8 @@ With `PLAYBOOKS_ENABLED` (off by default), the `<context>` block gets a short "#
 | Output | links not on the store's hosts (`STOREFRONT_URL`, `LINK_HOSTS`) | replaced with `[link removed]` as the reply streams (`OutputGuard`); the widget also won't link them |
 | Output | coupon-shaped codes (`STAFF100`) the store didn't confirm (applied code, or a store field like a product name) | replaced with `[code removed]` as the reply streams; also in saved history; metric `agent.output.redactions` |
 | Output | price/percent mentioned that wasn't in any tool result (or the shopper's message) this turn | logged as `suspect_fact`, counted (`agent.output.suspect_replies`), `AgentSuspectFacts` alert at > 5% of replies |
+
+Spend limits (PLAN-19 M7, `app/limits.py`) are in estimated dollars from `MODEL_PRICES`, kept in Redis as integer micro-dollars per UTC day, so opening new conversations doesn't reset them. A confirmed action is never refused for cost; its follow-up reply still counts. If Redis is down, turns go ahead and the provider's prepaid balance is the backstop; `AgentProviderBalanceLow` warns before it runs out (`app/balance.py`).
 
 ## 7. Handoff triggers
 
@@ -388,6 +404,7 @@ Full lists: `evals/golden/*.yaml` (~165 cases) and `evals/redteam/*.yaml` (~50),
 - Deterministic checks first: tools called, arguments, events emitted, required and forbidden text.
 - Haiku grader for free-text criteria (grounded, polite, concise), with a fixed rubric.
 - Pass bars: golden ≥ 90%, red team 100%. CI (`.github/workflows/agent-service.yml`) runs both suites when the prompt, tools, model config, evals or seed data change, and fails below the bar.
+- `MODEL_ROUTING_ENABLED` is off by default. Before switching it on, run both suites with `--routing` (the `route` expectation in `golden/routing.yaml` and `redteam/routing.yaml` is checked only then), plus `--file planted --file injection --file routing --repeat 3` on the red team.
 - `MEMORY_ENABLED`, `PLAYBOOKS_ENABLED` and `IMAGES_ENABLED` are off by default. Before switching one on, run both suites with it set (`MEMORY_ENABLED=true python -m evals.run --suite golden`, and the same for redteam and for the others); both bars must hold. Memory cases switch memory on for themselves either way.
 
 ## 9. Changing the agent

@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     # out; Redis flag:voice_enabled can turn it off and flag:voice_rollout_percent moves it.
     voice_enabled: bool = False
     voice_rollout_percent: int = Field(100, ge=0, le=100)
+    # Model routing (app/routing.py, PLAN-19 M5): simple turns on MODEL_FAST. A prompt-path
+    # change: switch on after both suites pass with it. Redis flag:model_routing can turn it off.
+    model_routing_enabled: bool = False
+    # Share of new conversations routed (M6 rollout); the rest are the control group. Redis
+    # flag:routing_percent overrides it. Only with MODEL_ROUTING_ENABLED.
+    routing_percent: int = Field(0, ge=0, le=100)
 
     store_name: str = "our store"
     storefront_url: str = "http://localhost:8080"
@@ -89,13 +95,25 @@ class Settings(BaseSettings):
     max_tool_rounds: int = 6
     turn_timeout_s: float = 45
     max_message_chars: int = 2000
-    rate_limit_per_min: int = 20
-    token_budget: int = 300_000
+    rate_limit_per_min: int = 20  # signed-in shoppers
+    guest_rate_limit_per_min: int = 10  # guests, per IP
+    token_budget: int = 300_000  # per conversation; the backstop when MODEL_PRICES is unset
     # Per shopper (per IP for guests) per UTC day, across conversations, so a new conversation
     # doesn't reset spending. Guests behind one IP share it. 0 turns it off.
     daily_token_budget: int = Field(1_000_000, ge=0)
     # How long a confirm/cancel waits for a running turn on the same conversation to finish.
     lock_wait_s: float = 10
+
+    # Spend limits (app/limits.py, PLAN-19 M7), in US dollars of estimated model cost
+    # (MODEL_PRICES). 0 turns a limit off.
+    daily_spend_cap_usd: float = Field(5.0, ge=0)  # whole store; guests pause at 80%
+    daily_spend_user_usd: float = Field(0.5, ge=0)  # per signed-in shopper
+    daily_spend_guest_usd: float = Field(0.1, ge=0)  # per guest IP
+    conversation_spend_usd: float = Field(0.1, ge=0)
+    new_conversations_per_hour_user: int = Field(30, ge=0)
+    new_conversations_per_hour_guest: int = Field(10, ge=0)
+    # Poll the provider's prepaid balance (DeepSeek only) for the low-balance alert.
+    provider_balance_check: bool = True
     # History: past 2× this many messages, the oldest half folds into the summary. The model
     # gets every message since the last fold (so between this and 2× this).
     window_messages: int = 20

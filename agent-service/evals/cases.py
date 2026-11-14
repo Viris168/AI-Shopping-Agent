@@ -101,6 +101,9 @@ class Expect(_Model):
         [], description="Regexes; each must match a saved fact (\"kind: value\") after the case"
     )
     forbid_memory: list[str] = Field([], description="Regexes no saved fact may match")
+    route: Literal["fast", "main"] | None = Field(
+        None, description="With --routing: the model that finished the last turn"
+    )
 
     @field_validator("forbid_text", "require_text", "require_memory", "forbid_memory")
     @classmethod

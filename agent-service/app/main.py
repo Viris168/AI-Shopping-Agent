@@ -1,6 +1,7 @@
 """FastAPI app and routes (ARCHITECTURE.md §4.2)."""
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -12,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
 
-from app import telemetry
+from app import balance, telemetry, usage
 from app.actions import ActionStore, PendingAction
 from app.auth import Auth, get_auth
 from app.cache import ToolCache
@@ -28,10 +29,12 @@ from app.guardrails import (
     photo_error,
 )
 from app.images import ImageIn, prepare_image
+from app.limits import LimitHit, SpendLimits
 from app.llm import LLM
 from app.loop import Agent
 from app.masking import MaskingFilter
 from app.memory import Memory
+from app.routing import Router
 from app.sessions import SessionStore, TranscriptStore
 from app.sse import Emit, sse_response
 from app.tools.registry import build_registry
@@ -74,6 +77,7 @@ async def services(settings: Settings, redis: Redis) -> AsyncIterator[Agent]:
             transcripts=TranscriptStore(client),
             cache=ToolCache(redis, settings.cache_enabled),
             memory=Memory(settings, client, redis) if settings.memory_enabled else None,
+            router=Router(settings, redis) if settings.model_routing_enabled else None,
         )
     finally:
         await client.aclose()
@@ -99,11 +103,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with services(settings, redis) as agent:
             app.state.agent = agent
             app.state.redis = redis
-            app.state.limiter = RateLimiter(redis, settings.rate_limit_per_min)
+            app.state.limiter = RateLimiter(
+                redis, settings.rate_limit_per_min, settings.guest_rate_limit_per_min
+            )
             app.state.images = ImageLimiter(
                 redis, settings.image_daily_limit, settings.image_daily_limit_guest
             )
-            yield
+            app.state.limits = SpendLimits(settings, redis)
+            if not settings.model_prices:
+                log.warning("MODEL_PRICES is not set; spend limits can't apply (token budget only)")
+            poller = (
+                asyncio.create_task(balance.poll(settings))
+                if settings.provider_balance_check and balance.balance_url(settings) else None
+            )
+            try:
+                yield
+            finally:
+                if poller is not None:
+                    poller.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await poller
             await agent.drain()  # finish memory writes before the client closes
     finally:
         await redis.aclose()
@@ -249,6 +268,11 @@ async def _lock_for_action(
     return action, token
 
 
+def _refuse(hit: LimitHit) -> HTTPException:
+    """The widget picks its own translated text by `X-Limit` (PLAN-19 M7)."""
+    return HTTPException(hit.status, hit.message, headers={"X-Limit": hit.limit})
+
+
 @app.post("/v1/chat", dependencies=[Depends(require_enabled)])
 async def chat(
     body: ChatRequest, request: Request, auth: AuthDep, agent: AgentDep, settings: SettingsDep
@@ -269,27 +293,37 @@ async def chat(
         if token is None:
             raise HTTPException(429, BUSY)
         lock = (body.conversationId, token)
+    limits: SpendLimits = request.app.state.limits
+    ip = _ip(request)
     try:
         session = await agent.sessions.load(body.conversationId, auth)
+        hit = await limits.check_turn(session.id, auth, ip)
+        if hit is None and not session.messages:
+            hit = await limits.new_conversation(auth, ip)
+        if hit is not None:
+            raise _refuse(hit)
     except BaseException:
         if lock:
             await agent.sessions.unlock(*lock)
         raise
     if not session.messages:
-        telemetry.conversations.add(1)
+        group = await agent.routing_group(session)  # assigned once, kept in the session
+        telemetry.conversations.add(1, {"agent.routing_group": group})
     via = body.via or "typed"
     telemetry.messages.add(1, {"via": via})
     subject = _subject(request, auth)
 
     async def run(emit: Emit) -> None:
-        try:
-            telemetry.annotate(**{"chat.via": via})
-            message_id = f"{session.id}:{len(session.messages)}"
-            emit("meta", {"conversationId": session.id, "messageId": message_id})
-            await agent.run_turn(session, message, auth, emit, subject, image)
-        finally:
-            if lock:
-                await agent.sessions.unlock(*lock)
+        with usage.tracking() as spent:
+            try:
+                telemetry.annotate(**{"chat.via": via})
+                message_id = f"{session.id}:{len(session.messages)}"
+                emit("meta", {"conversationId": session.id, "messageId": message_id})
+                await agent.run_turn(session, message, auth, emit, subject, image)
+            finally:
+                await limits.add(session.id, auth, ip, spent.total.cost_usd)
+                if lock:
+                    await agent.sessions.unlock(*lock)
 
     return sse_response(run, timeout_s=settings.turn_timeout_s, route="chat")
 
@@ -306,12 +340,19 @@ async def confirm_action(
     action, token = claimed
     subject = _subject(request, auth)
 
+    # No spend check here: the shopper already pressed Confirm, and the action must not be
+    # refused for cost. Its follow-up reply still counts toward the limits.
+    limits: SpendLimits = request.app.state.limits
+    ip = _ip(request)
+
     async def run(emit: Emit) -> None:
-        try:
-            emit("meta", {"conversationId": action.conversation_id, "messageId": action.id})
-            await agent.confirm(action, auth, emit, subject)
-        finally:
-            await agent.sessions.unlock(action.conversation_id, token)
+        with usage.tracking() as spent:
+            try:
+                emit("meta", {"conversationId": action.conversation_id, "messageId": action.id})
+                await agent.confirm(action, auth, emit, subject)
+            finally:
+                await limits.add(action.conversation_id, auth, ip, spent.total.cost_usd)
+                await agent.sessions.unlock(action.conversation_id, token)
 
     return sse_response(run, timeout_s=settings.turn_timeout_s, route="confirm")
 
@@ -346,7 +387,11 @@ async def feedback(
             raise HTTPException(404, "We couldn't find that conversation.") from exc
         log.warning("feedback_save_failed %s: %s", body.conversationId, exc.status)
         raise HTTPException(503, "Feedback can't be saved right now.") from exc
-    telemetry.feedback.add(1, {"rating": body.rating, "via": body.via or "typed"})
+    session = await agent.sessions.get(body.conversationId)
+    group = session.routing_group if session and session.routing_group else "off"
+    telemetry.feedback.add(1, {
+        "rating": body.rating, "via": body.via or "typed", "agent.routing_group": group,
+    })
     return Response(status_code=204)
 
 
@@ -356,6 +401,8 @@ async def widget_config(
 ) -> dict[str, Any]:
     """Read by the widget before it mounts: hidden when disabled or outside the rollout."""
     enabled, rollout = await read_flags(request, settings)
+    if enabled and await request.app.state.limits.store_closed():
+        enabled = False  # the store's daily spend cap is used up (PLAN-19 M7)
     # Short cache: a kill switch reaches every page within a minute.
     response.headers["Cache-Control"] = "public, max-age=60"
     images = enabled and await images_active(request, settings)

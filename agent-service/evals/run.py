@@ -7,6 +7,7 @@
     python -m evals.run --suite golden --smoke         # the smoke set (`smoke: true` cases)
     python -m evals.run --suite golden --changed       # what changed since main (evals/select.py)
     python -m evals.run --suite golden --max-cost 0.30 # stop once the estimate passes $0.30
+    python -m evals.run --suite golden --routing       # with model routing on (PLAN-19 M5)
 
 Needs commerce-api running on seeded data (`npm run seed`), SERVICE_TOKEN set
 the same in both services, and model access. Results are written to evals/results/.
@@ -28,6 +29,7 @@ from app import usage
 from app.commerce_client import CommerceClient
 from app.config import Settings, get_settings
 from app.llm import LLM
+from evals import balance
 from evals.cases import EVALS_DIR, PASS_BAR, Case, Suite, load_suite
 from evals.checks import Verdict, score
 from evals.harness import Logins, run_case
@@ -106,6 +108,22 @@ def usage_line(tally: usage.UsageTally) -> str:
     return line
 
 
+def routing_line(results: list[dict[str, Any]]) -> str:
+    """e.g. `41/60 turns on the fast model (68%); to main: intent:returns 9, money 4`."""
+    turns = [t for r in results for run in r.get("runs", []) for t in run["turns"]]
+    fast = sum(1 for t in turns if t.get("routes") and t["routes"][-1].startswith("fast:"))
+    reasons: dict[str, int] = {}
+    for t in turns:
+        for entry in t.get("routes", []):
+            tier, _, reason = entry.partition(":")
+            if tier == "main" and reason != "sticky":
+                reasons[reason] = reasons.get(reason, 0) + 1
+    to_main = ", ".join(f"{k} {v}" for k, v in sorted(reasons.items(), key=lambda kv: -kv[1]))
+    share = f" ({fast / len(turns):.0%})" if turns else ""
+    return f"{fast}/{len(turns)} turns on the fast model{share}" + (
+        f"; to main: {to_main}" if to_main else "")
+
+
 async def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m evals.run")
     parser.add_argument("--suite", choices=list(PASS_BAR), required=True)
@@ -119,6 +137,8 @@ async def main(argv: list[str] | None = None) -> int:
                         help="Run only the cases affected by changes since BASE (default main)")
     parser.add_argument("--max-cost", type=float, metavar="USD",
                         help="Stop after the case that takes the estimated cost past USD")
+    parser.add_argument("--routing", action="store_true",
+                        help="Model routing on: simple turns on MODEL_FAST (app/routing.py)")
     parser.add_argument("--no-grader", action="store_true",
                         help="Deterministic checks only; cases with a grader then fail")
     args = parser.parse_args(argv)
@@ -158,9 +178,18 @@ async def main(argv: list[str] | None = None) -> int:
         print(f"Running {len(cases)} {suite} cases\n")
 
     settings = get_settings()
+    if args.routing:
+        settings = settings.model_copy(
+            update={"model_routing_enabled": True, "routing_percent": 100}
+        )
     if args.max_cost is not None and not settings.model_prices:
         print("Warning: MODEL_PRICES is not set, so --max-cost can't stop the run",
               file=sys.stderr)
+    problem = await balance.check(
+        settings, balance.estimate(len(cases), args.repeat, args.max_cost)
+    )
+    if problem:
+        sys.exit(problem)
     await preflight(settings)
     logins = Logins(settings, os.environ.get("EVAL_PASSWORD", DEMO_PASSWORD))
     llm = None if args.no_grader else LLM(settings)
@@ -184,12 +213,15 @@ async def main(argv: list[str] | None = None) -> int:
     bar = PASS_BAR[suite]
     print(f"\n{suite}: {passed}/{len(cases)} passed ({rate:.0%}); bar {bar:.0%}")
     print(f"Usage: {usage_line(run_usage)}")
+    routed = routing_line(results) if args.routing else None
+    if routed:
+        print(f"Routing: {routed}")
 
     out_dir = EVALS_DIR / "results"
     out_dir.mkdir(exist_ok=True)
     out = out_dir / f"{suite}-{time.strftime('%Y%m%d-%H%M%S')}.json"
     report = {"suite": suite, "model": settings.model_main, "passed": passed,
-              "total": len(cases), "stopped_at_max_cost": stopped,
+              "total": len(cases), "stopped_at_max_cost": stopped, "routing": args.routing,
               "usage": run_usage.as_dict(), "results": results}
     out.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     print(f"Report: {Path(out).relative_to(EVALS_DIR.parent)}")

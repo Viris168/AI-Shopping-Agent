@@ -11,7 +11,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    /** The `X-Limit` response header: "images" when a photo was refused, not the message. */
+    /** The `X-Limit` response header: which limit refused the request — "images" (a photo was
+     *  refused, not the message) or a spend/rate limit (PLAN-19 M7). */
     readonly limit: string | null = null,
   ) {
     super(message);

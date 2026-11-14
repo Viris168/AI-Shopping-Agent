@@ -55,7 +55,7 @@ describe('conversations (e2e)', () => {
     (
       await db.query(
         `SELECT user_id, messages, summary, outcome, tokens_in, tokens_out,
-                tokens_cache_read, cost_micro_usd, feedback
+                tokens_cache_read, cost_micro_usd, routing_group, feedback
          FROM conversations WHERE id = $1`,
         [id],
       )
@@ -108,6 +108,24 @@ describe('conversations (e2e)', () => {
     expect(after.tokens_cache_read).toBe(40);
     expect(after.cost_micro_usd).toBe('1800'); // bigint comes back as a string
     expect(after.messages).toHaveLength(3);
+  });
+
+  it('keeps the first routing group sent and rejects unknown ones', async () => {
+    const id = randomUUID();
+    await turn(id, { messages: [msg('user', 'hi')] }, aliceAgent).expect(204);
+    expect((await row(id)).routing_group).toBeNull();
+    await turn(id, { messages: [], routingGroup: 'routed' }, aliceAgent).expect(
+      204,
+    );
+    await turn(
+      id,
+      { messages: [], routingGroup: 'control' },
+      aliceAgent,
+    ).expect(204);
+    expect((await row(id)).routing_group).toBe('routed');
+    await turn(id, { messages: [], routingGroup: 'fast' }, aliceAgent).expect(
+      400,
+    );
   });
 
   it('keeps handoff once set and the last non-empty summary', async () => {

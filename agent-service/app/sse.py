@@ -75,7 +75,9 @@ def sse_response(
                 outcome = "cancelled" if cancelled else error_code or "ok"
                 if error_code and not cancelled:
                     telemetry.mark_error(span, error_code)
-                    telemetry.turn_errors.add(1, {"route": route, "error.type": error_code})
+                    telemetry.turn_errors.add(
+                        1, telemetry.grouped({"route": route, "error.type": error_code})
+                    )
                 telemetry.turn_duration.record(watch.elapsed, {"route": route, "outcome": outcome})
 
     async def body() -> AsyncIterator[str]:

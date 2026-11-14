@@ -41,11 +41,13 @@ def check_message(text: str, settings: Settings, allow_empty: bool = False) -> s
 
 
 class RateLimiter:
-    """Fixed one-minute window per user, or per IP for guests."""
+    """Fixed one-minute window per user, or per IP for guests (a lower limit: PLAN-19 M7)."""
 
-    def __init__(self, redis: Redis, limit_per_min: int) -> None:
+    def __init__(self, redis: Redis, limit_per_min: int, guest_limit_per_min: int | None = None
+                 ) -> None:
         self._redis = redis
         self._limit = limit_per_min
+        self._guest_limit = limit_per_min if guest_limit_per_min is None else guest_limit_per_min
 
     async def hit(self, user_id: str | None, ip: str | None) -> None:
         key = f"rl:user:{user_id}" if user_id else f"rl:ip:{ip or 'unknown'}"
@@ -55,7 +57,7 @@ class RateLimiter:
             pipe.set(key, 0, ex=60, nx=True)
             pipe.incr(key)
             _, count = await pipe.execute()
-        if count > self._limit:
+        if count > (self._limit if user_id else self._guest_limit):
             raise HTTPException(429, "You're sending messages too quickly. Please wait a moment.")
 
 

@@ -11,7 +11,7 @@ from typing import Any, cast
 
 from anthropic.types import MessageParam, ToolUseBlock
 
-from app import playbooks, telemetry, usage
+from app import playbooks, routing, telemetry, usage
 from app.actions import ActionStore, PendingAction
 from app.auth import Auth
 from app.cache import ToolCache
@@ -54,6 +54,8 @@ TYPED_TAG_NOTE = (
 )
 
 OnToolCall = Callable[[str, Any], None]
+# (tier, reason) whenever a turn's model is chosen or moves to the main model.
+OnRoute = Callable[[str, str], None]
 
 
 @cache
@@ -189,6 +191,8 @@ class Agent:
     on_tool_call: OnToolCall | None = None  # evals record calls here
     cache: ToolCache | None = None  # None in unit tests unless a test sets it
     memory: Memory | None = None  # long-term memory; None when MEMORY_ENABLED is off
+    router: routing.Router | None = None  # model routing; None → always the main model
+    on_route: OnRoute | None = None  # evals record the model tier per turn here
     # Work that runs after `done` (memory writes); drain() waits for it.
     _background: set[asyncio.Task[None]] = field(default_factory=set, repr=False)
 
@@ -261,6 +265,11 @@ class Agent:
         system = build_system(self.settings, auth)
         # The latest shopper message (or event) carries the per-call context; see with_context.
         anchor = max(i for i, m in enumerate(session.messages) if m["role"] == "user")
+        tier: routing.Tier = "main"
+        if await self.routing_group(session) == "routed":
+            tier, reason = routing.route(user_msg, session)
+            self._note_route(session, tier, reason)
+        tool_errors = 0
         usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0}
         reply: list[str] = []
         tool_texts: list[str] = []
@@ -295,12 +304,37 @@ class Agent:
                 session.summary, state, render_memory(session.memory),
                 playbooks.render(session.state) if self.settings.playbooks_enabled else "",
             )
-            resp = await self.llm.stream(
-                system=system,
-                messages=cast(list[MessageParam], with_context(session.messages, anchor, context)),
-                tools=tools,
-                on_text=on_text,
-            )
+            messages = cast(list[MessageParam], with_context(session.messages, anchor, context))
+            resp = None
+            if tier == "fast":
+                # Held back until we know the fast model's response stands; a dropped one is
+                # never seen. The same prompt and tools go to both models.
+                held: list[str] = []
+                escalate: str | None
+                try:
+                    resp = await self.llm.stream(system=system, messages=messages, tools=tools,
+                                                 on_text=held.append, fast=True)
+                except ModelUnavailable:
+                    escalate = "fast_error"
+                else:
+                    await self.budget.add(
+                        session.id, resp.usage.input_tokens + resp.usage.output_tokens, subject
+                    )
+                    escalate = self._needs_main(resp)
+                if escalate:
+                    tier = "main"
+                    self._note_route(session, tier, escalate)
+                    resp = None
+                else:
+                    for chunk in held:
+                        on_text(chunk)
+            if resp is None:
+                resp = await self.llm.stream(
+                    system=system, messages=messages, tools=tools, on_text=on_text
+                )
+                await self.budget.add(
+                    session.id, resp.usage.input_tokens + resp.usage.output_tokens, subject
+                )
             send(guard.flush())
             # History and transcripts keep what the shopper saw, so a removed code or link
             # isn't fed back to the model next turn.
@@ -312,9 +346,6 @@ class Agent:
             usage["input_tokens"] += resp.usage.input_tokens
             usage["output_tokens"] += resp.usage.output_tokens
             usage["cache_read_input_tokens"] += resp.usage.cache_read_input_tokens or 0
-            await self.budget.add(
-                session.id, resp.usage.input_tokens + resp.usage.output_tokens, subject
-            )
 
             calls = [b for b in resp.content if b.type == "tool_use"]
             if calls and resp.stop_reason in ("max_tokens", "refusal"):
@@ -340,7 +371,14 @@ class Agent:
                 session.state.note_codes(call.name, call.input, out)
                 tool_texts.append(wrap_tool_result(out.for_model))
                 results.append(tool_result(call.id, out))
+                tool_errors += out.is_error
             session.append_tool_results(results)
+            if tier == "fast" and any(c.name in routing.MAIN_AFTER_TOOLS for c in calls):
+                tier = "main"  # order/cart free text: see app/routing.py
+                self._note_route(session, tier, "order_cart_data")
+            elif tier == "fast" and tool_errors >= 2:
+                tier = "main"  # struggling: let the main model take over
+                self._note_route(session, tier, "tool_errors")
         else:
             emit("text_delta", {"text": FALLBACK_HANDOFF_TEXT})
 
@@ -385,6 +423,33 @@ class Agent:
             i += len(batch)
         return outs
 
+    async def routing_group(self, session: Session) -> routing.Group:
+        """The conversation's rollout group (app/routing.py); also labels this request's
+        metrics with it."""
+        group: routing.Group = (
+            await self.router.group(session) if self.router is not None else "off"
+        )
+        telemetry.set_routing_group(group)
+        return group
+
+    def _note_route(self, session: Session, tier: routing.Tier, reason: str) -> None:
+        if tier == "main":
+            session.model_tier = "main"  # sticky: see app/routing.py
+        telemetry.annotate(**{"agent.model_tier": tier, "agent.route_reason": reason})
+        telemetry.routes.add(1, {"agent.model_tier": tier, "agent.route_reason": reason})
+        if self.on_route:
+            self.on_route(tier, reason)
+
+    @staticmethod
+    def _needs_main(resp: Any) -> str | None:
+        """Why the fast model's response must be redone by the main model, or None."""
+        if resp.stop_reason in ("max_tokens", "refusal"):
+            return f"fast_{resp.stop_reason}"
+        tools = [b.name for b in resp.content if b.type == "tool_use"]
+        if any(name in routing.MAIN_ONLY_TOOLS for name in tools):
+            return "main_only_tool"
+        return None
+
     async def _handle_call(
         self, name: str, raw: Any, session: Session, auth: Auth, emit: Emit,
         ready: ToolOutput | None = None,
@@ -417,7 +482,7 @@ class Agent:
             "actionId": action.id, "tool": action.tool, "summary": action.summary,
             "expiresAt": action.expires_at,
         }
-        telemetry.actions.add(1, {"tool": tool.name, "result": "requested"})
+        telemetry.actions.add(1, telemetry.grouped({"tool": tool.name, "result": "requested"}))
         return ToolOutput({"status": "awaiting_user_confirmation"})
 
     async def confirm(
@@ -428,13 +493,17 @@ class Agent:
         if tool is None:
             raise RuntimeError(f"unknown action tool {action.tool}")
         telemetry.annotate(**{"conversation.id": action.conversation_id})
+        session = await self.sessions.get(action.conversation_id)
+        telemetry.set_routing_group(
+            session.routing_group or "off" if session is not None else "off"
+        )
         ctx = self._ctx(auth, action.conversation_id, action.idem_key)
         out = await run_tool(tool, action.args, ctx)
-        telemetry.actions.add(1, {
+        telemetry.actions.add(1, telemetry.grouped({
             "tool": action.tool, "result": "confirmed" if not out.is_error else "failed",
-        })
+        }))
         if action.tool == "create_support_ticket" and not out.is_error:
-            telemetry.handoffs.add(1)
+            telemetry.handoffs.add(1, telemetry.grouped())
         if out.card:
             emit("card", out.card)
             if action.tool == "create_support_ticket":
@@ -442,7 +511,6 @@ class Agent:
                     "ticketId": out.for_model.get("ticketId"),
                     "expectedResponse": out.for_model.get("expectedResponse"),
                 })
-        session = await self.sessions.get(action.conversation_id)
         if session is None or session.user_id != auth.user_id:
             emit("done", {})
             return
@@ -459,8 +527,10 @@ class Agent:
         await self.run_turn(session, None, auth, emit, subject)
 
     async def cancel(self, action: PendingAction, auth: Auth) -> None:
-        telemetry.actions.add(1, {"tool": action.tool, "result": "cancelled"})
         session = await self.sessions.get(action.conversation_id)
+        group = session.routing_group if session and session.routing_group else "off"
+        telemetry.actions.add(1, {"tool": action.tool, "result": "cancelled",
+                                  "agent.routing_group": group})
         if session is not None:
             session.state.pending_action = None
             session.append_event(f"Shopper pressed Cancel for {action.tool}.")
