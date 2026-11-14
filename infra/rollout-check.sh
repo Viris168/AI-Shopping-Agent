@@ -13,6 +13,7 @@
 #   PROM_URL=https://prometheus-prod-<n>.grafana.net/api/prom  PROM_AUTH=<instanceId>:<token>
 #
 # Optional: TRANSCRIPTS (default 20), PROM_JOB (default production/agent-service).
+# With PROM_URL it also gates photos (PLAN-20) and voice (PLAN-21) while they're on.
 # Exit 0 = gate passed, 1 = a check failed, 2 = tool error rate not checked (no PROM_URL).
 # It never changes the rollout flag; that stays a manual `SET flag:rollout_percent`.
 set -euo pipefail
@@ -60,18 +61,22 @@ check() {
   fi
 }
 
+# prom <query>: the first value of an instant query, or empty when there's no data.
+# Credentials go in through a curl config on stdin, not argv.
+prom() {
+  printf 'user = "%s"\n' "${PROM_AUTH:-}" \
+    | curl -fsS --max-time 20 -K - --data-urlencode "query=$1" "$PROM_URL/api/v1/query" \
+    | jq -r '.data.result[0].value[1] // empty'
+}
+
 echo "Rollout gate for $target, last $days days"
 
 # --- Tool error rate < 5% ------------------------------------------------------------------
 # Store failures only (status="error"); "rejected" (not found, login needed) is expected.
 if [ -n "${PROM_URL:-}" ]; then
   command -v curl >/dev/null || { echo "needs curl" >&2; exit 1; }
-  q="sum(increase(agent_tool_calls_total{job=\"$job\",status=\"error\"}[${days}d]))
-     / sum(increase(agent_tool_calls_total{job=\"$job\"}[${days}d]))"
-  # Credentials go in through a curl config on stdin, not argv.
-  rate=$(printf 'user = "%s"\n' "${PROM_AUTH:-}" \
-    | curl -fsS --max-time 20 -K - --data-urlencode "query=$q" "$PROM_URL/api/v1/query" \
-    | jq -r '.data.result[0].value[1] // empty')
+  rate=$(prom "sum(increase(agent_tool_calls_total{job=\"$job\",status=\"error\"}[${days}d]))
+     / sum(increase(agent_tool_calls_total{job=\"$job\"}[${days}d]))")
   if [ -z "$rate" ] || [ "$rate" = NaN ]; then
     echo "FAIL tool error rate: no data for job=$job"
     fail=1
@@ -89,11 +94,8 @@ fi
 # --- Photos (PLAN-20): describe failures < 5% ---------------------------------------------
 # Only while photos are on; no photos described in the window is fine.
 if [ -n "${PROM_URL:-}" ]; then
-  q="sum(increase(agent_images_total{job=\"$job\",outcome=~\"failed|unparsed\"}[${days}d]))
-     / sum(increase(agent_images_total{job=\"$job\"}[${days}d]))"
-  rate=$(printf 'user = "%s"\n' "${PROM_AUTH:-}" \
-    | curl -fsS --max-time 20 -K - --data-urlencode "query=$q" "$PROM_URL/api/v1/query" \
-    | jq -r '.data.result[0].value[1] // empty')
+  rate=$(prom "sum(increase(agent_images_total{job=\"$job\",outcome=~\"failed|unparsed\"}[${days}d]))
+     / sum(increase(agent_images_total{job=\"$job\"}[${days}d]))")
   if [ -z "$rate" ] || [ "$rate" = NaN ]; then
     echo "ok   photos: none described"
   elif awk -v r="$rate" 'BEGIN { exit !(r < 0.05) }'; then
@@ -102,6 +104,29 @@ if [ -n "${PROM_URL:-}" ]; then
     printf 'FAIL photo describe failures %.2f%% (gate < 5%%; SET flag:images_enabled 0)\n' \
       "$(awk -v r="$rate" 'BEGIN { print r * 100 }')"
     fail=1
+  fi
+fi
+
+# --- Voice (PLAN-21): thumbs-up for voice no more than 10 points below typed ---------------
+# Needs 30+ rated replies to dictated messages; fewer is too little to judge.
+if [ -n "${PROM_URL:-}" ]; then
+  rated() { prom "sum(increase(agent_feedback_total{job=\"$job\",via=\"$1\"$2}[${days}d]))"; }
+  voice_all=$(rated voice '')
+  if [ -z "$voice_all" ] || awk -v n="$voice_all" 'BEGIN { exit !(n < 30) }'; then
+    printf 'ok   voice: %.0f rated voice replies (too few to compare)\n' "${voice_all:-0}"
+  else
+    voice_up=$(awk -v u="$(rated voice ',rating="up"')" -v n="$voice_all" 'BEGIN { print (u + 0) / n }')
+    typed_all=$(rated typed '')
+    typed_up=$(awk -v u="$(rated typed ',rating="up"')" -v n="${typed_all:-0}" \
+      'BEGIN { print (n > 0 ? (u + 0) / n : 1) }')
+    line=$(awk -v v="$voice_up" -v t="$typed_up" \
+      'BEGIN { printf "thumbs-up voice %.0f%% vs typed %.0f%%", v * 100, t * 100 }')
+    if awk -v v="$voice_up" -v t="$typed_up" 'BEGIN { exit !(v >= t - 0.10) }'; then
+      echo "ok   $line"
+    else
+      echo "FAIL $line (gate: within 10 points; SET flag:voice_rollout_percent back, or flag:voice_enabled 0)"
+      fail=1
+    fi
   fi
 fi
 

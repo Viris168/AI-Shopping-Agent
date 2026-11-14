@@ -140,6 +140,38 @@ asked to describe the photo in words, so nothing is broken for them, but photos 
 reply against `app/prompts/image_describe.md` and run `python -m evals.image_probe`. If it
 lasts, `SET flag:images_enabled 0`.
 
+## Voice
+
+Voice dictation (PLAN-21): a mic in the widget; the shopper's browser turns speech into text in
+the input box, and the shopper checks it and presses Send. No audio reaches us and nothing changes
+in the prompt, so no eval run is needed for it. Off until `VOICE_ENABLED=true`. **Before switching
+it on anywhere:** the M0 recordings meet the go bar in the target browsers
+([PLAN-21](../../PLAN-21-voice-input.md#m0--spike-is-browser-speech-good-enough)), the privacy-notice paragraph is signed off
+and published, and a native speaker has checked the Vietnamese strings.
+
+| Step | Setting |
+|---|---|
+| Staging | GitHub variable `VOICE_ENABLED=true` and deploy (`VOICE_ROLLOUT_PERCENT` defaults to 100 there). Try it on a phone and a laptop; watch the *Voice* row for a day |
+| Production, staff | `VOICE_ENABLED=true` and deploy (`VOICE_ROLLOUT_PERCENT` defaults to 0 there). Staff who opened the store with `?shopchat=on` see the mic |
+| 5% / 25% / 100% | `SET flag:voice_rollout_percent 5` (then 25, 100) |
+| Off at once | `SET flag:voice_enabled 0` (back: `DEL flag:voice_enabled`). The mic disappears on the next page load (`/v1/config` is cached up to 60 s); text already dictated stays in the box and sends as normal |
+
+The percentage uses the widget's own bucket, like photos: a share of the shoppers who see the chat
+(`rolloutPercent` × `voiceRolloutPercent`), and raising it only adds shoppers. Browsers without
+speech recognition (Firefox) never show the mic, so the voice share stays below the percentage.
+
+Before each step, on the *Voice* row: the voice share is non-zero once the mic is shown (zero means
+the mic isn't appearing: check `/v1/config` and the browser), and **thumbs-up for voice is no more
+than 10 points below typed** once there are 30+ rated voice replies. `infra/rollout-check.sh` checks
+that gap when `PROM_URL` is set. A lower voice line usually means misheard words (names, order
+numbers, codes): read some thumbs-down transcripts and look for garbled requests. If it's one
+language, `vi` for example, consider holding the rollout and looking at
+[server speech-to-text](../../PLAN-21-voice-input.md#later--server-side-speech-to-text).
+
+There's no voice alert: recognition runs in the browser, so agent-service never sees a failure
+(mic blocked, nothing heard). Those show to the shopper in the widget and aren't counted
+(PLAN-21 open question 4).
+
 ## Rollout
 
 `/v1/config` also carries `rolloutPercent`. Each browser picks a fixed bucket 0–99 and sees the
