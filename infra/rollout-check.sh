@@ -86,6 +86,25 @@ else
   skipped=1
 fi
 
+# --- Photos (PLAN-20): describe failures < 5% ---------------------------------------------
+# Only while photos are on; no photos described in the window is fine.
+if [ -n "${PROM_URL:-}" ]; then
+  q="sum(increase(agent_images_total{job=\"$job\",outcome=~\"failed|unparsed\"}[${days}d]))
+     / sum(increase(agent_images_total{job=\"$job\"}[${days}d]))"
+  rate=$(printf 'user = "%s"\n' "${PROM_AUTH:-}" \
+    | curl -fsS --max-time 20 -K - --data-urlencode "query=$q" "$PROM_URL/api/v1/query" \
+    | jq -r '.data.result[0].value[1] // empty')
+  if [ -z "$rate" ] || [ "$rate" = NaN ]; then
+    echo "ok   photos: none described"
+  elif awk -v r="$rate" 'BEGIN { exit !(r < 0.05) }'; then
+    printf 'ok   photo describe failures %.2f%%\n' "$(awk -v r="$rate" 'BEGIN { print r * 100 }')"
+  else
+    printf 'FAIL photo describe failures %.2f%% (gate < 5%%; SET flag:images_enabled 0)\n' \
+      "$(awk -v r="$rate" 'BEGIN { print r * 100 }')"
+    fail=1
+  fi
+fi
+
 # --- No cross-user issues ------------------------------------------------------------------
 check "returns filed by the order's owner" "
   SELECT r.id || '  order ' || o.order_number FROM return_requests r JOIN orders o ON o.id = r.order_id

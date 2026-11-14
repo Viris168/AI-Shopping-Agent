@@ -47,6 +47,7 @@ FLAG_ENABLED = "flag:agent_enabled"
 FLAG_ROLLOUT = "flag:rollout_percent"
 # `SET flag:images_enabled 0` turns photos off without a redeploy (IMAGES_ENABLED turns them on).
 FLAG_IMAGES = "flag:images_enabled"
+FLAG_IMAGES_ROLLOUT = "flag:images_rollout_percent"
 
 
 @asynccontextmanager
@@ -149,6 +150,17 @@ async def images_active(request: Request, settings: Settings) -> bool:
         log.warning("images flag unreadable from redis; using IMAGES_ENABLED")
         return True
     return not (isinstance(raw, str) and raw.strip().lower() in ("0", "false", "off"))
+
+
+async def images_rollout(request: Request, settings: Settings) -> int:
+    """IMAGES_ROLLOUT_PERCENT, unless Redis flag:images_rollout_percent moves it."""
+    try:
+        raw = await request.app.state.redis.get(FLAG_IMAGES_ROLLOUT)
+    except Exception:
+        return settings.images_rollout_percent
+    if isinstance(raw, str) and raw.strip().isdigit():
+        return min(int(raw), 100)
+    return settings.images_rollout_percent
 
 
 async def require_enabled(
@@ -325,9 +337,14 @@ async def widget_config(
     enabled, rollout = await read_flags(request, settings)
     # Short cache: a kill switch reaches every page within a minute.
     response.headers["Cache-Control"] = "public, max-age=60"
+    images = enabled and await images_active(request, settings)
     return {
         "enabled": enabled, "rolloutPercent": rollout, "timeZone": settings.store_tz,
-        "imagesEnabled": enabled and await images_active(request, settings),
+        "imagesEnabled": images,
+        # The widget shows the photo button only in this share of its buckets. The server
+        # still accepts a photo from any browser while photos are on: this is a gradual
+        # rollout, not access control.
+        "imagesRolloutPercent": await images_rollout(request, settings) if images else 0,
     }
 
 

@@ -12,6 +12,7 @@ from fakeredis import FakeAsyncRedis
 from fastapi import HTTPException
 from PIL import Image
 
+from app import telemetry
 from app.auth import GUEST, Auth, get_auth
 from app.config import Settings, get_settings
 from app.guardrails import ImageLimiter, RateLimiter
@@ -344,6 +345,30 @@ async def test_redis_flag_turns_photos_off(redis: FakeAsyncRedis,
         resp = await http.post("/v1/chat", json=chat_body(encode(photo())))
         assert (await http.get("/v1/config")).json()["imagesEnabled"] is False
     assert resp.status_code == 403
+
+
+async def test_photo_rollout_percent_comes_from_env_then_redis(
+        redis: FakeAsyncRedis, route_settings: dict[str, Any]) -> None:
+    route_settings["images_rollout_percent"] = 10
+    async with await client(redis, FakeLLM()) as http:
+        assert (await http.get("/v1/config")).json()["imagesRolloutPercent"] == 10
+        await redis.set("flag:images_rollout_percent", "25")
+        assert (await http.get("/v1/config")).json()["imagesRolloutPercent"] == 25
+        await redis.set("flag:images_enabled", "0")  # off wins: nobody gets the button
+        assert (await http.get("/v1/config")).json()["imagesRolloutPercent"] == 0
+
+
+async def test_refused_photos_are_counted_by_reason(
+        redis: FakeAsyncRedis, route_settings: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[str] = []
+    monkeypatch.setattr(telemetry.images_refused, "add",
+                        lambda n, attrs: seen.append(attrs["reason"]))
+    async with await client(redis, FakeLLM(), per_guest=0) as http:
+        await http.post("/v1/chat", json=chat_body(b"GIF89a", "image/png"))
+        route_settings["_caller"].auth = GUEST
+        await http.post("/v1/chat", json=chat_body(encode(photo())))
+    assert seen == ["unreadable", "off"]
 
 
 async def test_route_rejects_a_disguised_file(redis: FakeAsyncRedis,

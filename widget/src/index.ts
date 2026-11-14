@@ -22,7 +22,7 @@
 import { ChatApi } from './api';
 import { Controller } from './controller';
 import { createI18n, pickLocale } from './i18n';
-import { type RolloutConfig, fetchConfig, shouldMount } from './rollout';
+import { type RolloutConfig, fetchConfig, photosOn, shouldMount } from './rollout';
 import { LinkPolicy, el } from './safe';
 import { Store } from './state';
 import styles from './styles.css?inline';
@@ -112,7 +112,7 @@ function mount(script: HTMLScriptElement | null, config: RolloutConfig | null): 
     data.helpUrl ?? null,
   );
   const composer = createComposer(i18n, maxChars, (text, photo) => void controller.send(text, photo), {
-    photos: Boolean(config?.imagesEnabled),
+    photos: photosOn(config),
   });
 
   // First open on this page: show the loading screen while the shopper's token is fetched.

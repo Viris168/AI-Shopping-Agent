@@ -49,7 +49,7 @@ are text in development and JSON (with `request_id` and `trace_id`) when `APP_EN
 | `agent_streams_active` | `route` | Open SSE streams |
 | `agent_model_calls_total`, `agent_model_duration_seconds` | `gen_ai_operation_name`, `gen_ai_request_model`, `status`, `error_type` | One model API call (after the SDK's 2 retries) |
 | `agent_model_fallbacks_total` | `gen_ai_request_model`, `error_type` | Chat calls retried on `MODEL_FAST` after `MODEL_MAIN` failed (transient errors only) |
-| `agent_model_tokens_total` | `gen_ai_token_type` (input, output, cache_read), `gen_ai_operation_name`, `gen_ai_request_model`, `agent_purpose` (chat, summarise, memory_extract, eval_grade, complete) | Tokens |
+| `agent_model_tokens_total` | `gen_ai_token_type` (input, output, cache_read), `gen_ai_operation_name`, `gen_ai_request_model`, `agent_purpose` (chat, summarise, memory_extract, eval_grade, image_describe, complete) | Tokens |
 | `agent_model_cost_USD_total` | `gen_ai_operation_name`, `gen_ai_request_model`, `agent_purpose` | Estimated cost from `MODEL_PRICES`; models without a price are left out |
 | `agent_tool_calls_total`, `agent_tool_duration_seconds` | `tool`, `status` | `ok`; `rejected` (login, not found, bad input: expected); `error` (store 5xx/429/unreachable) |
 | `agent_conversations_total` | — | New conversations |
@@ -59,6 +59,8 @@ are text in development and JSON (with `request_id` and `trace_id`) when `APP_EN
 | `agent_disabled_rejections_total` | — | Requests refused by the kill switch |
 | `agent_output_suspect_replies_total` | — | Replies with a price or % no tool or shopper message gave that turn |
 | `agent_output_redactions_total` | `kind` (code, link) | Unconfirmed coupon codes and off-store links removed from replies |
+| `agent_images_total` | `outcome` (ok, blurry, dark, cropped, unclear, unparsed, failed) | Photos the fast model described; the describe call itself is `gen_ai_operation_name="describe"` in the model metrics |
+| `agent_images_refused_total` | `reason` (off, too_large, unreadable, daily_cap) | Photos refused before any model call |
 
 **Cost row** (dashboard): spend, cost per conversation and cache hit ratio for the selected
 range, then cost per hour by purpose and by model, tokens by purpose, and the cache hit ratio over
@@ -103,6 +105,39 @@ cached. Hits and misses are in `agent_tool_cache_total` (`tool`, `result`).
 | Turn the cache off | `SET flag:cache_enabled 0` (back on: `DEL flag:cache_enabled`) |
 | Drop every cached result (e.g. after re-seeding or a price change) | `INCR cache:tool:gen` |
 | Off durably | `CACHE_ENABLED=false` and redeploy |
+
+## Photos
+
+Photos in chat (PLAN-20): `MODEL_FAST` describes the photo, the main model reads the description,
+the photo is never stored. Off until `IMAGES_ENABLED=true`. **Before switching it on anywhere,
+both eval suites must pass with it set** (`IMAGES_ENABLED=true python -m evals.run --suite golden`,
+then `redteam`; golden ≥ 90%, red team 100%), and the privacy wording shown next to the photo
+needs sign-off.
+
+| Step | Setting |
+|---|---|
+| Staging | GitHub variable `IMAGES_ENABLED=true` and deploy (`IMAGES_ROLLOUT_PERCENT` defaults to 100 there). Watch the *Photos* row for a day |
+| Production, staff | `IMAGES_ENABLED=true` and deploy (`IMAGES_ROLLOUT_PERCENT` defaults to 0 there). Staff who opened the store with `?shopchat=on` see the photo button |
+| 5% / 25% / 100% | `SET flag:images_rollout_percent 5` (then 25, 100) |
+| Off at once | `SET flag:images_enabled 0` (back: `DEL flag:images_enabled`). The button disappears on the next page load; photos already in the box are refused (`403`) and the shopper is told |
+
+The percentage uses the widget's own bucket, so it's a share of the shoppers who see the chat
+(`rolloutPercent` × `imagesRolloutPercent`), and raising it only adds shoppers. It controls the
+button, not access: while photos are on, agent-service accepts one from any browser, within
+`IMAGE_DAILY_LIMIT` (signed in) and `IMAGE_DAILY_LIMIT_GUEST` (per IP) per day.
+
+Before each step, on the *Photos* row: describe failures under 5%, p95 describe latency under
+3 s, photo cost in line with the M0 estimate (about $0.0003 per photo), `daily_cap` refusals rare.
+`infra/rollout-check.sh` checks the describe failure rate too when `PROM_URL` is set. Read a few
+masked transcripts with `<image_description>`: the description is what the model saw.
+
+**`AgentPhotoDescribeFailing`** (over 20% of photos in 30 min couldn't be described): shoppers are
+asked to describe the photo in words, so nothing is broken for them, but photos aren't helping.
+`failed` → see the model metrics with `gen_ai_operation_name="describe"`: a `400` usually means
+`MODEL_FAST` no longer takes images (check the provider's model list), timeouts mean
+`IMAGE_TIMEOUT_S` is too tight. `unparsed` → the model stopped returning JSON: check a recent
+reply against `app/prompts/image_describe.md` and run `python -m evals.image_probe`. If it
+lasts, `SET flag:images_enabled 0`.
 
 ## Rollout
 

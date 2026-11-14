@@ -76,6 +76,11 @@ jobs:
           AGENT_ENABLED: ${{ vars.AGENT_ENABLED || 'true' }}
           # Unset → production starts at 0% (staff opt in with ?shopchat=on), staging at 100%.
           ROLLOUT_PERCENT: ${{ vars.ROLLOUT_PERCENT || (inputs.environment == 'production' && '0' || '100') }}
+          # Photos (PLAN-20): off until IMAGES_ENABLED=true. Then the same 0% / 100% start.
+          IMAGES_ENABLED: ${{ vars.IMAGES_ENABLED || 'false' }}
+          IMAGES_ROLLOUT_PERCENT: ${{ vars.IMAGES_ROLLOUT_PERCENT || (inputs.environment == 'production' && '0' || '100') }}
+          IMAGE_DAILY_LIMIT: ${{ vars.IMAGE_DAILY_LIMIT || '20' }}
+          IMAGE_DAILY_LIMIT_GUEST: ${{ vars.IMAGE_DAILY_LIMIT_GUEST || '5' }}
           DEPLOY_ENV: ${{ inputs.environment }}
           OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
           OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
@@ -88,6 +93,7 @@ jobs:
                 ANTHROPIC_API_KEY JWT_SECRET SERVICE_TOKEN DATABASE_URL REDIS_URL POSTGRES_PASSWORD
                 API_DOMAIN CHAT_DOMAIN ACME_EMAIL STOREFRONT_URL API_CORS_ORIGINS CHAT_CORS_ORIGINS
                 BUNDLED_DATASTORES AGENT_ENABLED ROLLOUT_PERCENT DEPLOY_ENV
+                IMAGES_ENABLED IMAGES_ROLLOUT_PERCENT IMAGE_DAILY_LIMIT IMAGE_DAILY_LIMIT_GUEST
                 OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER_OTLP_HEADERS HELPDESK_URL HELPDESK_TOKEN)
           optional=" POSTGRES_PASSWORD OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER_OTLP_HEADERS HELPDESK_URL HELPDESK_TOKEN "
           bad=0

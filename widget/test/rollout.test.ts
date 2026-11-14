@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchConfig, shouldMount } from '../src/rollout';
+import { fetchConfig, photosOn, shouldMount } from '../src/rollout';
 import { MemoryStorage, jsonResponse, mockFetch } from './helpers';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -14,13 +14,25 @@ describe('rollout', () => {
     expect((await fetchConfig('https://chat.test'))?.imagesEnabled).toBe(false);
   });
 
+  it('shows photos to the same buckets as they grow, and to opted-in staff', () => {
+    const photos = (pct: number, enabled = true) => ({ ...on(100), imagesEnabled: enabled, imagesRolloutPercent: pct });
+    const storage = new MemoryStorage();
+    storage.setItem('shopchat:bucket', '30');
+    expect(photosOn(photos(25), storage)).toBe(false);
+    expect(photosOn(photos(31), storage)).toBe(true);
+    expect(photosOn(photos(100, false), storage)).toBe(false); // off wins
+    storage.setItem('shopchat:optin', '1');
+    expect(photosOn(photos(0), storage)).toBe(true);
+    expect(photosOn(null, storage)).toBe(false);
+  });
+
   it('reads the config, and treats a failed or odd response as switched off', async () => {
     mockFetch(jsonResponse(200, { enabled: true, rolloutPercent: 25 }), jsonResponse(503), new Error('offline'),
       jsonResponse(200, { enabled: 'yes', rolloutPercent: 'lots' }));
-    expect(await fetchConfig('https://chat.test')).toEqual({ ...on(25), imagesEnabled: false });
+    expect(await fetchConfig('https://chat.test')).toEqual({ ...on(25), imagesEnabled: false, imagesRolloutPercent: 0 });
     expect(await fetchConfig('https://chat.test')).toBeNull();
     expect(await fetchConfig('https://chat.test')).toBeNull();
-    expect(await fetchConfig('https://chat.test')).toEqual({ enabled: false, rolloutPercent: 0, imagesEnabled: false });
+    expect(await fetchConfig('https://chat.test')).toEqual({ enabled: false, rolloutPercent: 0, imagesEnabled: false, imagesRolloutPercent: 0 });
   });
 
   it("passes on the store's time zone only if the browser knows it", async () => {

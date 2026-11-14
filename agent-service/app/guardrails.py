@@ -62,9 +62,15 @@ class RateLimiter:
 PHOTOS_OFF = "Photos aren't available right now."
 
 
+_REFUSAL_REASONS = {403: "off", 413: "too_large", 415: "unreadable", 422: "unreadable",
+                    429: "daily_cap"}
+
+
 def photo_error(status: int, message: str) -> HTTPException:
     """A refused photo. `X-Limit: images` tells the widget it's about the photo, not the chat:
-    its 403 isn't a login mismatch and its 429 isn't the per-minute rate limit."""
+    its 403 isn't a login mismatch and its 429 isn't the per-minute rate limit. Counted in
+    `agent.images.refused` by reason."""
+    telemetry.images_refused.add(1, {"reason": _REFUSAL_REASONS.get(status, str(status))})
     return HTTPException(status, message, headers={"X-Limit": "images"})
 
 

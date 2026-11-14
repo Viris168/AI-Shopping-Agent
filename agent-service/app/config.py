@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     image_max_pixels: int = 25_000_000  # width × height, checked before decoding the pixels
     image_long_edge: int = 1568  # re-encoded size sent to the model
     image_timeout_s: float = 15
+    # Share of browsers (the widget's rollout bucket, 0–99) shown the photo button while
+    # IMAGES_ENABLED is on. Redis flag:images_rollout_percent overrides it at runtime.
+    images_rollout_percent: int = Field(100, ge=0, le=100)
     # Photos per shopper (per IP for guests) per UTC day. 0 turns that group's photos off.
     image_daily_limit: int = Field(20, ge=0)
     image_daily_limit_guest: int = Field(5, ge=0)

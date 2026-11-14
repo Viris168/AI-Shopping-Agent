@@ -30,8 +30,10 @@ SPANS = InMemorySpanExporter()
 METRICS = InMemoryMetricReader()
 
 
-CONFIG_ON_5 = {"enabled": True, "rolloutPercent": 5, "timeZone": "UTC", "imagesEnabled": False}
-CONFIG_OFF = {"enabled": False, "rolloutPercent": 0, "timeZone": "UTC", "imagesEnabled": False}
+CONFIG_ON_5 = {"enabled": True, "rolloutPercent": 5, "timeZone": "UTC", "imagesEnabled": False,
+               "imagesRolloutPercent": 0}
+CONFIG_OFF = {"enabled": False, "rolloutPercent": 0, "timeZone": "UTC", "imagesEnabled": False,
+              "imagesRolloutPercent": 0}
 
 
 @pytest.fixture(scope="module", autouse=True)

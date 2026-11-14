@@ -198,6 +198,29 @@ still needed.
 - Staging with `images_enabled` on; watch `image_describe` cost, describe latency and failure
   rate, and the image-cap hits on the dashboard. Then production at a low `rollout_percent`.
 
+**Status (2026-11-14, branch `image-m5-rollout`): tooling done, nothing switched on.**
+- A separate photo rollout. `rollout_percent` is the whole widget's and may already be 100%, so
+  it can't stage photos. `IMAGES_ROLLOUT_PERCENT` / `flag:images_rollout_percent` is sent in
+  `/v1/config`. The widget shows the button when its existing bucket is below it, and opted-in
+  staff (`?shopchat=on`) always see it. This only gates the button; the server limits are the
+  daily caps.
+- Deploy: `compose.yml` and `_deploy.yml` pass `IMAGES_ENABLED` (default `false`),
+  `IMAGES_ROLLOUT_PERCENT` (production `0`, staging `100`) and the daily caps.
+- Metrics: `agent.images.refused` by reason (off, too_large, unreadable, daily_cap) next to
+  `agent.images`. Dashboard row *Photos*: described by outcome, refused by reason, describe
+  latency p50/p95, photo cost vs. all, describe failure rate. Alert
+  `AgentPhotoDescribeFailing` (warning: > 20% failed or unparsed over 30 min, at least 10
+  photos). `rollout-check.sh` fails the gate above 5% when `PROM_URL` is set.
+- Runbook: `infra/monitoring/README.md#photos` covers the steps (staging → staff → 5/25/100%),
+  the kill switch and the alert.
+
+**Left for the user, in order:**
+1. Both full suites with `IMAGES_ENABLED=true` (M4).
+2. Sign-off on the privacy wording.
+3. Real damage photos (M0/M4).
+4. Merge the PLAN-20 PRs in order (#44 first).
+5. Staging, then production per the runbook. There is no staging VM yet (PLAN-19 M6).
+
 ## Order
 
 M0 → M1 + M2 (one PR) → M3 → M4 → M5. M0 decides whether the rest goes ahead.
