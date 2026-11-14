@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | Draft |
-| Last updated | 2026-11-08 |
+| Last updated | 2026-11-14 |
 | Target launch | 2026-12-18 (100% of visitors) |
 | Related | [ARCHITECTURE.md](./ARCHITECTURE.md) · [AGENT.md](./AGENT.md) · [CLAUDE.md](./CLAUDE.md) |
 
@@ -30,7 +30,7 @@ An AI chat assistant on the storefront. It helps shoppers find products, manage 
 
 - Taking payment or completing checkout inside the chat
 - Live human chat inside the widget (handoff creates a ticket instead)
-- Voice, email or social-media channels
+- Spoken replies, phone, email or social-media channels (speaking a message into the chat box is in scope; see F16)
 - Admin or staff-facing agent features
 - Personalised marketing or proactive outreach
 
@@ -67,6 +67,10 @@ An AI chat assistant on the storefront. It helps shoppers find products, manage 
 - As any shopper, I get answers about shipping, returns and payments grounded in the store's FAQ.
 - As any shopper, I can ask for a human at any time and get a ticket with an expected response time.
 
+### Input
+
+- As a shopper, especially on my phone, I can speak my message instead of typing it, see the words as I talk, and fix them before I press Send.
+
 ## 6. Functional requirements
 
 | ID | Requirement | Priority |
@@ -86,6 +90,7 @@ An AI chat assistant on the storefront. It helps shoppers find products, manage 
 | F13 | Thumbs up/down on replies | Should |
 | F14 | Replies in the shopper's language | Should |
 | F15 | Quick-reply chips on open | Could |
+| F16 | Voice dictation: a mic button turns speech into text in the input box as the shopper talks (English, Vietnamese); never sent without pressing Send; hidden where the browser can't do it ([PLAN-21](./PLAN-21-voice-input.md)) | Could |
 
 ## 7. Non-functional requirements
 
@@ -96,7 +101,7 @@ An AI chat assistant on the storefront. It helps shoppers find products, manage 
 | Security | Agent acts only with the shopper's own JWT; no admin credentials in the agent service |
 | Safety | No invented prices, stock, dates, discounts or policies; prompt-injection resistant |
 | Auditability | Every state-changing agent action logged with user and conversation ID |
-| Privacy | Personal data masked in logs and traces; transcripts kept 90 days. Assistant memory (PLAN-18) is opt-in per shopper, shown and deletable on the account page, never holds payment details, addresses or prices; chat notes kept 90 days, preferences until deleted. Privacy-notice wording to be signed off before rollout |
+| Privacy | Personal data masked in logs and traces; transcripts kept 90 days. Assistant memory (PLAN-18) is opt-in per shopper, shown and deletable on the account page, never holds payment details, addresses or prices; chat notes kept 90 days, preferences until deleted. Voice dictation (PLAN-21): the shopper's browser turns speech into text, possibly through the browser maker's speech service; the store never receives or keeps audio, only the text the shopper sends, handled like typed text. Privacy-notice wording to be signed off before rollout |
 | Accessibility | WCAG 2.1 AA; full keyboard support; screen-reader announcements |
 | Performance | Widget bundle < 40 KB gzipped; no layout shift on host page |
 | Cost | Tokens per conversation tracked; per-conversation budget enforced |

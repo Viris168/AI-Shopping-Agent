@@ -33,6 +33,7 @@ gzipped; we never receive or store audio.
 | Auto-send | **Never** | Speech recognition makes mistakes (names, order numbers); the shopper must see and confirm the text |
 | Unsupported browsers | Hide the button (Firefox today) | Progressive enhancement; typing still works |
 | Language | From the widget's locale: `en` → `en-US`, `vi` → `vi-VN` | Setting the language improves accuracy a lot |
+| Live text | **Yes:** words appear in the input as the shopper talks (`interimResults`), then settle; text-at-end where the browser can't (decided in M1) | Shows the mic is hearing them, and they can stop early if it's going wrong |
 | Time limit | 60 s per recording, then stop automatically | Keeps the text under the 2,000-char cap and avoids a forgotten open mic |
 | Audio storage | **None.** We never receive audio; the browser vendor may process it | Privacy notice must say so (M1) |
 | Server signal | Chat request may carry `via: "voice"` (whitelisted, optional) | Lets us count voice messages and compare outcomes without storing anything new |
@@ -67,12 +68,39 @@ agent-service: normal turn (unchanged); counts agent.voice_messages
   into text; the store never receives or keeps audio. Needs sign-off.
 - Decide: live text while speaking (`interimResults`) or only when stopped.
 
+**Status (2026-11-14, branch `voice-m1-scope`): done except sign-off.**
+- PRD: the non-goal is now "spoken replies, phone, email or social-media channels"; new user
+  story (*Input*), requirement F16 (Could) and a Privacy line for dictation.
+- Live text: **yes**, falling back to text-at-end where `interimResults` isn't supported.
+- Draft wording below, for the privacy notice and the widget. It covers the browser engine only;
+  if we move to [server STT](#later--server-side-speech-to-text) it must name that provider.
+
+Privacy notice (storefront privacy page, new paragraph):
+
+> **Voice input in chat.** If you use the microphone button in the chat assistant, your browser
+> turns your speech into text. Depending on your browser, the browser maker (for example Google
+> or Apple) may do this under its own privacy terms. We never receive or store your recordings.
+> We only receive the text you choose to send, which we handle like any message you type.
+
+Widget, shown once under the input the first time the shopper presses the mic (`voiceHint`):
+
+| Locale | Text |
+|---|---|
+| `en` | Your browser turns speech into text. We never get the audio. |
+| `vi` | Trình duyệt của bạn chuyển giọng nói thành chữ. Chúng tôi không nhận bản ghi âm. |
+
+**Left for the user:**
+1. Sign-off on the privacy-notice paragraph (with the rest of the notice; PRD §7).
+2. A native speaker checks the Vietnamese hint.
+
 ### M2 · Widget: mic button
 - `widget/src/voice.ts` next to `photo.ts`: detect support, map locale to language, start/stop,
   60 s limit, silence stop, errors as i18n keys (`errMicDenied`, `errMicNoSpeech`,
   `errMicUnavailable`).
-- UI: mic button only when supported and enabled; pulsing state while listening; text appended
-  to whatever is already in the input; respect the 2,000-char cap; never auto-send. Stopping
+- UI: mic button only when supported and enabled; pulsing state while listening; live text in
+  the input as the shopper talks (the input is read-only while listening, so typing can't clash
+  with it), editable again on stop; text appended
+  to whatever is already in the input; the `voiceHint` line (M1) the first time; respect the 2,000-char cap; never auto-send. Stopping
   when the panel closes or the page is hidden.
 - Accessibility: keyboard toggle, `aria-pressed`, `aria-label`, `aria-live` status
   ("Listening…", "Stopped"), visible focus, no reliance on colour alone.
@@ -129,7 +157,7 @@ Needs: a provider choice and account, a new secret, privacy wording updated to n
 
 ## Open questions
 
-1. Live text while speaking, or only after stop?
+1. ~~Live text while speaking, or only after stop?~~ Live text (M1).
 2. Is "no mic in Firefox" acceptable for v1?
 3. Who signs off the privacy wording?
 4. Should mic-permission denials and recognition errors be counted too? That needs a small
