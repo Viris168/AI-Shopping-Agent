@@ -18,6 +18,9 @@ export interface Message {
   /** `fallback`: the assistant itself is down or switched off, not just this reply. */
   error?: { message: string; retryable: boolean; fallback?: boolean };
   rating?: 'up' | 'down';
+  /** A photo the shopper sent. `url` (an object URL) lives only for this page, so it isn't saved:
+   *  after navigation the bubble shows a "Photo" label instead. */
+  photo?: { url?: string };
 }
 
 export interface ChatState {
@@ -121,7 +124,13 @@ export class Store {
       const { conversationId, messages, open } = this.value;
       this.storage?.setItem(
         this.key,
-        JSON.stringify({ conversationId, open, messages: messages.slice(-MAX_STORED_MESSAGES) }),
+        JSON.stringify({
+          conversationId,
+          open,
+          messages: messages
+            .slice(-MAX_STORED_MESSAGES)
+            .map((m) => (m.photo ? { ...m, photo: {} } : m)),
+        }),
       );
     } catch {
       // Storage full or blocked: the chat still works, it just won't survive navigation.

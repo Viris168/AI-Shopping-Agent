@@ -59,6 +59,15 @@ class RateLimiter:
             raise HTTPException(429, "You're sending messages too quickly. Please wait a moment.")
 
 
+PHOTOS_OFF = "Photos aren't available right now."
+
+
+def photo_error(status: int, message: str) -> HTTPException:
+    """A refused photo. `X-Limit: images` tells the widget it's about the photo, not the chat:
+    its 403 isn't a login mismatch and its 429 isn't the per-minute rate limit."""
+    return HTTPException(status, message, headers={"X-Limit": "images"})
+
+
 class ImageLimiter:
     """Photos per subject (budget_subject) per UTC day: each one costs a model call."""
 
@@ -70,15 +79,15 @@ class ImageLimiter:
     async def hit(self, subject: str, guest: bool) -> None:
         limit = self._per_guest if guest else self._per_user
         if limit <= 0:
-            raise HTTPException(403, "Photos aren't available right now.")
+            raise photo_error(403, PHOTOS_OFF)
         key = f"img:day:{datetime.now(UTC).date().isoformat()}:{subject}"
         async with self._redis.pipeline(transaction=True) as pipe:
             pipe.set(key, 0, ex=DAILY_TTL_S, nx=True)
             pipe.incr(key)
             _, count = await pipe.execute()
         if count > limit:
-            raise HTTPException(429, "You've sent as many photos as you can for today. "
-                                     "You can still type your question.")
+            raise photo_error(429, "You've sent as many photos as you can for today. "
+                                   "You can still type your question.")
 
 
 def budget_subject(auth_user_id: str | None, ip: str | None) -> str:

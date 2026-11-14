@@ -14,6 +14,8 @@ export interface RolloutConfig {
   rolloutPercent: number;
   /** The store's IANA zone (agent-service STORE_TZ); card dates are shown in it. */
   timeZone?: string;
+  /** Photos in chat are on (agent-service IMAGES_ENABLED and flag:images_enabled). */
+  imagesEnabled?: boolean;
 }
 
 /** `zone` if the browser knows it, else undefined (the shopper's own zone). */
@@ -36,6 +38,7 @@ export async function fetchConfig(apiBase: string): Promise<RolloutConfig | null
       enabled: body?.enabled === true,
       rolloutPercent: Number(body?.rolloutPercent) || 0,
       timeZone: knownTimeZone(body?.timeZone),
+      imagesEnabled: body?.imagesEnabled === true,
     };
   } catch {
     return null;

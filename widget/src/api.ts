@@ -1,5 +1,7 @@
 // Calls to agent-service: POST bodies with SSE responses, parsed from fetch streams.
 
+import type { PhotoUpload } from './photo';
+
 export interface SseEvent {
   event: string;
   data: any;
@@ -9,6 +11,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** The `X-Limit` response header: "images" when a photo was refused, not the message. */
+    readonly limit: string | null = null,
   ) {
     super(message);
   }
@@ -72,7 +76,7 @@ export class ChatApi {
     }
   }
 
-  chat(body: { conversationId: string | null; message: string; locale: string }) {
+  chat(body: { conversationId: string | null; message: string; locale: string; image?: PhotoUpload }) {
     const { conversationId, ...rest } = body;
     return this.stream('/v1/chat', conversationId ? body : rest);
   }
@@ -129,7 +133,7 @@ export class ChatApi {
         } catch {
           // Not JSON; the status is enough.
         }
-        throw new ApiError(res.status, detail);
+        throw new ApiError(res.status, detail, res.headers.get('X-Limit'));
       }
       await sleep(500 * 2 ** attempt);
     }

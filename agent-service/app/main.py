@@ -19,11 +19,13 @@ from app.cache import ToolCache
 from app.commerce_client import ApiError, CommerceClient
 from app.config import Settings, get_settings
 from app.guardrails import (
+    PHOTOS_OFF,
     ImageLimiter,
     RateLimiter,
     TokenBudget,
     budget_subject,
     check_message,
+    photo_error,
 )
 from app.images import ImageIn, prepare_image
 from app.llm import LLM
@@ -111,7 +113,7 @@ app.add_middleware(
     allow_origins=_settings.cors_origin_list,
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type"],
-    expose_headers=["X-Request-Id"],
+    expose_headers=["X-Request-Id", "X-Limit"],
 )
 app.add_middleware(telemetry.RequestIdMiddleware)  # outermost: wraps CORS and every route
 
@@ -222,7 +224,7 @@ async def chat(
     body: ChatRequest, request: Request, auth: AuthDep, agent: AgentDep, settings: SettingsDep
 ) -> StreamingResponse:
     if body.image is not None and not await images_active(request, settings):
-        raise HTTPException(403, "Photos aren't available right now.")
+        raise photo_error(403, PHOTOS_OFF)
     message = check_message(body.message, settings, allow_empty=body.image is not None)
     await _rate_limit(request, auth)
     image = None

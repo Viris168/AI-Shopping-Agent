@@ -7,13 +7,20 @@ afterEach(() => vi.unstubAllGlobals());
 const on = (rolloutPercent: number) => ({ enabled: true, rolloutPercent });
 
 describe('rollout', () => {
+  it('reads whether photos are on, off unless it says exactly true', async () => {
+    mockFetch(jsonResponse(200, { enabled: true, rolloutPercent: 5, imagesEnabled: true }),
+      jsonResponse(200, { enabled: true, rolloutPercent: 5, imagesEnabled: 'yes' }));
+    expect((await fetchConfig('https://chat.test'))?.imagesEnabled).toBe(true);
+    expect((await fetchConfig('https://chat.test'))?.imagesEnabled).toBe(false);
+  });
+
   it('reads the config, and treats a failed or odd response as switched off', async () => {
     mockFetch(jsonResponse(200, { enabled: true, rolloutPercent: 25 }), jsonResponse(503), new Error('offline'),
       jsonResponse(200, { enabled: 'yes', rolloutPercent: 'lots' }));
-    expect(await fetchConfig('https://chat.test')).toEqual(on(25));
+    expect(await fetchConfig('https://chat.test')).toEqual({ ...on(25), imagesEnabled: false });
     expect(await fetchConfig('https://chat.test')).toBeNull();
     expect(await fetchConfig('https://chat.test')).toBeNull();
-    expect(await fetchConfig('https://chat.test')).toEqual({ enabled: false, rolloutPercent: 0 });
+    expect(await fetchConfig('https://chat.test')).toEqual({ enabled: false, rolloutPercent: 0, imagesEnabled: false });
   });
 
   it("passes on the store's time zone only if the browser knows it", async () => {

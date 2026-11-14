@@ -365,4 +365,17 @@ async def test_route_counts_photos_per_day(redis: FakeAsyncRedis,
         first = await http.post("/v1/chat", json=chat_body(encode(photo())))
         second = await http.post("/v1/chat", json=chat_body(encode(photo())))
     assert first.status_code == 200 and second.status_code == 429
+    assert second.headers["X-Limit"] == "images"  # the widget tells it from the rate limit
     assert len(llm.images) == 1
+
+
+async def test_every_photo_refusal_is_marked_for_the_widget(redis: FakeAsyncRedis,
+                                                            route_settings: dict[str, Any]) -> None:
+    """A 403 without the mark means "different login" to the widget, which then resets the chat."""
+    llm = FakeLLM()
+    async with await client(redis, llm) as http:
+        disguised = await http.post("/v1/chat", json=chat_body(b"GIF89a", "image/png"))
+        route_settings["images_enabled"] = False
+        off = await http.post("/v1/chat", json=chat_body(encode(photo())))
+    assert (disguised.status_code, off.status_code) == (415, 403)
+    assert disguised.headers["X-Limit"] == off.headers["X-Limit"] == "images"

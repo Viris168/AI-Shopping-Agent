@@ -19,7 +19,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.config import Settings
-from app.guardrails import strip_html
+from app.guardrails import photo_error, strip_html
 from app.masking import mask
 
 MediaType = Literal["image/jpeg", "image/png", "image/webp"]
@@ -53,26 +53,26 @@ def prepare_image(image: ImageIn, settings: Settings) -> bytes:
     """Decode, check and re-encode an upload as a metadata-free JPEG no longer than
     `image_long_edge` on its long side. Re-encoding drops EXIF (location) and anything hidden in
     the file, and a file that only claims to be an image fails to decode. CPU work: call it in a
-    thread. Raises HTTPException with a message for the shopper."""
+    thread. Raises HTTPException (guardrails.photo_error) with a message for the shopper."""
     try:
         raw = base64.b64decode(image.data, validate=True)
     except (binascii.Error, ValueError) as exc:
-        raise HTTPException(422, "That photo couldn't be read. Please try another one.") from exc
+        raise photo_error(422, "That photo couldn't be read. Please try another one.") from exc
     if len(raw) > settings.image_max_bytes:
         mb = settings.image_max_bytes / 1_000_000
-        raise HTTPException(413, f"Photos can be up to {mb:g} MB. Please send a smaller one.")
+        raise photo_error(413, f"Photos can be up to {mb:g} MB. Please send a smaller one.")
     if _sniff(raw) != image.mediaType:
-        raise HTTPException(415, "Please send a JPEG, PNG or WebP photo.")
+        raise photo_error(415, "Please send a JPEG, PNG or WebP photo.")
     try:
         with Image.open(io.BytesIO(raw)) as img:
             if img.width * img.height > settings.image_max_pixels:
-                raise HTTPException(413, "That photo is too large. Please send a smaller one.")
+                raise photo_error(413, "That photo is too large. Please send a smaller one.")
             img.load()
             clean = ImageOps.exif_transpose(img).convert("RGB")
-    except HTTPException:
+    except HTTPException:  # from photo_error above
         raise
     except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError) as exc:
-        raise HTTPException(415, "That photo couldn't be read. Please try another one.") from exc
+        raise photo_error(415, "That photo couldn't be read. Please try another one.") from exc
     edge = settings.image_long_edge
     clean.thumbnail((edge, edge), Image.Resampling.LANCZOS)
     out = io.BytesIO()
