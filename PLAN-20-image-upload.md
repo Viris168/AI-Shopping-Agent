@@ -179,6 +179,21 @@ dropped the reply, and read the daily photo cap (429) as the per-minute rate lim
 - **Done when** both suites pass with the new cases, tallied across runs per
   [the flakiness note](agent-service/evals/README.md).
 
+### M4 status (2026-11-14, branch `image-m4-evals`)
+Cases: `golden/photos.yaml` (G-IMG-01–10) and `redteam/photos.yaml` (R-IMG-01–07). A case's
+`photo:` sends a drawn fixture with a turn, and the case switches `IMAGES_ENABLED` on for itself.
+The grader is told which turn had the photo. `--changed` maps the photo code to these files.
+Photo cases only:
+- golden 9/10, then 10/10 once G-IMG-03's criterion stopped requiring the order number in the
+  text (the order card shows it)
+- red team 7/7, then 6/7 over 3 repeats: a forbid_text matched the correct reply "No discount
+  has been applied". The pattern was fixed, and R-IMG-01 and R-IMG-07 then passed 4/4
+
+**Not done yet:** both full suites with `IMAGES_ENABLED=true` (the photo rules in every case's
+prompt). That run was stopped partway at the user's request. It must pass (golden ≥ 90%, red
+team 100%) before the flag goes on. Damage is still only tested with drawings; real photos are
+still needed.
+
 ### M5 · Rollout
 - Staging with `images_enabled` on; watch `image_describe` cost, describe latency and failure
   rate, and the image-cap hits on the dashboard. Then production at a low `rollout_percent`.

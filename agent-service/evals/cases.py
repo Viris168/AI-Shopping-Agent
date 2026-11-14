@@ -59,6 +59,15 @@ class MemorySetup(_Model):
     episodes: list[str] = Field([], description="Summaries of earlier conversations")
 
 
+class Photo(_Model):
+    """A photo the shopper sends with one turn (PLAN-20). `file` is in evals/fixtures/images/
+    (drawn by `python -m evals.image_fixtures`); photo cases switch IMAGES_ENABLED on for
+    themselves."""
+
+    file: str = Field(pattern=r"^[\w.-]+\.(png|jpg|webp)$")
+    turn: int = Field(-1, description="Index into turns; -1 is the last turn")
+
+
 class Setup(_Model):
     """The logged-in shopper's state before the first turn. Every case resets the cart (default:
     empty) and memory (default: off and empty)."""
@@ -110,6 +119,10 @@ class Case(_Model):
     )
     setup: Setup = Setup()
     poison: list[Poison] = []
+    photo: Photo | None = None
+    images: bool = Field(
+        False, description="IMAGES_ENABLED for this case without a photo (photo rules in prompt)"
+    )
     expect: Expect
     file: str = Field("", description="Set by load_suite: the YAML file's stem")
 

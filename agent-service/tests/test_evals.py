@@ -14,7 +14,7 @@ from app.config import Settings
 from evals import cases as cases_module
 from evals import run as run_module
 from evals.cases import Case, MemorySetup, Poison, Setup, Suite, load_suite
-from evals.checks import TurnRecord, deterministic_failures, parse_grade, score
+from evals.checks import TurnRecord, _with_photo, deterministic_failures, parse_grade, score
 from evals.cost_probe import report
 from evals.harness import (
     GUEST_SHOPPER,
@@ -220,6 +220,41 @@ async def test_harness_records_the_turn_and_poison_reaches_the_model() -> None:
 
 
 
+async def test_photo_case_sends_the_re_encoded_fixture_with_its_turn() -> None:
+    settings = Settings(_env_file=None, service_token="t" * 32)
+    c = Case.model_validate({
+        "id": "G-TEST-03", "scenario": "test", "turns": ["is this mine?", "thanks"],
+        "photo": {"file": "order_shipped.png", "turn": 0}, "expect": {},
+    })
+    fake = FakeLLM(message(TextBlock(type="text", text="It's ORD-1002.")),
+                   message(TextBlock(type="text", text="You're welcome.")))
+    http = httpx.AsyncClient(base_url="http://api/api/v1/",
+                             transport=httpx.MockTransport(commerce_api))
+
+    await run_case(c, settings, GUEST_SHOPPER, llm=fake, http=http)  # type: ignore[arg-type]
+
+    assert len(fake.images) == 1 and fake.images[0][:3] == b"\xff\xd8\xff"  # JPEG, turn 1 only
+    first = fake.calls[0][-1]["content"]
+    assert any(b["text"].startswith("<image_description>") for b in first)
+    # Photo rules are in the prompt for photo cases.
+    assert "<image_description>" in fake.systems[0][0]["text"]
+
+
+def test_grader_is_told_which_turn_had_the_photo() -> None:
+    c = Case.model_validate({
+        "id": "G-TEST-04", "scenario": "s", "turns": ["", "and?"],
+        "photo": {"file": "noise.jpg", "turn": 0}, "expect": {},
+    })
+    assert _with_photo(c, 0, "") == "[sends a photo: noise.jpg]"
+    assert _with_photo(c, 1, "and?") == "and?"
+
+
+def test_photo_files_must_be_fixture_images() -> None:
+    with pytest.raises(ValueError):
+        Case.model_validate({"id": "G-TEST-05", "scenario": "s", "turns": ["x"],
+                             "photo": {"file": "../../.env"}, "expect": {}})
+
+
 # --- cart setup ------------------------------------------------------------------
 
 async def test_reset_cart_empties_the_cart_then_loads_the_setup_as_the_shopper() -> None:
@@ -396,6 +431,8 @@ def test_select_maps_changes_to_case_files_or_smoke() -> None:
     ])
     assert sel.files == {"faq", "orders", "returns"} and not sel.smoke
     assert select("redteam", ["agent-service/app/memory.py"]).files == {"memory"}
+    for path in ("agent-service/app/images.py", "agent-service/app/prompts/images.md"):
+        assert select("redteam", [path]).files == {"photos"}, path
     for path in ("agent-service/app/prompts/system.md", "agent-service/app/loop.py",
                  "agent-service/app/tools/registry.py", "agent-service/evals/harness.py",
                  "commerce-api/src/database/seed-data.ts"):

@@ -111,6 +111,13 @@ def parse_grade(raw: str) -> tuple[bool, str]:
     return data["pass"], str(data.get("reason", ""))
 
 
+def _with_photo(case: Case, index: int, text: str) -> str:
+    """The grader can't see the photo; the scenario says what's on it, this says when it came."""
+    if case.photo is None or index != case.photo.turn % len(case.turns):
+        return text
+    return f"[sends a photo: {case.photo.file}] {text}".strip()
+
+
 async def score(case: Case, turns: list[TurnRecord], grade: Grade | None) -> Verdict:
     failures = deterministic_failures(case, turns)
     criterion = case.expect.grader
@@ -118,7 +125,7 @@ async def score(case: Case, turns: list[TurnRecord], grade: Grade | None) -> Ver
         prompt = GRADER_PROMPT.format(
             scenario=case.scenario,
             criterion=criterion,
-            turns="\n".join(f"- {t}" for t in case.turns),
+            turns="\n".join(f"- {_with_photo(case, i, t)}" for i, t in enumerate(case.turns)),
             reply=turns[-1].text or "(empty reply)",
         )
         passed, reason = parse_grade(await grade(prompt))
