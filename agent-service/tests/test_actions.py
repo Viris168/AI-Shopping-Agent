@@ -15,6 +15,7 @@ from app.actions import ActionStore
 from app.auth import GUEST, Auth, get_auth
 from app.config import get_settings
 from app.guardrails import RateLimiter
+from app.limits import SpendLimits
 from app.loop import Agent
 from app.main import app
 from app.sessions import Session, TranscriptStore, usage_body
@@ -150,6 +151,7 @@ async def http_client(agent: Agent, redis: FakeAsyncRedis) -> httpx.AsyncClient:
     app.state.agent = agent
     app.state.redis = redis
     app.state.limiter = RateLimiter(redis, 1000)
+    app.state.limits = SpendLimits(agent.settings, redis)
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://agent")
 
 
@@ -308,6 +310,16 @@ async def test_each_turn_sends_only_new_masked_messages(redis: FakeAsyncRedis,
     assert api.turns[0]["tokensIn"] == 1 and api.turns[0]["tokensOut"] == 1
     assert session.persisted == len(session.messages) == 4
     assert all(r.headers["Authorization"] == "Bearer tok-alice" for r in api.requests)
+
+
+async def test_turns_send_the_routing_group_once_assigned(redis: FakeAsyncRedis,
+                                                         api: Api) -> None:
+    agent = agent_with_transcripts(redis, api, FakeLLM(message(text("Hi!")), message(text("Hi"))))
+    session, _ = await turn(agent, "hello")  # routing off: no group
+    assert "routingGroup" not in api.turns[-1]
+    session.routing_group = "control"
+    await turn(agent, "again", session=session)
+    assert api.turns[-1]["routingGroup"] == "control"
 
 
 def test_usage_body_sends_cost_as_integer_micro_dollars() -> None:

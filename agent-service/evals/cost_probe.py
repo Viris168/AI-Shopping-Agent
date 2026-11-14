@@ -1,6 +1,7 @@
 """Token use of one long conversation, call by call (PLAN-19 M4 step 1).
 
     python -m evals.cost_probe --label before
+    python -m evals.cost_probe --label routed --routing   # model routing on (PLAN-19 M5)
 
 Eval cases are mostly one or two turns, so they can't show what happens to the prefix cache as a
 conversation grows. This runs one scripted 12-turn conversation as alice through the real loop
@@ -26,6 +27,7 @@ from anthropic.types import Message
 from app.config import get_settings
 from app.llm import LLM
 from app.usage import estimate_cost
+from evals import balance
 from evals.cases import EVALS_DIR, Case
 from evals.harness import Logins, run_case
 from evals.run import DEMO_PASSWORD, preflight
@@ -64,14 +66,19 @@ class ProbeLLM(LLM):
 
     async def stream(self, **kwargs: Any) -> Message:
         messages = kwargs["messages"]
-        if not _is_tool_results(messages[-1]):  # a shopper message (or event) starts a turn
-            self._turn += 1
-            self._round = 0
-        self._round += 1
+        fast = bool(kwargs.get("fast"))
+        last = self.log[-1] if self.log else None
+        redo = last is not None and last["fast"] and not fast and last["msgs_id"] == id(messages)
+        if not redo:  # the main model redoing a dropped fast round is the same round
+            if not _is_tool_results(messages[-1]):  # a shopper message (or event): new turn
+                self._turn += 1
+                self._round = 0
+            self._round += 1
         resp = await super().stream(**kwargs)
         u = resp.usage
         self.log.append({
             "turn": self._turn, "round": self._round, "messages": len(messages),
+            "model": resp.model, "fast": fast, "msgs_id": id(messages),
             "input": u.input_tokens, "cache_read": u.cache_read_input_tokens or 0,
             "output": u.output_tokens,
         })
@@ -79,17 +86,19 @@ class ProbeLLM(LLM):
 
 
 def report(
-    log: list[dict[str, Any]], price_cost: Callable[[int, int, int], float | None]
+    log: list[dict[str, Any]], price_cost: Callable[[int, int, int, str], float | None]
 ) -> dict[str, Any]:
-    print(f"{'turn':>4} {'round':>5} {'msgs':>4} {'uncached':>8} {'cached':>7} {'out':>5}")
+    print(f"{'turn':>4} {'round':>5} {'msgs':>4} {'uncached':>8} {'cached':>7} {'out':>5}  model")
     for c in log:
         print(f"{c['turn']:>4} {c['round']:>5} {c['messages']:>4} {c['input']:>8} "
-              f"{c['cache_read']:>7} {c['output']:>5}")
+              f"{c['cache_read']:>7} {c['output']:>5}  {c.get('model', '')}")
     calls = len(log) or 1
     uncached = sum(c["input"] for c in log)
     cached = sum(c["cache_read"] for c in log)
     output = sum(c["output"] for c in log)
-    cost = price_cost(uncached, cached, output)
+    costs = [price_cost(c["input"], c["cache_read"], c["output"], c.get("model", ""))
+             for c in log]
+    cost = None if any(c is None for c in costs) else sum(c for c in costs if c is not None)
     summary = {
         "calls": len(log),
         "uncached_per_call": round(uncached / calls),
@@ -108,9 +117,18 @@ def report(
 async def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m evals.cost_probe")
     parser.add_argument("--label", default="probe", help="Name for the report file")
+    parser.add_argument("--routing", action="store_true", help="Model routing on")
     args = parser.parse_args(argv)
 
     settings = get_settings()
+    if args.routing:
+        settings = settings.model_copy(
+            update={"model_routing_enabled": True, "routing_percent": 100}
+        )
+    # About 25 main-model calls; budget it like 20 cases.
+    problem = await balance.check(settings, balance.estimate(20))
+    if problem:
+        sys.exit(problem)
     await preflight(settings)
     logins = Logins(settings, os.environ.get("EVAL_PASSWORD", DEMO_PASSWORD))
     llm = ProbeLLM(settings)
@@ -120,14 +138,18 @@ async def main(argv: list[str] | None = None) -> int:
     })
     records = await run_case(case, settings, await logins.shopper("alice"), llm=llm)
 
-    price = settings.model_prices.get(settings.model_main)
-    summary = report(llm.log, lambda i, c, o: estimate_cost(price, i, c, o))
+    def cost(i: int, c: int, o: int, model: str) -> float | None:
+        return estimate_cost(settings.model_prices.get(model), i, c, o)
+
+    for call in llm.log:
+        call.pop("msgs_id")
+    summary = report(llm.log, cost)
 
     out_dir = EVALS_DIR / "results"
     out_dir.mkdir(exist_ok=True)
     out = out_dir / f"cost-probe-{args.label}-{time.strftime('%Y%m%d-%H%M%S')}.json"
     out.write_text(json.dumps({
-        "label": args.label, "model": settings.model_main,
+        "label": args.label, "model": settings.model_main, "routing": args.routing,
         "window_messages": settings.window_messages, "summary": summary, "calls": llm.log,
         "replies": [r.text for r in records],
     }, indent=2), encoding="utf-8")

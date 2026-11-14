@@ -158,6 +158,7 @@ agent-service/
 │   ├── actions.py           # pending actions (confirm gate)
 │   ├── guardrails.py        # input limits, budget, output checks
 │   ├── commerce_client.py   # httpx client for commerce-api
+│   ├── routing.py           # model routing: fast model for simple turns (MODEL_ROUTING_ENABLED)
 │   ├── prompts/system.md
 │   ├── prompts/playbooks/   # returns, order_status, product_compare, handoff (PLAYBOOKS_ENABLED)
 │   └── tools/
@@ -347,7 +348,7 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `ANTHROPIC_API_KEY` | — | Model access (a DeepSeek key by default) |
 | `ANTHROPIC_BASE_URL` | `https://api.deepseek.com/anthropic` | DeepSeek's Anthropic-compatible API; empty → Anthropic |
 | `MODEL_MAIN` | `deepseek-v4-pro` | Agent loop |
-| `MODEL_FAST` | `deepseek-flash` | Summaries, ticket text, eval grading |
+| `MODEL_FAST` | `deepseek-flash` | Summaries, ticket text, eval grading; simple chat turns when routing is on |
 | `COMMERCE_API_URL` | `http://commerce-api:3000/api/v1` | Tool backend |
 | `SERVICE_TOKEN` | — | Sent as `X-Service-Token` |
 | `JWT_SECRET` / `JWT_ISSUER` | — / `commerce-api` | Verify shopper tokens |
@@ -356,10 +357,16 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `MAX_TOOL_ROUNDS` | `6` | Loop cap |
 | `TURN_TIMEOUT_S` | `45` | Turn cap |
 | `MAX_MESSAGE_CHARS` | `2000` | Input cap |
-| `RATE_LIMIT_PER_MIN` | `20` | Messages per user/IP |
-| `TOKEN_BUDGET` | `300000` | Tokens per conversation |
+| `RATE_LIMIT_PER_MIN` | `20` | Messages per minute per signed-in user |
+| `GUEST_RATE_LIMIT_PER_MIN` | `10` | Messages per minute per guest IP |
+| `TOKEN_BUDGET` | `300000` | Tokens per conversation; the backstop when `MODEL_PRICES` is unset |
 | `DAILY_TOKEN_BUDGET` | `1000000` | Tokens per user (per IP for guests) per UTC day, across conversations; `0` = off |
 | `LOCK_WAIT_S` | `10` | How long Confirm/Cancel wait for a running turn on the same conversation |
+| `DAILY_SPEND_CAP_USD` | `5` | Store's estimated model spend per UTC day: guests pause at 80%, everyone at 100% (PLAN-19 M7). 0 = off |
+| `DAILY_SPEND_USER_USD` / `DAILY_SPEND_GUEST_USD` | `0.5` / `0.1` | Per signed-in shopper / per guest IP per day |
+| `CONVERSATION_SPEND_USD` | `0.1` | Per conversation |
+| `NEW_CONVERSATIONS_PER_HOUR_USER` / `_GUEST` | `30` / `10` | New conversations per shopper per hour |
+| `PROVIDER_BALANCE_CHECK` | `true` | Poll DeepSeek's prepaid balance every 15 min for `AgentProviderBalanceLow` |
 | `STORE_TZ` | `UTC` | The store's IANA zone: "today" in the prompt, order dates given to the model, and card dates in the widget (via `/v1/config`). Set the storefront's `VITE_STORE_TZ` to the same zone |
 | `LINK_HOSTS` | — | Hosts replies may link to besides `STOREFRONT_URL`'s; other links (and unconfirmed coupon codes) are removed from replies |
 | `CORS_ORIGINS` | `https://yourstore.com` | Widget host origins |
@@ -367,6 +374,8 @@ Local: `docker compose up` (postgres, redis, commerce-api, agent-service, widget
 | `ROLLOUT_PERCENT` | `100` | Share of browsers that see the widget (Redis `flag:rollout_percent` overrides) |
 | `CACHE_ENABLED` | `true` | Redis cache for public tool results (Redis `flag:cache_enabled` can also turn it off) |
 | `PLAYBOOKS_ENABLED` | `false` | Task playbooks in the prompt (PLAN-18 M7); switch on after golden + red-team pass with it |
+| `MODEL_ROUTING_ENABLED` | `false` | Simple turns on `MODEL_FAST` (PLAN-19 M5, `app/routing.py`); switch on after both suites pass with `--routing`. Redis `flag:model_routing 0` turns it off at runtime |
+| `ROUTING_PERCENT` | `0` | Share of new conversations in the routed group when `MODEL_ROUTING_ENABLED` (M6 rollout; the rest are control). Redis `flag:routing_percent` overrides |
 | `IMAGES_ENABLED` | `false` | Photos in chat (PLAN-20): `MODEL_FAST` describes the photo, the main model reads the description. A prompt change: switch on after golden + red-team pass with it. Redis `flag:images_enabled 0` turns it off at runtime |
 | `IMAGES_ROLLOUT_PERCENT` | `100` | Share of browsers (the widget's rollout bucket) shown the photo button; Redis `flag:images_rollout_percent` overrides it. The deploy defaults it to production `0`, staging `100` |
 | `IMAGE_DAILY_LIMIT` / `_GUEST` | `20` / `5` | Photos per shopper (per IP for guests) per UTC day; `0` = off for that group |

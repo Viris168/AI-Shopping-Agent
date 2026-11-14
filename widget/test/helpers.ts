@@ -19,8 +19,8 @@ export function mockFetch(...responses: (Response | (() => Response) | Error)[])
 export const sseResponse = (body: string) =>
   new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
 
-export const jsonResponse = (status: number, body: unknown = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+export const jsonResponse = (status: number, body: unknown = {}, headers: Record<string, string> = {}) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
 
 export class MemoryStorage implements Storage {
   private data = new Map<string, string>();

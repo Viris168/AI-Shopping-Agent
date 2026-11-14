@@ -570,6 +570,10 @@ export const CONVERSATION_OUTCOMES = [
 ] as const;
 export type ConversationOutcome = (typeof CONVERSATION_OUTCOMES)[number];
 
+// Model-routing rollout group from agent-service (PLAN-19 M6); null when routing was off.
+export const ROUTING_GROUPS = ['routed', 'control'] as const;
+export type RoutingGroup = (typeof ROUTING_GROUPS)[number];
+
 export interface ConversationFeedback {
   messageId: string;
   rating: 'up' | 'down';
@@ -617,6 +621,15 @@ export class Conversation {
   // all money here. bigint comes back from pg as a string.
   @Column({ name: 'cost_micro_usd', type: 'bigint', default: 0 })
   costMicroUsd: string;
+
+  // Set once, by the first turn that sends it, so a rollout step can compare the groups.
+  @Column({
+    name: 'routing_group',
+    type: 'varchar',
+    length: 16,
+    nullable: true,
+  })
+  routingGroup: RoutingGroup | null;
 
   @Column({ type: 'jsonb', default: () => "'[]'" })
   feedback: ConversationFeedback[];

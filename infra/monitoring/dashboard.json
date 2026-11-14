@@ -1963,6 +1963,629 @@
         },
         "overrides": []
       }
+    },
+    {
+      "type": "row",
+      "title": "Model routing rollout (PLAN-19 M6): routed vs control",
+      "id": 42,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 95,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Cost / conversation",
+      "id": 43,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Estimated model cost per new conversation, by rollout group. Gate: routed at least 15% below control.",
+      "gridPos": {
+        "x": 0,
+        "y": 96,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent_routing_group) (increase(agent_model_cost_USD_total{job=~\"$job\",agent_routing_group=~\"routed|control\"}[$__range])) / sum by (agent_routing_group) (increase(agent_conversations_total{job=~\"$job\",agent_routing_group=~\"routed|control\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "{{agent_routing_group}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "orientation": "vertical"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "noValue": "–",
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Thumbs-down / conversation",
+      "id": 44,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Thumbs-down ratings per conversation, by group. Gate: routed no worse than 1.5× and +2 points vs control.",
+      "gridPos": {
+        "x": 6,
+        "y": 96,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent_routing_group) (increase(agent_feedback_total{job=~\"$job\",agent_routing_group=~\"routed|control\",rating=\"down\"}[$__range])) / sum by (agent_routing_group) (increase(agent_conversations_total{job=~\"$job\",agent_routing_group=~\"routed|control\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "{{agent_routing_group}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "orientation": "vertical"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "–",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Handoffs / conversation",
+      "id": 45,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Support tickets created per conversation, by group.",
+      "gridPos": {
+        "x": 12,
+        "y": 96,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent_routing_group) (increase(agent_handoffs_total{job=~\"$job\",agent_routing_group=~\"routed|control\"}[$__range])) / sum by (agent_routing_group) (increase(agent_conversations_total{job=~\"$job\",agent_routing_group=~\"routed|control\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "{{agent_routing_group}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "orientation": "vertical"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "–",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Turn errors / conversation",
+      "id": 46,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Turns ending in an error per conversation, by group.",
+      "gridPos": {
+        "x": 18,
+        "y": 96,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent_routing_group) (increase(agent_turn_errors_total{job=~\"$job\",agent_routing_group=~\"routed|control\"}[$__range])) / sum by (agent_routing_group) (increase(agent_conversations_total{job=~\"$job\",agent_routing_group=~\"routed|control\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "{{agent_routing_group}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "orientation": "vertical"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "–",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Turns finishing on the fast model",
+      "id": 47,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Routed group only: turns that started on the fast model and weren't handed to the main model, as a share of all routed turns.",
+      "gridPos": {
+        "x": 0,
+        "y": 101,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(rate(agent_routes_total{job=~\"$job\",agent_route_reason=\"simple\"}[$__rate_interval])) - sum(rate(agent_routes_total{job=~\"$job\",agent_route_reason=~\"main_only_tool|fast_error|fast_max_tokens|fast_refusal|order_cart_data|tool_errors\"}[$__rate_interval]))) / sum(rate(agent_routes_total{job=~\"$job\",agent_route_reason!~\"main_only_tool|fast_error|fast_max_tokens|fast_refusal|order_cart_data|tool_errors\"}[$__rate_interval]))",
+          "legendFormat": "fast share",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Moves to the main model",
+      "id": 48,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Why turns that started on the fast model went to the main one. fast_error rising means the fast model is failing (alert AgentFastModelFailing).",
+      "gridPos": {
+        "x": 8,
+        "y": 101,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent_route_reason) (rate(agent_routes_total{job=~\"$job\",agent_route_reason=~\"main_only_tool|fast_error|fast_max_tokens|fast_refusal|order_cart_data|tool_errors\"}[$__rate_interval]))",
+          "legendFormat": "{{agent_route_reason}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Turns starting on the main model",
+      "id": 49,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Why the routed group's turns started on the main model (rules in app/routing.py).",
+      "gridPos": {
+        "x": 16,
+        "y": 101,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent_route_reason) (rate(agent_routes_total{job=~\"$job\",agent_model_tier=\"main\",agent_route_reason!~\"main_only_tool|fast_error|fast_max_tokens|fast_refusal|order_cart_data|tool_errors\"}[$__rate_interval]))",
+          "legendFormat": "{{agent_route_reason}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Spend limits (PLAN-19 M7)",
+      "id": 50,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 109,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Spend in range",
+      "id": 51,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Estimated model spend over the selected range. Pick \"Today so far\" (UTC) to compare with DAILY_SPEND_CAP_USD: guests pause at 80%, everyone at 100%.",
+      "gridPos": {
+        "x": 0,
+        "y": 110,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(agent_model_cost_USD_total{job=~\"$job\"}[$__range]))",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "noValue": "–",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Limit hits in range",
+      "id": 52,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Requests refused by a spend or rate limit (app/limits.py).",
+      "gridPos": {
+        "x": 8,
+        "y": 110,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(agent_limit_hits_total{job=~\"$job\"}[$__range]))",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "–",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Provider balance",
+      "id": 53,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "DeepSeek prepaid balance (app/balance.py, every 15 min). AgentProviderBalanceLow pages below $2 or two days of spend.",
+      "gridPos": {
+        "x": 16,
+        "y": 110,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min(agent_provider_balance_USD{job=~\"$job\"})",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "noValue": "–",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2
+              },
+              {
+                "color": "green",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Limit hits by limit",
+      "id": 54,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "shopper_daily / new_chats from many guests at once suggests a bot (AgentLimitHitsSpike). store_daily_80/100 mark the store's cap being crossed.",
+      "gridPos": {
+        "x": 0,
+        "y": 115,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (limit, kind) (increase(agent_limit_hits_total{job=~\"$job\"}[$__rate_interval]))",
+          "legendFormat": "{{limit}} ({{kind}})",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": true,
+            "drawStyle": "bars"
+          }
+        },
+        "overrides": []
+      }
     }
   ]
 }

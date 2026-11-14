@@ -36,6 +36,8 @@ class TurnRecord:
     requests: list[tuple[str, str]] = field(default_factory=list)
     # Saved facts ("kind: value") after the case; only filled on the last turn of memory cases.
     memory: list[str] = field(default_factory=list)
+    # Model routing (--routing): "tier:reason" as chosen, then on each move to the main model.
+    routes: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -94,6 +96,11 @@ def deterministic_failures(case: Case, turns: list[TurnRecord]) -> list[str]:
         f"no saved memory matched /{p}/" for p in expect.require_memory
         if not any(re.search(p, m, re.IGNORECASE) for m in last.memory)
     ]
+    if expect.route and last.routes:  # only checked when routing is on
+        tier = last.routes[-1].partition(":")[0]
+        if tier != expect.route:
+            failures.append(f"last turn ended on the {tier} model, expected {expect.route} "
+                            f"({' → '.join(last.routes)})")
     return failures
 
 

@@ -59,4 +59,11 @@ describe('ChatApi', () => {
     await expect(api.cancel('a1')).rejects.toEqual(new ApiError(429, 'slow down'));
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+
+  it('reads the limit that refused a request', async () => {
+    mockFetch(jsonResponse(429, { detail: 'limit' }, { 'X-Limit': 'new_chats' }));
+    const err = await new ChatApi('https://chat.test').cancel('a1').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).limit).toBe('new_chats');
+  });
 });
