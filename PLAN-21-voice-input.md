@@ -182,6 +182,24 @@ ruff and mypy clean. The runbook section (`infra/monitoring/README.md#voice`) is
   replies than typed ones.
 - Runbook section in `infra/monitoring/README.md#voice`: steps and kill switch.
 
+**Status (2026-11-14, branch `voice-m5-runbook`): tooling done, nothing switched on.**
+- Runbook: [infra/monitoring/README.md#voice](infra/monitoring/README.md#voice), with what must be
+  true first, the staging, staff and percentage steps, the kill switch (`SET flag:voice_enabled 0`)
+  and what to watch on the *Voice* row. No alert: recognition runs in the browser, so the server
+  never sees a voice failure.
+- Gate: `infra/rollout-check.sh` (with `PROM_URL`) fails if thumbs-up on replies to dictated
+  messages is more than 10 points below typed, once there are 30+ rated voice replies. Its three
+  Prometheus queries now share one `prom` helper. Checked against a fake Prometheus: too few
+  ratings → ok, close → ok, 25 points below → FAIL, exit 1.
+
+**Left for the user, in order:**
+1. M0 recordings in each target browser meet the go bar (#50).
+2. Sign-off on the privacy-notice paragraph, then publish it on the storefront privacy page.
+3. A native speaker checks the Vietnamese strings (M1 hint + M2's 7 strings).
+4. Staging: GitHub variable `VOICE_ENABLED=true`, deploy, try it on a phone and a laptop. There
+   is no staging VM yet (PLAN-19 M6).
+5. Production per the runbook: staff, then 5 / 25 / 100%, running `rollout-check.sh` at each step.
+
 ## Order
 
 M0 → M1 → M2 → M3 → M4 → M5. M3 and M4 can be built alongside M2. M0 decides whether the
